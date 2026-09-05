@@ -257,6 +257,25 @@ renewal. A future recurring-organization offering may bundle capacity or
 archives, but it must remain optional and cannot change the all-core-features
 product promise.
 
+#### Accepted FCOC commercial-exemption direction
+
+FCOC is EpicentraX's existing platform-supported Tenant and is not part of
+the customer payment-required launch or archive-renewal process. FCOC Events
+must not be stopped for a Launch Pass, Event Archive renewal, or added-capacity
+purchase. This is not a special-case check for an organization code, hostname,
+or hard-coded Tenant UUID. The future commercial implementation must instead
+resolve one governed Tenant-level commercial policy/entitlement that can
+express a Platform-approved non-commercial exemption, records who granted or
+changed it and why, and fails closed for every Tenant without such an explicit
+policy.
+
+The exemption removes payment gates; it does not remove responsible technical
+capacity monitoring, security boundaries, media lifecycle controls, or normal
+Event/Tenant authority requirements. FCOC's applicable included capacity and
+retention policy must be explicitly configured through that same governed
+record rather than inferred from a consumer pricing tier. No ordinary
+self-service organizer can grant their own organization this exemption.
+
 The organizer-facing experience must remain plain and proactive. A future
 implementation shows an Event media meter and notifies authorized organizers
 at 75%, 90%, and 100% of included capacity. At capacity, existing media
