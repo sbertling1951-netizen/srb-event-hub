@@ -523,6 +523,21 @@ organizer account becomes the initial billing contact for any future Event
 Archive renewal, but no recurring charge or automatic archive renewal begins
 at launch.
 
+#### Accepted Event Archive renewal and grace-period direction
+
+Event Archive renewal is proactive and never a surprise charge. At nine
+months after an Event ends, EpicentraX sends the organizer a friendly archive
+reminder. At eleven months, it sends a final reminder with clear choices to
+renew the Event Archive or export the content the organizer is authorized to
+retrieve.
+
+At twelve months after the Event ends, if the organizer has not renewed the
+Event Archive, guest gallery access closes. The organizer receives a
+90-day grace period to renew or export before the retained media proceeds to
+the separately defined archival/deletion policy. EpicentraX must not silently
+delete retained Event media or leave guest-facing links broken without a clear
+explanation of its current availability.
+
 #### Accepted guest photo contribution and account-recovery direction
 
 An EpicentraX account is not required for an Event guest to contribute photos.
