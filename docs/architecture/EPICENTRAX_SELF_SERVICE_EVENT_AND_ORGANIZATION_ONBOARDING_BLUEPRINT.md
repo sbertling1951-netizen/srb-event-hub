@@ -239,10 +239,10 @@ upload through archival retention. It is not an organizer-level allowance and
 must not be used to distinguish product tiers or withhold any core Event
 module. The initial commercial direction is:
 
-- A **Launch Pass** is priced at $24 per Event. It includes 100 GB of Event
+- A **Launch Pass** is priced at $24 per Event. It includes 50 GB of Event
   media capacity and 12 months of gallery access after the Event ends.
 - A future **Event Archive** renewal is priced at $24 per Event per year and
-  preserves up to 100 GB of retained media and the authorized guests' access
+  preserves up to 50 GB of retained media and the authorized guests' access
   to it.
 - Each future additional 100 GB capacity block is priced at $24 per Event per
   year.
