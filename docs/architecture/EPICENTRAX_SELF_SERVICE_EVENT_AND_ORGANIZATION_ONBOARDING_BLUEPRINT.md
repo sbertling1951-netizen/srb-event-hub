@@ -508,6 +508,21 @@ remains a separate commercial decision. At launch, retained setup assets enter
 the Event's normal active media-capacity model; high-volume guest media begins
 only when the Event is live.
 
+#### Accepted Launch Pass checkout direction
+
+The Launch Event decision ends with a calm, explicit one-time checkout rather
+than a billing maze. Before charging, EpicentraX presents the Event name,
+selected guest-access methods, and the included Launch Pass value: all core
+Event tools, 50 GB of media capacity, and 12 months of gallery access after
+the Event ends. The amount due today is clearly shown as **$24 one-time**.
+
+The organizer selects a payment method, confirms **Launch Event — $24**, and
+receives a receipt. Successful payment immediately activates the Event's
+guest-facing experience according to its selected access settings. The
+organizer account becomes the initial billing contact for any future Event
+Archive renewal, but no recurring charge or automatic archive renewal begins
+at launch.
+
 #### Accepted guest photo contribution and account-recovery direction
 
 An EpicentraX account is not required for an Event guest to contribute photos.
