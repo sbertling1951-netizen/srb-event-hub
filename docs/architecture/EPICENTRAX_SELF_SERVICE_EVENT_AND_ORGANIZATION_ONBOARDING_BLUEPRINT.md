@@ -324,6 +324,31 @@ it, and what a recipient can share. The organizer may later deliberately
 change the setting, with a clear warning when doing so widens visibility or
 access.
 
+#### Accepted guest photo contribution and account-recovery direction
+
+An EpicentraX account is not required for an Event guest to contribute photos.
+A guest who has valid access to the specific Event may submit photos after
+verifying control of either an email address or mobile number through a
+one-time link or code. An existing verified EpicentraX account satisfies that
+contact-verification requirement.
+
+Contact verification for a no-account contributor does not itself create an
+EpicentraX account, subscribe the guest to marketing, expose the contact
+method to the Tenant, or make the guest searchable across EpicentraX. It is a
+private, Event-scoped recovery and accountability fact for that contribution.
+
+For contributors without an account, EpicentraX retains a durable
+Event-scoped contributor identity and its verified contact evidence. Both of
+the following require the contributor to create a free EpicentraX account:
+
+1. recovering or downloading that contributor's prior submitted photos; and
+2. maintaining a durable **My Events** / **My Photos** history.
+
+When the contributor later creates and verifies an account through the same
+verified contact method, EpicentraX may governably link the contributor's
+prior Event-scoped submissions to that account. The link must not be inferred
+from a name, IP address, shared Event code, or unverified contact claim.
+
 The established product direction is nevertheless clear:
 
 - Core Event modules are not withheld according to organizer size or
