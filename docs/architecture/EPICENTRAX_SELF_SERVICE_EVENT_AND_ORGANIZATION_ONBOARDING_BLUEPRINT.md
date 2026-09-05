@@ -538,6 +538,22 @@ the separately defined archival/deletion policy. EpicentraX must not silently
 delete retained Event media or leave guest-facing links broken without a clear
 explanation of its current availability.
 
+#### Accepted non-renewal deletion direction
+
+If the organizer does not renew or export during the 90-day grace period,
+EpicentraX sends final reminders 30 days and 7 days before the grace period
+ends. At the end of that period, EpicentraX automatically and permanently
+deletes the retained original media and all derived viewing copies. The
+deletion workflow is platform-owned and auditable; it must not depend on
+manual Super Admin or network-administrator cleanup.
+
+After deletion, EpicentraX retains only the minimal non-media audit/tombstone
+fact necessary to show that the Event archive expired and was deleted. It
+does not retain usable photo content or imply that recovery remains possible.
+Provider backup and replica expiration must follow the same published
+deletion-lifecycle commitment. An organizer receives more than the included
+gallery year plus the 90-day grace period to renew or export before deletion.
+
 #### Accepted guest photo contribution and account-recovery direction
 
 An EpicentraX account is not required for an Event guest to contribute photos.
