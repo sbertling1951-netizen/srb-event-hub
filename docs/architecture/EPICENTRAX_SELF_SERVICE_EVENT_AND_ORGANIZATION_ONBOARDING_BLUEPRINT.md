@@ -324,6 +324,34 @@ it, and what a recipient can share. The organizer may later deliberately
 change the setting, with a clear warning when doing so widens visibility or
 access.
 
+#### Accepted party invitation and individual-claim direction
+
+An invitation contact point is not assumed to identify one individual. A
+primary invitation may admit a couple, household, family, or other Event
+party. The primary invitee may confirm their own attendance and add the
+additional people expected in that party without requiring each person to
+create an account or possess a device.
+
+The guided registration experience uses Event-appropriate language such as
+**Your group**, **Who else is coming with you?**, and **Add another guest**.
+RV-specific wording such as pilot, co-pilot, coach, and campsite may appear
+only where an RV-oriented Event template makes it helpful; it is never the
+identity model.
+
+For an adult party member, the primary invitee may optionally supply an email
+address or mobile number and send that person an individual Event invitation.
+That individual invitation lets the recipient verify their own contact,
+create an account if desired, and claim their own Event relationship. A named
+party member without a separate verified contact remains an Event-scoped
+guest managed through the primary party registration. Names, shared household
+contacts, or family relationships must not be treated as proof of individual
+identity.
+
+The primary invitation governs party admission; a separately verified contact
+or account governs an individual's durable identity and history. Sending an
+individual invitation is optional, and an Event invitation must not silently
+enroll its recipient in marketing.
+
 #### Accepted guest photo contribution and account-recovery direction
 
 An EpicentraX account is not required for an Event guest to contribute photos.
@@ -348,6 +376,26 @@ When the contributor later creates and verifies an account through the same
 verified contact method, EpicentraX may governably link the contributor's
 prior Event-scoped submissions to that account. The link must not be inferred
 from a name, IP address, shared Event code, or unverified contact claim.
+
+#### Accepted Event photo viewing and original-download direction
+
+Valid Event attendees may browse the Event's approved photo gallery. A
+contributor may view their own submitted photos, including their pending
+photos; Event administrators may view all submitted photos for moderation and
+Event operations. The existing rule that a contributor may delete only their
+own pending photo remains in force: once an administrator has reviewed and
+approved it, the contributor no longer has deletion authority.
+
+An actual download is always the submitted original file, never a gallery or
+slideshow rendition. Original download authority is limited to the photo's
+contributor and authorized Event administrators. An attendee viewing another
+person's approved gallery photo receives no download or share action.
+
+Gallery and slideshow images are display-only derived renditions. The
+slideshow uses its separate high-quality, projection-ready compressed
+rendition; it is not an original-download source. Implementing this policy
+requires server-side enforcement and rendition delivery, not merely hiding a
+browser button.
 
 The established product direction is nevertheless clear:
 
