@@ -15,17 +15,25 @@ import { supabase } from "@/lib/supabase";
 // on tokens Supabase itself already generated and validated -- no
 // custom cryptography or token minting happens here.
 //
-// Only two internal purposes are ever recognized. No arbitrary "next"
-// URL is ever accepted from the query string.
-type Purpose = "activation" | "recovery";
+// Only a fixed, closed set of internal purposes is ever recognized, each
+// mapped to one hard-coded internal destination. No arbitrary "next" URL is
+// ever accepted from the query string.
+//   - "organizer": new self-service Organizer account-verification email
+//     (P-2A). Establishes the session through the same safe SDK mechanism
+//     below and lands at /organize. No finalize step -- that is
+//     activation-only.
+type Purpose = "activation" | "recovery" | "organizer";
 
 const DESTINATIONS: Record<Purpose, string> = {
   activation: "/member/account",
   recovery: "/member/account/reset-password",
+  organizer: "/organize",
 };
 
 function resolvePurpose(value: string | null): Purpose | null {
-  return value === "activation" || value === "recovery" ? value : null;
+  return value === "activation" || value === "recovery" || value === "organizer"
+    ? value
+    : null;
 }
 
 export default function AuthCallbackPage() {
