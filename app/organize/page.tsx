@@ -9,17 +9,29 @@ import { Page } from "@/components/ui/Page";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import {
+  addOrganizerEventInputError,
+  createEventInMyOrganization,
   createMyPrivateEventDraft,
-  type CreateOrganizerDraftInput,
+  type CreateOrganizerDraftResult,
   listMyPrivateEventDrafts,
+  listMyPrivateOrganizations,
   type OrganizerDraft,
   organizerDraftInputError,
+  type OrganizerPrivateOrganization,
 } from "@/lib/organizerDrafts";
 import { supabase } from "@/lib/supabase";
 
 type AccessState = "checking" | "signed_out" | "unverified" | "ready";
 
-type DraftForm = Omit<CreateOrganizerDraftInput, "idempotencyKey">;
+type EventForm = {
+  eventName: string;
+  startDate: string;
+  endDate: string;
+  timezone: string;
+  locationMode: "location" | "online" | "no_location";
+  location: string;
+  starterTemplate: string;
+};
 
 const STARTER_TEMPLATES = [
   { key: "casual", label: "Casual gathering", detail: "A simple starting point for a get-together." },
@@ -44,25 +56,8 @@ function newIdempotencyKey() {
     : "";
 }
 
-function formatSchedule(draft: OrganizerDraft) {
-  if (!draft.start_date || draft.start_date === draft.end_date) {
-    return `${draft.start_date} · ${draft.timezone}`;
-  }
-  return `${draft.start_date} to ${draft.end_date} · ${draft.timezone}`;
-}
-
-export default function OrganizePage() {
-  const [accessState, setAccessState] = useState<AccessState>("checking");
-  const [email, setEmail] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<OrganizerDraft[]>([]);
-  const [loadingDrafts, setLoadingDrafts] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [identityNotice, setIdentityNotice] = useState<"confirm" | "review" | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [idempotencyKey, setIdempotencyKey] = useState("");
-  const [form, setForm] = useState<DraftForm>({
-    organizationName: "",
+function emptyEventForm(): EventForm {
+  return {
     eventName: "",
     startDate: "",
     endDate: "",
@@ -70,17 +65,121 @@ export default function OrganizePage() {
     locationMode: "no_location",
     location: "",
     starterTemplate: "casual",
-  });
+  };
+}
 
-  const loadDrafts = useCallback(async () => {
-    setLoadingDrafts(true);
+function formatSchedule(draft: OrganizerDraft) {
+  if (!draft.start_date || draft.start_date === draft.end_date) {
+    return `${draft.start_date} · ${draft.timezone}`;
+  }
+  return `${draft.start_date} to ${draft.end_date} · ${draft.timezone}`;
+}
+
+function EventFields({
+  form,
+  onChange,
+  idPrefix,
+}: {
+  form: EventForm;
+  onChange: (next: EventForm) => void;
+  idPrefix: string;
+}) {
+  function update<Key extends keyof EventForm>(key: Key, value: EventForm[Key]) {
+    onChange({ ...form, [key]: value });
+  }
+  function updateLocationMode(value: EventForm["locationMode"]) {
+    onChange({ ...form, locationMode: value, location: value === "location" ? form.location : "" });
+  }
+  return (
+    <>
+      <label>
+        Event name
+        <input className="app-form-input" value={form.eventName} onChange={(event) => update("eventName", event.target.value)} required />
+      </label>
+      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+        <label>
+          Start date <span style={{ fontWeight: 400 }}>(optional)</span>
+          <input className="app-form-input" type="date" value={form.startDate} onChange={(event) => update("startDate", event.target.value)} />
+        </label>
+        <label>
+          End date
+          <input className="app-form-input" type="date" min={form.startDate || undefined} value={form.endDate} onChange={(event) => update("endDate", event.target.value)} required />
+        </label>
+        <label>
+          Time zone
+          <input className="app-form-input" value={form.timezone} onChange={(event) => update("timezone", event.target.value)} placeholder="America/Los_Angeles" required />
+        </label>
+      </div>
+      <label>
+        Event place
+        <select className="app-form-input" value={form.locationMode} onChange={(event) => updateLocationMode(event.target.value as EventForm["locationMode"])}>
+          <option value="no_location">No location yet</option>
+          <option value="online">Online</option>
+          <option value="location">A physical location</option>
+        </select>
+      </label>
+      {form.locationMode === "location" ? (
+        <label>
+          Location
+          <input className="app-form-input" value={form.location} onChange={(event) => update("location", event.target.value)} required />
+        </label>
+      ) : null}
+      <label>
+        Starter template
+        <select className="app-form-input" value={form.starterTemplate} onChange={(event) => update("starterTemplate", event.target.value)}>
+          {STARTER_TEMPLATES.map((template) => <option key={`${idPrefix}-${template.key}`} value={template.key}>{template.label}</option>)}
+        </select>
+      </label>
+      <p style={{ margin: 0, color: "var(--color-text-muted, #475569)" }}>
+        {STARTER_TEMPLATES.find((template) => template.key === form.starterTemplate)?.detail}
+      </p>
+    </>
+  );
+}
+
+export default function OrganizePage() {
+  const [accessState, setAccessState] = useState<AccessState>("checking");
+  const [email, setEmail] = useState<string | null>(null);
+
+  const [organizations, setOrganizations] = useState<OrganizerPrivateOrganization[]>([]);
+  const [drafts, setDrafts] = useState<OrganizerDraft[]>([]);
+  const [loadingSpaces, setLoadingSpaces] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // The two creation actions route uncertain identity outcomes to the same
+  // existing /member/activate flow, so one page-level notice is enough.
+  const [identityNotice, setIdentityNotice] = useState<"confirm" | "review" | null>(null);
+
+  // "Create a new event space" -- reuses the existing governed command.
+  const [newSpaceForm, setNewSpaceForm] = useState<{ organizationName: string } & EventForm>({
+    organizationName: "",
+    ...emptyEventForm(),
+  });
+  const [newSpaceKey, setNewSpaceKey] = useState("");
+  const [newSpaceError, setNewSpaceError] = useState<string | null>(null);
+  const [creatingSpace, setCreatingSpace] = useState(false);
+
+  // "Add an event" to one existing event space.
+  const [addOpenFor, setAddOpenFor] = useState<string | null>(null);
+  const [addForm, setAddForm] = useState<EventForm>(emptyEventForm());
+  const [addKey, setAddKey] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
+  const [addingEvent, setAddingEvent] = useState(false);
+
+  const loadSpaces = useCallback(async () => {
+    setLoadingSpaces(true);
     setLoadError(null);
     try {
-      setDrafts(await listMyPrivateEventDrafts(supabase));
+      const [orgs, myDrafts] = await Promise.all([
+        listMyPrivateOrganizations(supabase),
+        listMyPrivateEventDrafts(supabase),
+      ]);
+      setOrganizations(orgs);
+      setDrafts(myDrafts);
     } catch {
-      setLoadError("We could not load your private drafts. Please try again.");
+      setLoadError("We could not load your event spaces. Please try again.");
     } finally {
-      setLoadingDrafts(false);
+      setLoadingSpaces(false);
     }
   }, []);
 
@@ -101,71 +200,111 @@ export default function OrganizePage() {
         setAccessState("unverified");
         return;
       }
-      setIdempotencyKey(newIdempotencyKey());
+      setNewSpaceKey(newIdempotencyKey());
       setAccessState("ready");
-      void loadDrafts();
+      void loadSpaces();
     }
     void establishAccess();
     return () => {
       cancelled = true;
     };
-  }, [loadDrafts]);
+  }, [loadSpaces]);
 
-  const formError = useMemo(
-    () => organizerDraftInputError({ ...form, idempotencyKey }),
-    [form, idempotencyKey],
+  const newSpaceFormError = useMemo(
+    () => organizerDraftInputError({ ...newSpaceForm, idempotencyKey: newSpaceKey }),
+    [newSpaceForm, newSpaceKey],
+  );
+  const addFormError = useMemo(
+    () =>
+      addOpenFor
+        ? addOrganizerEventInputError({
+            ...addForm,
+            organizationTenantId: addOpenFor,
+            idempotencyKey: addKey,
+          })
+        : "Choose one of your event spaces.",
+    [addForm, addOpenFor, addKey],
   );
 
-  function updateForm<Key extends keyof DraftForm>(key: Key, value: DraftForm[Key]) {
-    setForm((current) => ({ ...current, [key]: value }));
+  function applyIdentityOutcome(result: CreateOrganizerDraftResult): boolean {
+    if (
+      result.status === "identity_confirmation_required" ||
+      result.status === "identity_review_required"
+    ) {
+      setIdentityNotice(result.status === "identity_confirmation_required" ? "confirm" : "review");
+      return true;
+    }
+    return false;
   }
 
-  function updateLocationMode(value: DraftForm["locationMode"]) {
-    setForm((current) => ({
-      ...current,
-      locationMode: value,
-      location: value === "location" ? current.location : "",
-    }));
-  }
-
-  async function createDraft(event: React.FormEvent<HTMLFormElement>) {
+  async function createSpace(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (formError || creating) {
-      setCreateError(formError);
+    if (newSpaceFormError || creatingSpace) {
+      setNewSpaceError(newSpaceFormError);
       return;
     }
-    setCreating(true);
-    setCreateError(null);
+    setCreatingSpace(true);
+    setNewSpaceError(null);
     setIdentityNotice(null);
     try {
       const result = await createMyPrivateEventDraft(supabase, {
-        ...form,
-        idempotencyKey,
+        ...newSpaceForm,
+        idempotencyKey: newSpaceKey,
       });
-      if (
-        result.status === "identity_confirmation_required" ||
-        result.status === "identity_review_required"
-      ) {
-        setIdentityNotice(
-          result.status === "identity_confirmation_required" ? "confirm" : "review",
-        );
-        // The server has frozen this uncertain outcome to the current key.
-        // A deliberate retry after identity verification must be a NEW
-        // request, so mint a fresh key for the next submit.
-        setIdempotencyKey(newIdempotencyKey());
+      // The server freezes an uncertain outcome to the current key, so a
+      // deliberate post-verification retry must use a fresh key.
+      setNewSpaceKey(newIdempotencyKey());
+      if (applyIdentityOutcome(result)) {
         return;
       }
-      window.location.assign(
-        `/organize/${encodeURIComponent(result.draft.event_id)}`,
-      );
+      if (result.status === "created") {
+        window.location.assign(`/organize/${encodeURIComponent(result.draft.event_id)}`);
+      }
     } catch (error) {
-      setCreateError(
-        error instanceof Error
-          ? error.message
-          : "We could not create your private draft. Please try again.",
+      setNewSpaceError(
+        error instanceof Error ? error.message : "We could not create your event space. Please try again.",
       );
     } finally {
-      setCreating(false);
+      setCreatingSpace(false);
+    }
+  }
+
+  function openAddEvent(tenantId: string) {
+    setAddOpenFor(tenantId);
+    setAddForm(emptyEventForm());
+    setAddKey(newIdempotencyKey());
+    setAddError(null);
+    setIdentityNotice(null);
+  }
+
+  async function addEvent(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!addOpenFor || addFormError || addingEvent) {
+      setAddError(addFormError);
+      return;
+    }
+    setAddingEvent(true);
+    setAddError(null);
+    setIdentityNotice(null);
+    try {
+      const result = await createEventInMyOrganization(supabase, {
+        ...addForm,
+        organizationTenantId: addOpenFor,
+        idempotencyKey: addKey,
+      });
+      setAddKey(newIdempotencyKey());
+      if (applyIdentityOutcome(result)) {
+        return;
+      }
+      if (result.status === "created") {
+        window.location.assign(`/organize/${encodeURIComponent(result.draft.event_id)}`);
+      }
+    } catch (error) {
+      setAddError(
+        error instanceof Error ? error.message : "We could not add that event. Please try again.",
+      );
+    } finally {
+      setAddingEvent(false);
     }
   }
 
@@ -195,90 +334,91 @@ export default function OrganizePage() {
     );
   }
 
-  const secureDraftUnavailable = accessState === "ready" && !idempotencyKey;
+  const secureDraftUnavailable = accessState === "ready" && !newSpaceKey;
 
   return (
     <Page style={{ maxWidth: 940, margin: "0 auto", display: "grid", gap: 16 }}>
-      <PageHeader title="Create an Event" headingLevel="h1" description="Start privately. You can plan before anyone else can see it." />
-      <Alert tone="info">Your Event will be a private draft — not live. It will not create guest access, invitations, public registration, payment, or a launch.</Alert>
+      <PageHeader title="Your event spaces" headingLevel="h1" description="Resume a private draft, add another event to one of your spaces, or start a new space." />
+      <Alert tone="info">Every event you create here starts as a private draft — not live. It will not create guest access, invitations, public registration, payment, or a launch.</Alert>
       {secureDraftUnavailable ? (
         <Alert tone="danger">
           Your browser could not start a secure draft. Use an up-to-date browser over a secure (https) connection, then try again.
         </Alert>
       ) : null}
+      {identityNotice === "confirm" ? (
+        <Alert tone="warning">
+          We need to confirm your existing EpicentraX identity before creating this event.
+          Nothing has been created yet.{" "}
+          <Link href="/member/activate">Confirm your identity</Link>, then return here to finish.
+        </Alert>
+      ) : null}
+      {identityNotice === "review" ? (
+        <Alert tone="warning">
+          We could not confirm your EpicentraX identity automatically, so nothing has been created.
+          Please contact EpicentraX identity support to continue.
+        </Alert>
+      ) : null}
 
-      <PageSection title="New private draft" variant="card">
-        <form onSubmit={createDraft} style={{ display: "grid", gap: 14 }}>
-          <label>
-            Organization name
-            <input className="app-form-input" value={form.organizationName} onChange={(event) => updateForm("organizationName", event.target.value)} required />
-          </label>
-          <label>
-            Event name
-            <input className="app-form-input" value={form.eventName} onChange={(event) => updateForm("eventName", event.target.value)} required />
-          </label>
-          <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
-            <label>
-              Start date <span style={{ fontWeight: 400 }}>(optional)</span>
-              <input className="app-form-input" type="date" value={form.startDate} onChange={(event) => updateForm("startDate", event.target.value)} />
-            </label>
-            <label>
-              End date
-              <input className="app-form-input" type="date" min={form.startDate || undefined} value={form.endDate} onChange={(event) => updateForm("endDate", event.target.value)} required />
-            </label>
-            <label>
-              Time zone
-              <input className="app-form-input" value={form.timezone} onChange={(event) => updateForm("timezone", event.target.value)} placeholder="America/Los_Angeles" required />
-            </label>
-          </div>
-          <label>
-            Event place
-            <select className="app-form-input" value={form.locationMode} onChange={(event) => updateLocationMode(event.target.value as DraftForm["locationMode"])}>
-              <option value="no_location">No location yet</option>
-              <option value="online">Online</option>
-              <option value="location">A physical location</option>
-            </select>
-          </label>
-          {form.locationMode === "location" ? <label>
-            Location
-            <input className="app-form-input" value={form.location} onChange={(event) => updateForm("location", event.target.value)} required />
-          </label> : null}
-          <label>
-            Starter template
-            <select className="app-form-input" value={form.starterTemplate} onChange={(event) => updateForm("starterTemplate", event.target.value)}>
-              {STARTER_TEMPLATES.map((template) => <option key={template.key} value={template.key}>{template.label}</option>)}
-            </select>
-          </label>
-          <p style={{ margin: 0, color: "var(--color-text-muted, #475569)" }}>
-            {STARTER_TEMPLATES.find((template) => template.key === form.starterTemplate)?.detail}
-          </p>
-          {createError ? <Alert tone="danger">{createError}</Alert> : null}
-          {identityNotice === "confirm" ? (
-            <Alert tone="warning">
-              We need to confirm your existing EpicentraX identity before creating this event.
-              Nothing has been created yet.{" "}
-              <Link href="/member/activate">Confirm your identity</Link>, then return here to finish.
-            </Alert>
-          ) : null}
-          {identityNotice === "review" ? (
-            <Alert tone="warning">
-              We could not confirm your EpicentraX identity automatically, so nothing has been created.
-              Please contact EpicentraX identity support to continue.
-            </Alert>
-          ) : null}
-          <div><AppButton type="submit" variant="primary" loading={creating} disabled={secureDraftUnavailable}>Create private draft</AppButton></div>
-        </form>
+      <PageSection title="Your event spaces" variant="section">
+        {loadingSpaces ? <Alert tone="info">Loading your event spaces…</Alert> : null}
+        {loadError ? <Alert tone="danger" action={<AppButton onClick={() => void loadSpaces()}>Try again</AppButton>}>{loadError}</Alert> : null}
+        {!loadingSpaces && !loadError && organizations.length === 0 ? (
+          <Alert tone="neutral">You do not have an event space yet. Create your first one below.</Alert>
+        ) : null}
+        {!loadingSpaces && organizations.length > 0 ? (
+          <ul style={{ display: "grid", gap: 12, listStyle: "none", margin: 0, padding: 0 }}>
+            {organizations.map((organization) => (
+              <li key={organization.tenant_id} className="card" style={{ display: "grid", gap: 10 }}>
+                <div>
+                  <strong>{organization.organization_name}</strong><br />
+                  <span>{organization.draft_event_count} draft {organization.draft_event_count === 1 ? "event" : "events"}</span>
+                </div>
+                {addOpenFor === organization.tenant_id ? (
+                  <form onSubmit={addEvent} style={{ display: "grid", gap: 14 }}>
+                    <EventFields form={addForm} onChange={setAddForm} idPrefix={`add-${organization.tenant_id}`} />
+                    {addError ? <Alert tone="danger">{addError}</Alert> : null}
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <AppButton type="submit" variant="primary" loading={addingEvent} disabled={secureDraftUnavailable || !addKey}>Add event to this space</AppButton>
+                      <AppButton type="button" onClick={() => setAddOpenFor(null)}>Cancel</AppButton>
+                    </div>
+                  </form>
+                ) : (
+                  <div>
+                    <AppButton onClick={() => openAddEvent(organization.tenant_id)}>Add an event</AppButton>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </PageSection>
 
       <PageSection title="Your private drafts" variant="section">
-        {loadingDrafts ? <Alert tone="info">Loading your drafts…</Alert> : null}
-        {loadError ? <Alert tone="danger" action={<AppButton onClick={() => void loadDrafts()}>Try again</AppButton>}>{loadError}</Alert> : null}
-        {!loadingDrafts && !loadError && drafts.length === 0 ? <Alert tone="neutral">You have not created a private draft yet.</Alert> : null}
-        {!loadingDrafts && drafts.length > 0 ? (
+        {!loadingSpaces && !loadError && drafts.length === 0 ? <Alert tone="neutral">You have not created a private draft yet.</Alert> : null}
+        {!loadingSpaces && drafts.length > 0 ? (
           <ul style={{ display: "grid", gap: 10, listStyle: "none", margin: 0, padding: 0 }}>
             {drafts.map((draft) => <li key={draft.event_id} className="card"><strong>{draft.event_name}</strong><br /><span>{draft.organization_name} · {formatSchedule(draft)}</span><br /><Link href={`/organize/${encodeURIComponent(draft.event_id)}`}>Open private draft</Link></li>)}
           </ul>
         ) : null}
+      </PageSection>
+
+      <PageSection title="Create a new event space" variant="card">
+        <p style={{ marginTop: 0, color: "var(--color-text-muted, #475569)" }}>
+          Choose this only when you want a separate space. To add another event to a space you already have, use “Add an event” above.
+        </p>
+        <form onSubmit={createSpace} style={{ display: "grid", gap: 14 }}>
+          <label>
+            Event space name
+            <input className="app-form-input" value={newSpaceForm.organizationName} onChange={(event) => setNewSpaceForm((current) => ({ ...current, organizationName: event.target.value }))} required />
+          </label>
+          <EventFields
+            form={newSpaceForm}
+            onChange={(next) => setNewSpaceForm((current) => ({ ...current, ...next }))}
+            idPrefix="new-space"
+          />
+          {newSpaceError ? <Alert tone="danger">{newSpaceError}</Alert> : null}
+          <div><AppButton type="submit" variant="primary" loading={creatingSpace} disabled={secureDraftUnavailable}>Create a new event space</AppButton></div>
+        </form>
       </PageSection>
     </Page>
   );

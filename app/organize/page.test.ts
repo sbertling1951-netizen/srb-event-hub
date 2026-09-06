@@ -29,13 +29,9 @@ test("signed-out organizers have a fixed-return sign-up and sign-in path", () =>
 });
 
 test("account verification email returns through the one fixed organizer-aware auth callback", () => {
-  // emailRedirectTo is a hard-coded internal callback URL with a fixed
-  // purpose -- never /organize directly (the shared client has
-  // detectSessionInUrl:false), and never a caller-supplied redirect.
   assert.match(account, /new URL\("\/auth\/callback\?purpose=organizer", window\.location\.origin\)/);
   assert.match(account, /emailRedirectTo: organizerVerificationCallbackUrl\(\)/);
   assert.doesNotMatch(account, /emailRedirectTo:\s*new URL\("\/organize"/);
-  // The callback recognizes "organizer" as a closed purpose that lands at /organize.
   assert.match(callback, /organizer: "\/organize"/);
   assert.match(callback, /value === "organizer"/);
 });
@@ -43,11 +39,11 @@ test("account verification email returns through the one fixed organizer-aware a
 test("the organizer UI requires verified email before creating a private draft", () => {
   assert.match(page, /user\.email_confirmed_at/);
   assert.match(page, /private draft — not live/i);
-  assert.match(page, /Create private draft/);
+  assert.match(page, /Create a new event space/);
 });
 
 test("a browser that cannot mint a secure idempotency key is told plainly and blocked", () => {
-  assert.match(page, /secureDraftUnavailable = accessState === "ready" && !idempotencyKey/);
+  assert.match(page, /secureDraftUnavailable = accessState === "ready" && !newSpaceKey/);
   assert.match(page, /up-to-date browser over a secure \(https\) connection/);
   assert.match(page, /disabled=\{secureDraftUnavailable\}/);
   assert.match(
@@ -63,22 +59,34 @@ test("the workspace uses the caller-scoped private-draft reader", () => {
 });
 
 test("the organizer UI handles each identity outcome without leaking prior-record detail", () => {
-  // both non-created outcomes are handled, and only via the adapter's
-  // discriminated result -- the page never inspects a raw error string here.
   assert.match(page, /result\.status === "identity_confirmation_required"/);
   assert.match(page, /result\.status === "identity_review_required"/);
-  // confirmation routes to the existing identity-claim flow; canonical
-  // /organize return is preserved (the organizer just comes back and retries).
   assert.match(page, /href="\/member\/activate"/);
   assert.match(page, /confirm your existing EpicentraX identity before creating this event/i);
-  // neutral copy: no prior event / tenant / record / identifier is named
   assert.doesNotMatch(page, /prior (?:event|registration|tenant|record)|already registered|matched/i);
-  // the draft redirect still only ever targets /organize/<eventId>
   assert.match(page, /window\.location\.assign\(\s*`\/organize\/\$\{encodeURIComponent\(result\.draft\.event_id\)\}`/);
-  // after an uncertain outcome the server freezes it to the current key, so a
-  // deliberate post-verification retry must use a fresh key
-  assert.match(
-    page,
-    /identity_review_required"\s*\n\s*\)\s*\{[\s\S]*?setIdempotencyKey\(newIdempotencyKey\(\)\);\s*\n\s*return;/,
-  );
+  // both creation actions rotate to a fresh idempotency key so a deliberate
+  // post-verification retry is a NEW request, never a silent re-meaning.
+  assert.match(page, /setNewSpaceKey\(newIdempotencyKey\(\)\);/);
+  assert.match(page, /setAddKey\(newIdempotencyKey\(\)\);/);
+});
+
+test("P-2C: the home lists the caller's event spaces and adds events to them, with no cross-context data", () => {
+  // user-facing language is "event spaces", never "tenant"
+  assert.match(page, /Your event spaces/);
+  assert.doesNotMatch(page, /\btenant\b/i);
+  // it reads only the caller's own organizer spaces + drafts -- no membership,
+  // attendee, invitation, or admin-assignment reader is imported or called
+  assert.match(page, /listMyPrivateOrganizations\(supabase\)/);
+  assert.match(page, /listMyPrivateEventDrafts\(supabase\)/);
+  assert.doesNotMatch(page, /listMy(?:Memberships|Attendee|AdminAssignments)|adminEventAccess|tenant_members/);
+  // "Add an event" reuses the governed add-event command; "Create a new event
+  // space" reuses the existing new-space command.
+  assert.match(page, /Add an event/);
+  assert.match(page, /createEventInMyOrganization\(supabase/);
+  assert.match(page, /createMyPrivateEventDraft\(supabase/);
+  // a created event (new space OR added) opens its private draft workspace
+  assert.match(page, /`\/organize\/\$\{encodeURIComponent\(result\.draft\.event_id\)\}`/);
+  // no rename / edit-event-space affordance in this slice
+  assert.doesNotMatch(page, /rename|renameOrganization|editEventSpace/i);
 });

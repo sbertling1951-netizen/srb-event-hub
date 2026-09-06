@@ -25,8 +25,23 @@ export type OrganizerDraft = {
   created_at: string;
 };
 
-export type CreateOrganizerDraftInput = {
-  organizationName: string;
+/**
+ * P-2C: a personal event space the caller personally organizes (an internal
+ * self-service private tenant). Never carries membership, invitation, attendee,
+ * Event Admin, or Tenant Admin context -- the RPC only reads the caller's own
+ * organizer appointments.
+ */
+export type OrganizerPrivateOrganization = {
+  tenant_id: string;
+  organizer_appointment_id: string;
+  organizer_person_id: string;
+  organization_name: string;
+  draft_event_count: number;
+  created_at: string;
+};
+
+/** Event-only inputs shared by "new event space" and "add event to a space". */
+export type OrganizerEventInput = {
   eventName: string;
   startDate: string;
   endDate: string;
@@ -35,6 +50,15 @@ export type CreateOrganizerDraftInput = {
   location: string;
   starterTemplate: string;
   idempotencyKey: string;
+};
+
+export type CreateOrganizerDraftInput = OrganizerEventInput & {
+  organizationName: string;
+};
+
+export type AddOrganizerEventInput = OrganizerEventInput & {
+  /** An event space the caller already organizes (from listMyPrivateOrganizations). */
+  organizationTenantId: string;
 };
 
 type RpcResult = {
@@ -59,12 +83,7 @@ function isIanaTimezone(value: string) {
   }
 }
 
-export function organizerDraftInputError(
-  input: CreateOrganizerDraftInput,
-): string | null {
-  if (!input.organizationName.trim()) {
-    return "Enter an organization name.";
-  }
+function organizerEventInputError(input: OrganizerEventInput): string | null {
   if (!input.eventName.trim()) {
     return "Enter an Event name.";
   }
@@ -89,6 +108,24 @@ export function organizerDraftInputError(
   return null;
 }
 
+export function organizerDraftInputError(
+  input: CreateOrganizerDraftInput,
+): string | null {
+  if (!input.organizationName.trim()) {
+    return "Enter an organization name.";
+  }
+  return organizerEventInputError(input);
+}
+
+export function addOrganizerEventInputError(
+  input: AddOrganizerEventInput,
+): string | null {
+  if (!input.organizationTenantId) {
+    return "Choose one of your event spaces.";
+  }
+  return organizerEventInputError(input);
+}
+
 function oneDraft(data: unknown): OrganizerDraft {
   const row = Array.isArray(data) ? data[0] : data;
   if (!row || typeof row !== "object") {
@@ -108,6 +145,32 @@ export type CreateOrganizerDraftResult =
   | { status: "created"; draft: OrganizerDraft }
   | { status: "identity_confirmation_required" }
   | { status: "identity_review_required" };
+
+function interpretCreateResult(
+  data: unknown,
+  error: { message: string } | null,
+): CreateOrganizerDraftResult {
+  // Hard errors (bad input, idempotency conflict, unauthorized, unknown event
+  // space) are still real errors. The expected uncertain identity outcomes are
+  // returned rows, NOT errors.
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  const outcome =
+    row && typeof row === "object" && "outcome" in row
+      ? (row as { outcome?: unknown }).outcome
+      : undefined;
+
+  if (outcome === "identity_confirmation_required") {
+    return { status: "identity_confirmation_required" };
+  }
+  if (outcome === "identity_review_required") {
+    return { status: "identity_review_required" };
+  }
+  return { status: "created", draft: oneDraft(data) };
+}
 
 export async function createMyPrivateEventDraft(
   client: OrganizerDraftRpcClient,
@@ -133,25 +196,51 @@ export async function createMyPrivateEventDraft(
     p_idempotency_key: input.idempotencyKey,
   });
 
-  // Hard errors (bad input, idempotency conflict, unauthorized) are still real
-  // errors. The expected uncertain identity outcomes are NOT errors.
+  return interpretCreateResult(data, error);
+}
+
+/**
+ * P-2C: add another private draft event to an event space the caller already
+ * organizes. Same governed command family, same discriminated identity
+ * outcomes -- it creates no new tenant, organizer appointment, or authority.
+ * An event space the caller does not personally organize (or one that is
+ * ordinary, inactive, or someone else's) comes back as a plain
+ * "Organization not found." error, never an enumeration.
+ */
+export async function createEventInMyOrganization(
+  client: OrganizerDraftRpcClient,
+  input: AddOrganizerEventInput,
+): Promise<CreateOrganizerDraftResult> {
+  const inputError = addOrganizerEventInputError(input);
+  if (inputError) {
+    throw new Error(inputError);
+  }
+
+  const { data, error } = await client.rpc("create_self_service_organizer_event", {
+    p_organization_tenant_id: input.organizationTenantId,
+    p_event_name: input.eventName.trim(),
+    p_start_date: input.startDate || null,
+    p_end_date: input.endDate,
+    p_timezone: input.timezone,
+    p_location_mode: input.locationMode,
+    p_location: input.location.trim() || null,
+    p_starter_template: input.starterTemplate,
+    p_idempotency_key: input.idempotencyKey,
+  });
+
+  return interpretCreateResult(data, error);
+}
+
+export async function listMyPrivateOrganizations(
+  client: OrganizerDraftRpcClient,
+): Promise<OrganizerPrivateOrganization[]> {
+  const { data, error } = await client.rpc(
+    "list_my_self_service_private_organizations",
+  );
   if (error) {
     throw new Error(error.message);
   }
-
-  const row = Array.isArray(data) ? data[0] : data;
-  const outcome =
-    row && typeof row === "object" && "outcome" in row
-      ? (row as { outcome?: unknown }).outcome
-      : undefined;
-
-  if (outcome === "identity_confirmation_required") {
-    return { status: "identity_confirmation_required" };
-  }
-  if (outcome === "identity_review_required") {
-    return { status: "identity_review_required" };
-  }
-  return { status: "created", draft: oneDraft(data) };
+  return Array.isArray(data) ? (data as OrganizerPrivateOrganization[]) : [];
 }
 
 export async function listMyPrivateEventDrafts(

@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  addOrganizerEventInputError,
+  createEventInMyOrganization,
   createMyPrivateEventDraft,
   listMyPrivateEventDrafts,
+  listMyPrivateOrganizations,
   organizerDraftInputError,
   type OrganizerDraftRpcClient,
 } from "./organizerDrafts";
@@ -149,4 +152,151 @@ test("the list adapter never falls back to a table read", async () => {
     },
   });
   assert.deepEqual(drafts, []);
+});
+
+test("P-2C: listing event spaces uses only the caller-scoped organizations RPC", async () => {
+  const orgs = await listMyPrivateOrganizations({
+    async rpc(name) {
+      assert.equal(name, "list_my_self_service_private_organizations");
+      return {
+        data: [{
+          tenant_id: "space-1",
+          organizer_appointment_id: "appt-1",
+          organizer_person_id: "person-1",
+          organization_name: "Sofia Personal Org",
+          draft_event_count: 2,
+          created_at: "2026-09-05T00:00:00Z",
+        }],
+        error: null,
+      };
+    },
+  });
+  assert.equal(orgs[0]?.draft_event_count, 2);
+  assert.equal(orgs[0]?.organizer_person_id, "person-1");
+});
+
+test("P-2C: adding an event to a space calls the add-event RPC with the tenant + narrow inputs", async () => {
+  const calls: Array<{ name: string; args?: Record<string, unknown> }> = [];
+  const result = await createEventInMyOrganization(
+    {
+      async rpc(name, args) {
+        calls.push({ name, args });
+        return {
+          data: [{
+            outcome: "created",
+            tenant_id: "space-1",
+            organizer_appointment_id: "appt-1",
+            organizer_person_id: "person-1",
+            event_id: "event-2",
+            organization_name: "Sofia Personal Org",
+            event_name: "Autumn Dinner",
+            start_date: null,
+            end_date: "2026-10-10",
+            timezone: "America/Los_Angeles",
+            location_mode: "location",
+            location: "Community Hall",
+            starter_template: "casual",
+            status: "Draft",
+            is_active: false,
+            visible_to_members: false,
+            created_at: "2026-09-05T00:00:00Z",
+          }],
+          error: null,
+        };
+      },
+    },
+    {
+      organizationTenantId: "space-1",
+      eventName: "Autumn Dinner",
+      startDate: "",
+      endDate: "2026-10-10",
+      timezone: "America/Los_Angeles",
+      locationMode: "location",
+      location: "Community Hall",
+      starterTemplate: "casual",
+      idempotencyKey: "c54d7fa0-d55f-43bc-a66a-419385789b87",
+    },
+  );
+  assert.equal(result.status, "created");
+  assert.equal(result.status === "created" ? result.draft.event_id : null, "event-2");
+  assert.equal(calls[0]?.name, "create_self_service_organizer_event");
+  assert.deepEqual(calls[0]?.args, {
+    p_organization_tenant_id: "space-1",
+    p_event_name: "Autumn Dinner",
+    p_start_date: null,
+    p_end_date: "2026-10-10",
+    p_timezone: "America/Los_Angeles",
+    p_location_mode: "location",
+    p_location: "Community Hall",
+    p_starter_template: "casual",
+    p_idempotency_key: "c54d7fa0-d55f-43bc-a66a-419385789b87",
+  });
+});
+
+test("P-2C: add-event needs a chosen event space, and surfaces the non-enumerating rejection as an error", async () => {
+  assert.match(
+    addOrganizerEventInputError({
+      organizationTenantId: "",
+      eventName: "X",
+      startDate: "",
+      endDate: "2026-10-10",
+      timezone: "America/Los_Angeles",
+      locationMode: "no_location",
+      location: "",
+      starterTemplate: "casual",
+      idempotencyKey: "c54d7fa0-d55f-43bc-a66a-419385789b87",
+    }) ?? "",
+    /event space/i,
+  );
+
+  await assert.rejects(
+    () =>
+      createEventInMyOrganization(
+        {
+          async rpc() {
+            return { data: null, error: { message: "Organization not found." } };
+          },
+        },
+        {
+          organizationTenantId: "not-mine",
+          eventName: "X",
+          startDate: "",
+          endDate: "2026-10-10",
+          timezone: "America/Los_Angeles",
+          locationMode: "no_location",
+          location: "",
+          starterTemplate: "casual",
+          idempotencyKey: "c54d7fa0-d55f-43bc-a66a-419385789b87",
+        },
+      ),
+    /Organization not found\./,
+  );
+});
+
+test("P-2C: an uncertain identity outcome from add-event is a returned status, not an error or draft", async () => {
+  for (const outcome of ["identity_confirmation_required", "identity_review_required"] as const) {
+    const result = await createEventInMyOrganization(
+      {
+        async rpc() {
+          return {
+            data: [{ outcome, tenant_id: null, event_id: null, organizer_person_id: null }],
+            error: null,
+          };
+        },
+      },
+      {
+        organizationTenantId: "space-1",
+        eventName: "X",
+        startDate: "",
+        endDate: "2026-10-10",
+        timezone: "America/Los_Angeles",
+        locationMode: "no_location",
+        location: "",
+        starterTemplate: "casual",
+        idempotencyKey: "c54d7fa0-d55f-43bc-a66a-419385789b87",
+      },
+    );
+    assert.equal(result.status, outcome);
+    assert.deepEqual(Object.keys(result), ["status"]);
+  }
 });

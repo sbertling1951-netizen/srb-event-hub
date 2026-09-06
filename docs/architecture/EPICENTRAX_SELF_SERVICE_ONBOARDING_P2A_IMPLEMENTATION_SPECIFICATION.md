@@ -156,3 +156,69 @@ appointment, and hidden Draft Event; retries are idempotent; failures leave no
 partial records; an Organizer can read only their own draft; no regular
 browser role gains raw writes; and existing FCOC/Platform/Tenant/Event
 administrative authority remains unchanged.
+
+## 7. P-2C: personal event-space reuse
+
+**Status:** Accepted and implemented (migration `20260925000000`).
+
+"Event space" is the user-facing name for a self-service private tenant a
+canonical Person personally organizes. P-2A/P-2B created a new event space on
+every organizer draft; P-2C lets a returning Person reuse one.
+
+- **Event-space reuse.** `create_self_service_organizer_event(...)` adds a new
+  private Draft event to an event space the caller *already* organizes. It
+  creates only one `events` row (Draft, inactive, hidden), one
+  `self_service_private_event_drafts` row against the **existing** organizer
+  appointment, and one `self_service_onboarding_command_audit` row with the
+  new action `private_event_added`. It creates no tenant, no organizer
+  appointment, no `self_service_tenant_lifecycle_audit` row, and no
+  admin/authority row. The one-draft-per-space encoding (the
+  `self_service_private_event_drafts_tenant_appointment_unique` constraint) is
+  dropped; the `event_id` primary key still bounds one draft marker per event.
+- **Explicit separate event-space creation.** "Create a new event space"
+  reuses the existing, unchanged `create_self_service_organizer_draft`
+  command. A new tenant is never created implicitly for a returning organizer
+  — only on that explicit choice.
+- **Person-first organizer reads, identity-conditional fallback.**
+  `list_my_self_service_private_drafts`, `get_my_self_service_private_draft`,
+  and the new `list_my_self_service_private_organizations` classify the caller
+  with `resolve_auth_person_link` and branch on its status:
+  `resolved` → match **only** `oa.person_id = <resolved Person>` (the caller's
+  `auth_user_id` is never an alternative path); `no_link` → match **only**
+  `oa.auth_user_id = auth.uid()` (a narrow backward-compatibility fallback for
+  an appointment whose Person link was later removed, still self-only);
+  `invalid_or_ambiguous` (or anything else) → return nothing. A returning
+  Person on a second *linked* account resolves to `resolved` and sees the same
+  event spaces and drafts through her `person_id`. At most one **active**
+  organizer appointment per `(person_id, tenant_id)` is enforced.
+- **No reuse of other-tenant membership/admin contexts.** By the time the
+  add-event command authorizes, identity resolution has succeeded
+  (`resolved_existing` or `created_new`), so authorization is **Person-scoped
+  only**: an active `self_service_organizer_appointments` row whose
+  `person_id` *is* the resolved canonical Person, in an active
+  `is_self_service_private_draft = true` tenant. A resolved caller can never
+  reach another Person's event space through an appointment row that merely
+  carries their `auth_user_id`. Every other tenant — ordinary, inactive,
+  someone else's, or one where the caller is merely a member / attendee /
+  Event Admin / Tenant Admin — returns the same non-enumerating
+  `Organization not found.` A pre-existing Event Admin or Tenant Admin role
+  elsewhere neither enables nor blocks personal event-space reuse.
+- **No admin authority created.** No P-2C path creates a Platform / Tenant /
+  Event administrator, `admin_users`, `admin_event_access`,
+  `admin_tenant_access`, or `person_tenant_administrator_appointments` row. No
+  global authority predicate, tenant/event RLS policy, the
+  `_is_self_service_private_draft_tenant` helper, or any of the seven
+  Platform / Tenant Administration exclusions is changed; a private event
+  space with more than one Draft event stays excluded from every one of them.
+- **Identity outcomes unchanged.** The add-event command uses the identical
+  identity-resolution precedence, the identical
+  `identity_confirmation_required` / `identity_review_required` safe outcomes
+  (returned as rows, audit-preserving, never raised), the identical shared
+  idempotency + safe-outcome-ledger contract, and the identical
+  `/member/activate` routing as the P-2A command.
+- **P-2C exclusions.** No event-space rename or edit; no launch, payment, or
+  Launch Pass; no invitations, co-administrators, or guest access; no public
+  publishing or discovery; no hostname/domain; no onboarding-template
+  expansion; no broad "My EpicentraX" member-history redesign; no
+  `/organize/org/[tenantId]` route in this slice; no FCOC-specific or
+  `app.eventsyncapp.com` downstream architecture.
