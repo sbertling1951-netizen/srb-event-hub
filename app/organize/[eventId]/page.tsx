@@ -7,6 +7,7 @@ import {
   OrganizerEventFields,
   type OrganizerEventFormValues,
   organizerEventValuesFromDraft,
+  starterTemplateLabel,
 } from "@/components/organize/OrganizerEventFields";
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
@@ -186,7 +187,7 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
               <div><dt>Event name</dt><dd>{draft.event_name}</dd></div>
               <div><dt>Schedule</dt><dd>{formatSchedule(draft)}</dd></div>
               <div><dt>Location</dt><dd>{draft.location_mode === "online" ? "Online" : draft.location || "No location yet"}</dd></div>
-              <div><dt>Starter template</dt><dd>{draft.starter_template}</dd></div>
+              <div><dt>Starter template</dt><dd>{starterTemplateLabel(draft.starter_template)}</dd></div>
             </dl>
             <div>
               <AppButton onClick={startEditing}>Edit event details</AppButton>

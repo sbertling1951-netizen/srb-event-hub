@@ -25,6 +25,15 @@ export type OrganizerEventFormValues = {
   starterTemplate: string;
 };
 
+/**
+ * The one canonical starter-template catalog. The `key` values are the stored
+ * database / RPC values (validated verbatim by
+ * create_self_service_organizer_draft and
+ * save_my_self_service_private_draft_details); `label` is the ONLY string an
+ * organizer ever sees. Every organizer surface -- the create selector, the
+ * edit selector, and the saved Event details card -- reads its labels from
+ * here, never from a raw stored key.
+ */
 export const STARTER_TEMPLATES = [
   { key: "casual", label: "Casual gathering", detail: "A simple starting point for a get-together." },
   { key: "birthday_family", label: "Birthday or family", detail: "A welcoming plan for family and friends." },
@@ -33,6 +42,21 @@ export const STARTER_TEMPLATES = [
   { key: "dinner", label: "Dinner", detail: "A focused starting point for a meal together." },
   { key: "sports_activity", label: "Sports or activity", detail: "A starting point for an activity-centered event." },
 ] as const;
+
+export const STARTER_TEMPLATE_KEYS = STARTER_TEMPLATES.map((template) => template.key);
+
+/** Neutral, organizer-friendly fallback for any stored key not in the catalog. */
+export const UNKNOWN_STARTER_TEMPLATE_LABEL = "Event starting point";
+
+/**
+ * The organizer-facing label for a stored starter-template key. An unrecognized
+ * key (older data, a future key this build predates) resolves to a neutral
+ * friendly label -- the raw stored value is never surfaced.
+ */
+export function starterTemplateLabel(key: string | null | undefined): string {
+  const match = STARTER_TEMPLATES.find((template) => template.key === key);
+  return match ? match.label : UNKNOWN_STARTER_TEMPLATE_LABEL;
+}
 
 export function browserTimezone(): string {
   try {
