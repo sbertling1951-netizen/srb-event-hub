@@ -3,15 +3,18 @@ import type { ReactNode } from "react";
 /**
  * Canonical EpicentraX Shell Contract (EPICENTRAX UI STAGE 2).
  *
- * One typed contract consumed identically by Member, Admin, and Vendor.
- * The shell owns shared presentation concerns only -- it never resolves
- * business authority, workspace, or identity itself. Every value here is
- * assembled by a role adapter (components/shell/adapters/*) from
- * already-resolved workspace context (useMemberWorkspace, useAdminWorkspace
- * + useAdmin, useVendorWorkspace) and handed to AppShell as data.
+ * One typed contract consumed identically by Member, Admin, Vendor, and
+ * the platform-neutral Organizer shell. The shell owns shared presentation
+ * concerns only -- it never resolves business authority, workspace, or
+ * identity itself. Every value here is assembled by a role adapter
+ * (components/shell/adapters/*) from already-resolved workspace context
+ * (useMemberWorkspace, useAdminWorkspace + useAdmin, useVendorWorkspace) and
+ * handed to AppShell as data. The Organizer adapter is the deliberate
+ * minimal case: it resolves nothing at all, supplying only a static neutral
+ * platform brand and two fixed nav links.
  */
 
-export type ShellRole = "member" | "admin" | "vendor";
+export type ShellRole = "member" | "admin" | "vendor" | "organizer";
 
 export type ShellNavItem = {
   id: string;

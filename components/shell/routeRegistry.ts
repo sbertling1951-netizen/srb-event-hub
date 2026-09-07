@@ -17,6 +17,7 @@ export type ShellPresentationMode =
   | "canonical-member"
   | "canonical-admin"
   | "canonical-vendor"
+  | "canonical-organizer"
   | "exception";
 
 /**
@@ -76,22 +77,27 @@ const EXACT_EXCEPTION_ROUTES: readonly string[] = [
  * correction. `/coach-map*` therefore remains "legacy" (unchanged) until
  * a separate, explicitly authorized task gives it its own exit control.
  * See the Stage 2B report for this exact reasoning.
- *
- * `/organize` (the self-service organizer route family: `/organize`,
- * `/organize/account`, `/organize/[eventId]`) is a prefix exception because
- * it is a platform-neutral, pre-tenant flow with no resolved Workspace --
- * it must never inherit the legacy Admin sidebar or any tenant (e.g. Saint
- * George) context it would otherwise fall through to. The organizer pages
- * render their own standalone chrome; this registry now enforces "no
- * application shell" structurally for the whole family.
  */
 const PREFIX_EXCEPTION_ROUTES: readonly string[] = [
   "/admin/print",
   "/admin/reports/coach-plates/print",
   "/admin/reports/name-tags/print",
-  "/organize",
   "/slideshow",
 ];
+
+/**
+ * The self-service organizer route family (`/organize`,
+ * `/organize/account`, `/organize/[eventId]`) renders through the
+ * canonical `AppShell` via `OrganizerShellAdapter` (wired at
+ * `app/organize/layout.tsx`), NOT the legacy Admin chrome it would
+ * otherwise fall through to and NOT the shell-free "exception" presentation
+ * it briefly used. The Organizer shell is platform-neutral: a static
+ * "Event Hub" brand, no resolved tenant (Saint George / FCOC) identity, no
+ * workspace/admin/member/vendor context, and exactly two nav links. Like
+ * the other `canonical-*` modes, root `ShellTransition` renders this route's
+ * children directly (no legacy wrapper); the layout supplies the one shell.
+ */
+const CANONICAL_ORGANIZER_PREFIXES: readonly string[] = ["/organize"];
 
 /** Vendor workspace routes already delegate to VendorShellAdapter -> AppShell. */
 const CANONICAL_VENDOR_PREFIXES: readonly string[] = ["/vendor/workspace"];
@@ -204,6 +210,10 @@ export function resolveShellMode(pathname: string | null | undefined): ShellPres
 
   if (matchesPrefix(pathname, CANONICAL_VENDOR_PREFIXES)) {
     return "canonical-vendor";
+  }
+
+  if (matchesPrefix(pathname, CANONICAL_ORGANIZER_PREFIXES)) {
+    return "canonical-organizer";
   }
 
   if (

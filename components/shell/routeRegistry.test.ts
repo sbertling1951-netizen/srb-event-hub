@@ -35,13 +35,13 @@ test("Member authentication exceptions remain shell exceptions", () => {
   assert.equal(resolveShellMode("/member/account/reset-password"), "exception");
 });
 
-test("the self-service organizer route family receives no legacy application chrome", () => {
+test("the self-service organizer route family uses the canonical organizer shell", () => {
   for (const pathname of [
     "/organize",
     "/organize/account",
     "/organize/some-event-id",
   ]) {
-    assert.equal(resolveShellMode(pathname), "exception");
+    assert.equal(resolveShellMode(pathname), "canonical-organizer");
   }
 
   // prefix match must not sweep in unrelated adjacent paths

@@ -18,3 +18,20 @@ export function buildShellBrand(tenant: TenantPresentation | null): ShellBrand {
     logoAlt: tenant?.displayName || "Event logo",
   };
 }
+
+/**
+ * The neutral platform brand -- deliberately NOT tenant-resolved. Used by
+ * the Organizer shell, a pre-tenant, platform-neutral flow that must never
+ * present Saint George / FCOC (or any) resolved tenant identity, logo, or
+ * workspace name. This is the same default-label pair root layout already
+ * falls back to (`DEFAULT_TENANT_LABELS.app_title` = "Event Hub"), minus
+ * the tenant lookup -- it takes no arguments and reads no context.
+ */
+export function buildPlatformShellBrand(): ShellBrand {
+  return {
+    title: DEFAULT_TENANT_LABELS.app_title,
+    tagline: DEFAULT_TENANT_LABELS.app_tagline,
+    logoUrl: null,
+    logoAlt: DEFAULT_TENANT_LABELS.app_title,
+  };
+}
