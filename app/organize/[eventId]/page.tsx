@@ -196,6 +196,15 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
         )}
       </PageSection>
 
+      <PageSection title="Agenda" variant="card">
+        <p style={{ marginTop: 0, color: "var(--color-text-muted, #475569)" }}>
+          Plan the schedule for this private draft. It stays private to you — nothing here is published.
+        </p>
+        <Link href={`/organize/${encodeURIComponent(draft.event_id)}/agenda`} className="app-button">
+          Open the agenda
+        </Link>
+      </PageSection>
+
       <PageSection title="Launch readiness" variant="section">
         <p>This private workspace is the safe beginning. Later stages will add Event planning, guest access choices, invitations, and launch checkout. None of those actions are available from this draft yet.</p>
       </PageSection>
