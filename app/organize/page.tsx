@@ -9,15 +9,14 @@ import { Page } from "@/components/ui/Page";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import {
-  addOrganizerEventInputError,
-  createEventInMyOrganization,
   createMyPrivateEventDraft,
   type CreateOrganizerDraftResult,
+  deleteMyUnfinishedEvent,
+  getMyOrganizerCapacity,
   listMyPrivateEventDrafts,
-  listMyPrivateOrganizations,
+  type OrganizerCapacity,
   type OrganizerDraft,
   organizerDraftInputError,
-  type OrganizerPrivateOrganization,
 } from "@/lib/organizerDrafts";
 import { supabase } from "@/lib/supabase";
 
@@ -70,7 +69,7 @@ function emptyEventForm(): EventForm {
 
 function formatSchedule(draft: OrganizerDraft) {
   if (!draft.start_date || draft.start_date === draft.end_date) {
-    return `${draft.start_date} · ${draft.timezone}`;
+    return `${draft.end_date} · ${draft.timezone}`;
   }
   return `${draft.start_date} to ${draft.end_date} · ${draft.timezone}`;
 }
@@ -78,11 +77,9 @@ function formatSchedule(draft: OrganizerDraft) {
 function EventFields({
   form,
   onChange,
-  idPrefix,
 }: {
   form: EventForm;
   onChange: (next: EventForm) => void;
-  idPrefix: string;
 }) {
   function update<Key extends keyof EventForm>(key: Key, value: EventForm[Key]) {
     onChange({ ...form, [key]: value });
@@ -127,7 +124,7 @@ function EventFields({
       <label>
         Starter template
         <select className="app-form-input" value={form.starterTemplate} onChange={(event) => update("starterTemplate", event.target.value)}>
-          {STARTER_TEMPLATES.map((template) => <option key={`${idPrefix}-${template.key}`} value={template.key}>{template.label}</option>)}
+          {STARTER_TEMPLATES.map((template) => <option key={template.key} value={template.key}>{template.label}</option>)}
         </select>
       </label>
       <p style={{ margin: 0, color: "var(--color-text-muted, #475569)" }}>
@@ -137,49 +134,49 @@ function EventFields({
   );
 }
 
+const SUBSCRIPTION_NOTE =
+  "For now you can plan one event at a time. A future subscription will let you plan more than one at once.";
+
 export default function OrganizePage() {
   const [accessState, setAccessState] = useState<AccessState>("checking");
   const [email, setEmail] = useState<string | null>(null);
 
-  const [organizations, setOrganizations] = useState<OrganizerPrivateOrganization[]>([]);
   const [drafts, setDrafts] = useState<OrganizerDraft[]>([]);
-  const [loadingSpaces, setLoadingSpaces] = useState(false);
+  const [capacity, setCapacity] = useState<OrganizerCapacity | null>(null);
+  const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // The two creation actions route uncertain identity outcomes to the same
-  // existing /member/activate flow, so one page-level notice is enough.
+  // The create action routes uncertain identity outcomes to the existing
+  // /member/activate flow, so one page-level notice is enough.
   const [identityNotice, setIdentityNotice] = useState<"confirm" | "review" | null>(null);
 
-  // "Create a new event space" -- reuses the existing governed command.
-  const [newSpaceForm, setNewSpaceForm] = useState<{ organizationName: string } & EventForm>({
-    organizationName: "",
-    ...emptyEventForm(),
-  });
-  const [newSpaceKey, setNewSpaceKey] = useState("");
-  const [newSpaceError, setNewSpaceError] = useState<string | null>(null);
-  const [creatingSpace, setCreatingSpace] = useState(false);
+  const [form, setForm] = useState<EventForm>(emptyEventForm());
+  const [createKey, setCreateKey] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
-  // "Add an event" to one existing event space.
-  const [addOpenFor, setAddOpenFor] = useState<string | null>(null);
-  const [addForm, setAddForm] = useState<EventForm>(emptyEventForm());
-  const [addKey, setAddKey] = useState("");
-  const [addError, setAddError] = useState<string | null>(null);
-  const [addingEvent, setAddingEvent] = useState(false);
+  // "Start over" -- permanently delete the current unfinished event, then show
+  // a clean new-event form.
+  const [confirmingStartOver, setConfirmingStartOver] = useState(false);
+  const [deleteKey, setDeleteKey] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [startedOver, setStartedOver] = useState(false);
 
-  const loadSpaces = useCallback(async () => {
-    setLoadingSpaces(true);
+  const load = useCallback(async () => {
+    setLoading(true);
     setLoadError(null);
     try {
-      const [orgs, myDrafts] = await Promise.all([
-        listMyPrivateOrganizations(supabase),
+      const [myDrafts, myCapacity] = await Promise.all([
         listMyPrivateEventDrafts(supabase),
+        getMyOrganizerCapacity(supabase),
       ]);
-      setOrganizations(orgs);
       setDrafts(myDrafts);
+      setCapacity(myCapacity);
     } catch {
-      setLoadError("We could not load your event spaces. Please try again.");
+      setLoadError("We could not load your events. Please try again.");
     } finally {
-      setLoadingSpaces(false);
+      setLoading(false);
     }
   }, []);
 
@@ -200,30 +197,19 @@ export default function OrganizePage() {
         setAccessState("unverified");
         return;
       }
-      setNewSpaceKey(newIdempotencyKey());
+      setCreateKey(newIdempotencyKey());
       setAccessState("ready");
-      void loadSpaces();
+      void load();
     }
     void establishAccess();
     return () => {
       cancelled = true;
     };
-  }, [loadSpaces]);
+  }, [load]);
 
-  const newSpaceFormError = useMemo(
-    () => organizerDraftInputError({ ...newSpaceForm, idempotencyKey: newSpaceKey }),
-    [newSpaceForm, newSpaceKey],
-  );
-  const addFormError = useMemo(
-    () =>
-      addOpenFor
-        ? addOrganizerEventInputError({
-            ...addForm,
-            organizationTenantId: addOpenFor,
-            idempotencyKey: addKey,
-          })
-        : "Choose one of your event spaces.",
-    [addForm, addOpenFor, addKey],
+  const formError = useMemo(
+    () => organizerDraftInputError({ ...form, organizationName: form.eventName, idempotencyKey: createKey }),
+    [form, createKey],
   );
 
   function applyIdentityOutcome(result: CreateOrganizerDraftResult): boolean {
@@ -237,23 +223,24 @@ export default function OrganizePage() {
     return false;
   }
 
-  async function createSpace(event: React.FormEvent<HTMLFormElement>) {
+  async function createEvent(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (newSpaceFormError || creatingSpace) {
-      setNewSpaceError(newSpaceFormError);
+    if (formError || creating) {
+      setCreateError(formError);
       return;
     }
-    setCreatingSpace(true);
-    setNewSpaceError(null);
+    setCreating(true);
+    setCreateError(null);
     setIdentityNotice(null);
     try {
+      // The organizer only ever names an "event". The internal container reuses
+      // that same name -- "event space" is never shown to the organizer.
       const result = await createMyPrivateEventDraft(supabase, {
-        ...newSpaceForm,
-        idempotencyKey: newSpaceKey,
+        ...form,
+        organizationName: form.eventName,
+        idempotencyKey: createKey,
       });
-      // The server freezes an uncertain outcome to the current key, so a
-      // deliberate post-verification retry must use a fresh key.
-      setNewSpaceKey(newIdempotencyKey());
+      setCreateKey(newIdempotencyKey());
       if (applyIdentityOutcome(result)) {
         return;
       }
@@ -261,50 +248,45 @@ export default function OrganizePage() {
         window.location.assign(`/organize/${encodeURIComponent(result.draft.event_id)}`);
       }
     } catch (error) {
-      setNewSpaceError(
-        error instanceof Error ? error.message : "We could not create your event space. Please try again.",
+      setCreateError(
+        error instanceof Error ? error.message : "We could not create your event. Please try again.",
       );
     } finally {
-      setCreatingSpace(false);
+      setCreating(false);
     }
   }
 
-  function openAddEvent(tenantId: string) {
-    setAddOpenFor(tenantId);
-    setAddForm(emptyEventForm());
-    setAddKey(newIdempotencyKey());
-    setAddError(null);
-    setIdentityNotice(null);
+  function openStartOver() {
+    setConfirmingStartOver(true);
+    setDeleteKey(newIdempotencyKey());
+    setDeleteError(null);
   }
 
-  async function addEvent(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!addOpenFor || addFormError || addingEvent) {
-      setAddError(addFormError);
+  async function confirmStartOver() {
+    const target = drafts[0];
+    if (!target || deleting) {
       return;
     }
-    setAddingEvent(true);
-    setAddError(null);
-    setIdentityNotice(null);
+    setDeleting(true);
+    setDeleteError(null);
     try {
-      const result = await createEventInMyOrganization(supabase, {
-        ...addForm,
-        organizationTenantId: addOpenFor,
-        idempotencyKey: addKey,
+      await deleteMyUnfinishedEvent(supabase, {
+        eventId: target.event_id,
+        idempotencyKey: deleteKey,
       });
-      setAddKey(newIdempotencyKey());
-      if (applyIdentityOutcome(result)) {
-        return;
-      }
-      if (result.status === "created") {
-        window.location.assign(`/organize/${encodeURIComponent(result.draft.event_id)}`);
-      }
+      setDrafts([]);
+      setCapacity(null);
+      setConfirmingStartOver(false);
+      setForm(emptyEventForm());
+      setCreateKey(newIdempotencyKey());
+      setStartedOver(true);
+      void load();
     } catch (error) {
-      setAddError(
-        error instanceof Error ? error.message : "We could not add that event. Please try again.",
+      setDeleteError(
+        error instanceof Error ? error.message : "We could not delete that event. Please try again.",
       );
     } finally {
-      setAddingEvent(false);
+      setDeleting(false);
     }
   }
 
@@ -334,92 +316,119 @@ export default function OrganizePage() {
     );
   }
 
-  const secureDraftUnavailable = accessState === "ready" && !newSpaceKey;
+  const secureRequestUnavailable = accessState === "ready" && !createKey;
+  const atCapacity = capacity ? !capacity.can_start_another_event : drafts.length > 0;
+  const grandfatheredExtra = drafts.length > 1;
+  const showCreateForm = startedOver || (!loading && drafts.length === 0);
+
+  const identityNoticeBlock =
+    identityNotice === "confirm" ? (
+      <Alert tone="warning">
+        We need to confirm your existing EpicentraX identity before creating this event.
+        Nothing has been created yet.{" "}
+        <Link href="/member/activate">Confirm your identity</Link>, then return here to finish.
+      </Alert>
+    ) : identityNotice === "review" ? (
+      <Alert tone="warning">
+        We could not confirm your EpicentraX identity automatically, so nothing has been created.
+        Please contact EpicentraX identity support to continue.
+      </Alert>
+    ) : null;
 
   return (
-    <Page style={{ maxWidth: 940, margin: "0 auto", display: "grid", gap: 16 }}>
-      <PageHeader title="Your event spaces" headingLevel="h1" description="Resume a private draft, add another event to one of your spaces, or start a new space." />
-      <Alert tone="info">Every event you create here starts as a private draft — not live. It will not create guest access, invitations, public registration, payment, or a launch.</Alert>
-      {secureDraftUnavailable ? (
+    <Page style={{ maxWidth: 820, margin: "0 auto", display: "grid", gap: 16 }}>
+      <PageHeader
+        title="Your events"
+        headingLevel="h1"
+        description="Every event you start here is a private draft — not live. It will not create guest access, invitations, public registration, payment, or a launch."
+      />
+
+      {secureRequestUnavailable ? (
         <Alert tone="danger">
-          Your browser could not start a secure draft. Use an up-to-date browser over a secure (https) connection, then try again.
-        </Alert>
-      ) : null}
-      {identityNotice === "confirm" ? (
-        <Alert tone="warning">
-          We need to confirm your existing EpicentraX identity before creating this event.
-          Nothing has been created yet.{" "}
-          <Link href="/member/activate">Confirm your identity</Link>, then return here to finish.
-        </Alert>
-      ) : null}
-      {identityNotice === "review" ? (
-        <Alert tone="warning">
-          We could not confirm your EpicentraX identity automatically, so nothing has been created.
-          Please contact EpicentraX identity support to continue.
+          Your browser could not start a secure request. Use an up-to-date browser over a secure (https) connection, then try again.
         </Alert>
       ) : null}
 
-      <PageSection title="Your event spaces" variant="section">
-        {loadingSpaces ? <Alert tone="info">Loading your event spaces…</Alert> : null}
-        {loadError ? <Alert tone="danger" action={<AppButton onClick={() => void loadSpaces()}>Try again</AppButton>}>{loadError}</Alert> : null}
-        {!loadingSpaces && !loadError && organizations.length === 0 ? (
-          <Alert tone="neutral">You do not have an event space yet. Create your first one below.</Alert>
-        ) : null}
-        {!loadingSpaces && organizations.length > 0 ? (
-          <ul style={{ display: "grid", gap: 12, listStyle: "none", margin: 0, padding: 0 }}>
-            {organizations.map((organization) => (
-              <li key={organization.tenant_id} className="card" style={{ display: "grid", gap: 10 }}>
-                <div>
-                  <strong>{organization.organization_name}</strong><br />
-                  <span>{organization.draft_event_count} draft {organization.draft_event_count === 1 ? "event" : "events"}</span>
-                </div>
-                {addOpenFor === organization.tenant_id ? (
-                  <form onSubmit={addEvent} style={{ display: "grid", gap: 14 }}>
-                    <EventFields form={addForm} onChange={setAddForm} idPrefix={`add-${organization.tenant_id}`} />
-                    {addError ? <Alert tone="danger">{addError}</Alert> : null}
-                    <div style={{ display: "flex", gap: 10 }}>
-                      <AppButton type="submit" variant="primary" loading={addingEvent} disabled={secureDraftUnavailable || !addKey}>Add event to this space</AppButton>
-                      <AppButton type="button" onClick={() => setAddOpenFor(null)}>Cancel</AppButton>
-                    </div>
-                  </form>
-                ) : (
-                  <div>
-                    <AppButton onClick={() => openAddEvent(organization.tenant_id)}>Add an event</AppButton>
-                  </div>
-                )}
+      {identityNoticeBlock}
+
+      {loading ? <Alert tone="info">Loading your events…</Alert> : null}
+      {loadError ? (
+        <Alert tone="danger" action={<AppButton onClick={() => void load()}>Try again</AppButton>}>{loadError}</Alert>
+      ) : null}
+
+      {!loading && !startedOver && drafts.length > 0 ? (
+        <PageSection title="Your events" variant="section">
+          <ul style={{ display: "grid", gap: 10, listStyle: "none", margin: 0, padding: 0 }}>
+            {drafts.map((draft) => (
+              <li key={draft.event_id} className="card" style={{ display: "grid", gap: 6 }}>
+                <strong>{draft.event_name}</strong>
+                <span style={{ color: "var(--color-text-muted, #475569)" }}>{formatSchedule(draft)}</span>
+                <Link href={`/organize/${encodeURIComponent(draft.event_id)}`}>Continue planning</Link>
               </li>
             ))}
           </ul>
-        ) : null}
-      </PageSection>
 
-      <PageSection title="Your private drafts" variant="section">
-        {!loadingSpaces && !loadError && drafts.length === 0 ? <Alert tone="neutral">You have not created a private draft yet.</Alert> : null}
-        {!loadingSpaces && drafts.length > 0 ? (
-          <ul style={{ display: "grid", gap: 10, listStyle: "none", margin: 0, padding: 0 }}>
-            {drafts.map((draft) => <li key={draft.event_id} className="card"><strong>{draft.event_name}</strong><br /><span>{draft.organization_name} · {formatSchedule(draft)}</span><br /><Link href={`/organize/${encodeURIComponent(draft.event_id)}`}>Open private draft</Link></li>)}
-          </ul>
-        ) : null}
-      </PageSection>
+          {grandfatheredExtra ? (
+            <div style={{ marginTop: 12 }}>
+              <Alert tone="neutral">
+                {SUBSCRIPTION_NOTE} You can keep planning any of the events above.
+              </Alert>
+            </div>
+          ) : atCapacity ? (
+            <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
+              <p style={{ margin: 0, color: "var(--color-text-muted, #475569)" }}>{SUBSCRIPTION_NOTE}</p>
+              {confirmingStartOver ? (
+                <Alert tone="danger">
+                  <p style={{ marginTop: 0 }}>
+                    <strong>This permanently deletes your current unfinished event.</strong> Its private
+                    draft and workspace are removed for good — this cannot be undone and it cannot be
+                    resumed. Then you can start a new event.
+                  </p>
+                  {deleteError ? <p style={{ color: "#991b1b", fontWeight: 600 }}>{deleteError}</p> : null}
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <AppButton
+                      variant="danger"
+                      loading={deleting}
+                      disabled={secureRequestUnavailable || !deleteKey}
+                      onClick={() => void confirmStartOver()}
+                    >
+                      Permanently delete and start over
+                    </AppButton>
+                    <AppButton onClick={() => setConfirmingStartOver(false)} disabled={deleting}>
+                      Keep my current event
+                    </AppButton>
+                  </div>
+                </Alert>
+              ) : (
+                <div>
+                  <AppButton onClick={openStartOver}>Start over with a new event</AppButton>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </PageSection>
+      ) : null}
 
-      <PageSection title="Create a new event space" variant="card">
-        <p style={{ marginTop: 0, color: "var(--color-text-muted, #475569)" }}>
-          Choose this only when you want a separate space. To add another event to a space you already have, use “Add an event” above.
-        </p>
-        <form onSubmit={createSpace} style={{ display: "grid", gap: 14 }}>
-          <label>
-            Event space name
-            <input className="app-form-input" value={newSpaceForm.organizationName} onChange={(event) => setNewSpaceForm((current) => ({ ...current, organizationName: event.target.value }))} required />
-          </label>
-          <EventFields
-            form={newSpaceForm}
-            onChange={(next) => setNewSpaceForm((current) => ({ ...current, ...next }))}
-            idPrefix="new-space"
-          />
-          {newSpaceError ? <Alert tone="danger">{newSpaceError}</Alert> : null}
-          <div><AppButton type="submit" variant="primary" loading={creatingSpace} disabled={secureDraftUnavailable}>Create a new event space</AppButton></div>
-        </form>
-      </PageSection>
+      {showCreateForm ? (
+        <PageSection
+          title={startedOver ? "Start your new event" : "Create your event"}
+          variant="card"
+        >
+          {startedOver ? (
+            <Alert tone="success">Your previous unfinished event was permanently deleted. Nothing was kept.</Alert>
+          ) : null}
+          <p style={{ marginTop: 0, color: "var(--color-text-muted, #475569)" }}>{SUBSCRIPTION_NOTE}</p>
+          <form onSubmit={createEvent} style={{ display: "grid", gap: 14 }}>
+            <EventFields form={form} onChange={setForm} />
+            {createError ? <Alert tone="danger">{createError}</Alert> : null}
+            <div>
+              <AppButton type="submit" variant="primary" loading={creating} disabled={secureRequestUnavailable}>
+                Create my event
+              </AppButton>
+            </div>
+          </form>
+        </PageSection>
+      ) : null}
     </Page>
   );
 }

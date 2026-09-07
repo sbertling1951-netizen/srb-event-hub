@@ -265,3 +265,92 @@ export async function getMyPrivateEventDraft(
   }
   return Array.isArray(data) && data.length > 0 ? oneDraft(data) : null;
 }
+
+/**
+ * P-2D: the server-owned capacity contract. `active_event_limit` is 1 by
+ * default; a future subscription raises it server-side without any change
+ * here. `can_start_another_event` is the only value the UI should gate on --
+ * never a client-side count.
+ */
+export type OrganizerCapacity = {
+  active_event_limit: number;
+  active_unfinished_event_count: number;
+  can_start_another_event: boolean;
+};
+
+export async function getMyOrganizerCapacity(
+  client: OrganizerDraftRpcClient,
+): Promise<OrganizerCapacity | null> {
+  const { data, error } = await client.rpc(
+    "get_my_self_service_organizer_capacity",
+  );
+  if (error) {
+    throw new Error(error.message);
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== "object") {
+    return null;
+  }
+  const value = row as Partial<OrganizerCapacity>;
+  return {
+    active_event_limit: Number(value.active_event_limit ?? 0),
+    active_unfinished_event_count: Number(value.active_unfinished_event_count ?? 0),
+    can_start_another_event: value.can_start_another_event === true,
+  };
+}
+
+/**
+ * P-2D: permanently delete one unfinished private Draft event through the one
+ * governed command. When it was the last event in its private workspace, the
+ * workspace (internal tenant + organizer appointment) is removed too. The
+ * server keeps only a minimal, non-content deletion-audit fact. A non-owned,
+ * non-existent, non-deletable, or dependency-carrying event comes back as a
+ * plain "Event not found." (or dependency) error, never an enumeration.
+ */
+export type DeleteOrganizerEventResult = {
+  status: "deleted";
+  deletedEventId: string;
+  deletionScope: "event_only" | "event_and_empty_workspace";
+  deletedWorkspace: boolean;
+};
+
+export async function deleteMyUnfinishedEvent(
+  client: OrganizerDraftRpcClient,
+  input: { eventId: string; idempotencyKey: string },
+): Promise<DeleteOrganizerEventResult> {
+  if (!input.eventId) {
+    throw new Error("Choose an unfinished event to delete.");
+  }
+  if (!input.idempotencyKey) {
+    throw new Error(
+      "Your browser could not start a secure request. Use an up-to-date browser over a secure (https) connection, then try again.",
+    );
+  }
+
+  const { data, error } = await client.rpc("delete_self_service_organizer_event", {
+    p_event_id: input.eventId,
+    p_idempotency_key: input.idempotencyKey,
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== "object") {
+    throw new Error("EpicentraX did not confirm the deletion.");
+  }
+  const value = row as {
+    deleted_event_id?: string;
+    deletion_scope?: string;
+  };
+  const scope =
+    value.deletion_scope === "event_and_empty_workspace"
+      ? "event_and_empty_workspace"
+      : "event_only";
+  return {
+    status: "deleted",
+    deletedEventId: value.deleted_event_id ?? input.eventId,
+    deletionScope: scope,
+    deletedWorkspace: scope === "event_and_empty_workspace",
+  };
+}

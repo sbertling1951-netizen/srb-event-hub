@@ -5,6 +5,8 @@ import {
   addOrganizerEventInputError,
   createEventInMyOrganization,
   createMyPrivateEventDraft,
+  deleteMyUnfinishedEvent,
+  getMyOrganizerCapacity,
   listMyPrivateEventDrafts,
   listMyPrivateOrganizations,
   organizerDraftInputError,
@@ -299,4 +301,106 @@ test("P-2C: an uncertain identity outcome from add-event is a returned status, n
     assert.equal(result.status, outcome);
     assert.deepEqual(Object.keys(result), ["status"]);
   }
+});
+
+test("P-2D: getMyOrganizerCapacity maps the server contract and coerces types", async () => {
+  const client: OrganizerDraftRpcClient = {
+    async rpc(name) {
+      assert.equal(name, "get_my_self_service_organizer_capacity");
+      return {
+        data: [{ active_event_limit: 1, active_unfinished_event_count: 1, can_start_another_event: false }],
+        error: null,
+      };
+    },
+  };
+  const capacity = await getMyOrganizerCapacity(client);
+  assert.deepEqual(capacity, {
+    active_event_limit: 1,
+    active_unfinished_event_count: 1,
+    can_start_another_event: false,
+  });
+});
+
+test("P-2D: getMyOrganizerCapacity returns null on an empty (fail-closed) result and rethrows RPC errors", async () => {
+  const empty: OrganizerDraftRpcClient = {
+    async rpc() {
+      return { data: [], error: null };
+    },
+  };
+  assert.equal(await getMyOrganizerCapacity(empty), null);
+
+  const failing: OrganizerDraftRpcClient = {
+    async rpc() {
+      return { data: null, error: { message: "capacity unavailable" } };
+    },
+  };
+  await assert.rejects(() => getMyOrganizerCapacity(failing), /capacity unavailable/);
+});
+
+test("P-2D: deleteMyUnfinishedEvent uses the one governed RPC with the two-argument contract", async () => {
+  const calls: Array<{ name: string; args?: Record<string, unknown> }> = [];
+  const client: OrganizerDraftRpcClient = {
+    async rpc(name, args) {
+      calls.push({ name, args });
+      return {
+        data: [{
+          outcome: "deleted",
+          deleted_event_id: "event-1",
+          deleted_tenant_id: "tenant-1",
+          deletion_scope: "event_and_empty_workspace",
+          removed_command_audit_count: 1,
+          occurred_at: "2026-09-26T00:00:00Z",
+        }],
+        error: null,
+      };
+    },
+  };
+
+  const result = await deleteMyUnfinishedEvent(client, {
+    eventId: "event-1",
+    idempotencyKey: "c54d7fa0-d55f-43bc-a66a-419385789b87",
+  });
+
+  assert.deepEqual(result, {
+    status: "deleted",
+    deletedEventId: "event-1",
+    deletionScope: "event_and_empty_workspace",
+    deletedWorkspace: true,
+  });
+  assert.equal(calls[0]?.name, "delete_self_service_organizer_event");
+  assert.deepEqual(calls[0]?.args, {
+    p_event_id: "event-1",
+    p_idempotency_key: "c54d7fa0-d55f-43bc-a66a-419385789b87",
+  });
+});
+
+test("P-2D: deleteMyUnfinishedEvent reports event_only scope and blocks a missing secure key", async () => {
+  const client: OrganizerDraftRpcClient = {
+    async rpc() {
+      return {
+        data: [{ outcome: "deleted", deleted_event_id: "e2", deleted_tenant_id: null, deletion_scope: "event_only" }],
+        error: null,
+      };
+    },
+  };
+  const result = await deleteMyUnfinishedEvent(client, { eventId: "e2", idempotencyKey: "k" });
+  assert.equal(result.deletionScope, "event_only");
+  assert.equal(result.deletedWorkspace, false);
+
+  await assert.rejects(
+    () => deleteMyUnfinishedEvent(client, { eventId: "e2", idempotencyKey: "" }),
+    /secure/,
+  );
+});
+
+test("P-2D: deleteMyUnfinishedEvent surfaces a non-owned / not-found rejection verbatim", async () => {
+  const client: OrganizerDraftRpcClient = {
+    async rpc() {
+      return { data: null, error: { message: "Event not found." } };
+    },
+  };
+  await assert.rejects(
+    () => deleteMyUnfinishedEvent(client, { eventId: "someone-elses", idempotencyKey: "k" }),
+    /Event not found\./,
+  );
 });

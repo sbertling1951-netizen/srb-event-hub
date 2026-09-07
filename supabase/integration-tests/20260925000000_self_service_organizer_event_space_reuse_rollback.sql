@@ -342,6 +342,16 @@ BEGIN
 END;
 $fixture$;
 
+-- 20260926000000 added a default active-unfinished-event capacity of 1,
+-- enforced inside both creation commands. THIS fixture proves the P-2A/P-2C
+-- creation + identity + isolation WIRING, which predates and is orthogonal to
+-- that ceiling; the capacity rule itself is proven by
+-- 20260926000000_self_service_organizer_event_deletion_and_capacity_rollback.sql.
+-- Lift the ceiling for THIS transaction only (rolled back with everything else).
+CREATE OR REPLACE FUNCTION public.self_service_default_active_event_limit()
+RETURNS integer LANGUAGE sql IMMUTABLE SET search_path TO 'pg_catalog'
+AS $capfn$ SELECT 1000000 $capfn$;
+
 SET LOCAL ROLE authenticated;
 
 DO $fixture$

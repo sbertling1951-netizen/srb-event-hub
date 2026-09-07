@@ -36,16 +36,15 @@ test("account verification email returns through the one fixed organizer-aware a
   assert.match(callback, /value === "organizer"/);
 });
 
-test("the organizer UI requires verified email before creating a private draft", () => {
+test("the organizer UI requires a verified email before creating a private draft", () => {
   assert.match(page, /user\.email_confirmed_at/);
   assert.match(page, /private draft — not live/i);
-  assert.match(page, /Create a new event space/);
 });
 
 test("a browser that cannot mint a secure idempotency key is told plainly and blocked", () => {
-  assert.match(page, /secureDraftUnavailable = accessState === "ready" && !newSpaceKey/);
+  assert.match(page, /secureRequestUnavailable = accessState === "ready" && !createKey/);
   assert.match(page, /up-to-date browser over a secure \(https\) connection/);
-  assert.match(page, /disabled=\{secureDraftUnavailable\}/);
+  assert.match(page, /disabled=\{secureRequestUnavailable\}/);
   assert.match(
     adapter,
     /Your browser could not start a secure draft\. Use an up-to-date browser over a secure \(https\) connection, then try again\./,
@@ -65,28 +64,67 @@ test("the organizer UI handles each identity outcome without leaking prior-recor
   assert.match(page, /confirm your existing EpicentraX identity before creating this event/i);
   assert.doesNotMatch(page, /prior (?:event|registration|tenant|record)|already registered|matched/i);
   assert.match(page, /window\.location\.assign\(\s*`\/organize\/\$\{encodeURIComponent\(result\.draft\.event_id\)\}`/);
-  // both creation actions rotate to a fresh idempotency key so a deliberate
-  // post-verification retry is a NEW request, never a silent re-meaning.
-  assert.match(page, /setNewSpaceKey\(newIdempotencyKey\(\)\);/);
-  assert.match(page, /setAddKey\(newIdempotencyKey\(\)\);/);
+  // a deliberate post-verification retry is a NEW request, never a silent re-meaning
+  assert.match(page, /setCreateKey\(newIdempotencyKey\(\)\);/);
 });
 
-test("P-2C: the home lists the caller's event spaces and adds events to them, with no cross-context data", () => {
-  // user-facing language is "event spaces", never "tenant"
-  assert.match(page, /Your event spaces/);
-  assert.doesNotMatch(page, /\btenant\b/i);
-  // it reads only the caller's own organizer spaces + drafts -- no membership,
-  // attendee, invitation, or admin-assignment reader is imported or called
-  assert.match(page, /listMyPrivateOrganizations\(supabase\)/);
-  assert.match(page, /listMyPrivateEventDrafts\(supabase\)/);
-  assert.doesNotMatch(page, /listMy(?:Memberships|Attendee|AdminAssignments)|adminEventAccess|tenant_members/);
-  // "Add an event" reuses the governed add-event command; "Create a new event
-  // space" reuses the existing new-space command.
-  assert.match(page, /Add an event/);
-  assert.match(page, /createEventInMyOrganization\(supabase/);
+// ---- P-2D: one clean "Your events" view, no "space" language, capacity gating ----
+
+test("P-2D: the organizer never sees 'event space' / tenant / workspace-container language", () => {
+  const visible = page.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.doesNotMatch(visible, /\bevent space\b/i);
+  assert.doesNotMatch(visible, /\btenant\b/i);
+  assert.doesNotMatch(visible, /Create a new event space/);
+  assert.doesNotMatch(visible, /Add an event/);
+});
+
+test("P-2D: a single, non-duplicated event list, each with Continue planning", () => {
+  assert.match(page, /title="Your events"/);
+  // exactly one list of drafts is rendered
+  assert.equal((page.match(/drafts\.map\(/g) ?? []).length, 1);
+  assert.match(page, />Continue planning</);
+  // the old parallel "spaces" + "private drafts" sections and their readers are gone
+  assert.doesNotMatch(page, /listMyPrivateOrganizations|OrganizerPrivateOrganization|createEventInMyOrganization/);
+});
+
+test("P-2D: creation maps the single Event name onto the internal organization-name input", () => {
+  assert.match(page, /organizationName: form\.eventName/);
   assert.match(page, /createMyPrivateEventDraft\(supabase/);
-  // a created event (new space OR added) opens its private draft workspace
-  assert.match(page, /`\/organize\/\$\{encodeURIComponent\(result\.draft\.event_id\)\}`/);
-  // no rename / edit-event-space affordance in this slice
-  assert.doesNotMatch(page, /rename|renameOrganization|editEventSpace/i);
+  // there is no separate organization / space name field
+  assert.doesNotMatch(page, /Event space name|Organization name|organizationName: newSpaceForm/);
+});
+
+test("P-2D: capacity gating drives an explicit, irreversible Start-over confirmation", () => {
+  assert.match(page, /getMyOrganizerCapacity\(supabase\)/);
+  assert.match(page, /can_start_another_event/);
+  assert.match(page, /Start over with a new event/);
+  // the confirm step spells out that it is permanent and cannot be resumed
+  assert.match(page, /permanently deletes your current unfinished event/i);
+  assert.match(page, /cannot be undone and it cannot be\s+resumed/i);
+  assert.match(page, /deleteMyUnfinishedEvent\(supabase/);
+  // after a confirmed delete, the clean new-event form is shown
+  assert.match(page, /setStartedOver\(true\)/);
+  assert.match(page, /startedOver \? "Start your new event"/);
+});
+
+test("P-2D: a quiet subscription note appears, with no upgrade / billing / entitlement UI", () => {
+  assert.match(page, /A future subscription will let you plan more than one at once\./);
+  // no upgrade / billing / entitlement call to action
+  assert.doesNotMatch(page, /\bupgrade\b|\bbilling\b|\bentitlement\b|\bsubscribe\b|\$\d/i);
+});
+
+test("P-2D: grandfathered multiple drafts are listed once, never auto-deleted, with no extra creation controls", () => {
+  assert.match(page, /grandfatheredExtra = drafts\.length > 1/);
+  // when there are extra drafts, the create form and the start-over control are both withheld
+  assert.match(page, /showCreateForm = startedOver \|\| \(!loading && drafts\.length === 0\)/);
+  assert.match(page, /grandfatheredExtra \? \(/);
+  assert.doesNotMatch(page, /drafts\.forEach[\s\S]*delete|auto.?delete/i);
+});
+
+test("P-2D: the draft workspace has an explicit Delete unfinished event action that returns to /organize", () => {
+  assert.match(workspace, /Delete unfinished event/);
+  assert.match(workspace, /deleteMyUnfinishedEvent\(supabase/);
+  assert.match(workspace, /permanently deletes this unfinished event/i);
+  assert.match(workspace, /cannot be undone and it cannot be\s+resumed/i);
+  assert.match(workspace, /window\.location\.assign\("\/organize"\)/);
 });
