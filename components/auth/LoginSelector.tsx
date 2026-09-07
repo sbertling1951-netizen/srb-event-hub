@@ -51,6 +51,23 @@ export function LoginSelector() {
           </Link>
         ))}
       </div>
+
+      <div
+        style={{
+          marginTop: 24,
+          paddingTop: 20,
+          borderTop: "1px solid #eee",
+          textAlign: "center",
+        }}
+      >
+        <span style={{ color: "#555" }}>Planning an event? </span>
+        <Link
+          href={"/organize" as Route}
+          style={{ color: "#0b5cad", fontWeight: 600, textDecoration: "none" }}
+        >
+          Create an Event
+        </Link>
+      </div>
     </div>
   );
 }

@@ -51,6 +51,14 @@ test("one selector presentation provides all role login links", () => {
   }
 });
 
+test("selector exposes a platform-neutral Create an Event action to /organize", () => {
+  assert.match(SELECTOR_SOURCE, /Planning an event\?/);
+  assert.match(SELECTOR_SOURCE, /"\/organize"/);
+  assert.match(SELECTOR_SOURCE, />\s*Create an Event\s*</);
+  // it is a separate action, not one of the role-login cards
+  assert.doesNotMatch(SELECTOR_SOURCE, /href:\s*"\/organize"/);
+});
+
 test("all login Back to Login actions target the dedicated selector", () => {
   for (const source of [MEMBER_LOGIN_SOURCE, ADMIN_LOGIN_SOURCE, VENDOR_LOGIN_SOURCE]) {
     assert.match(source, /variant="back" href="\/login"/);
