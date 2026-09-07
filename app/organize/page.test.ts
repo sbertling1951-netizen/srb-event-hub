@@ -128,3 +128,45 @@ test("P-2D: the draft workspace has an explicit Delete unfinished event action t
   assert.match(workspace, /cannot be undone and it cannot be\s+resumed/i);
   assert.match(workspace, /window\.location\.assign\("\/organize"\)/);
 });
+
+// ---- P-3A: edit event details in place ----
+
+test("P-3A: the Event details section has an Edit event details action with Save changes / Cancel", () => {
+  assert.match(workspace, /Edit event details/);
+  assert.match(workspace, /Save changes/);
+  assert.match(workspace, />Cancel</);
+  // edit is in place inside the same section, not a new route
+  assert.match(workspace, /<PageSection title="Event details"[\s\S]*?editing && form \?/);
+  assert.doesNotMatch(workspace, /router\.push|<Link href=\{`\/organize\/[^`]*\/edit/);
+});
+
+test("P-3A: edit prefills current values via the shared component and saves through the organizer RPC", () => {
+  assert.match(workspace, /organizerEventValuesFromDraft\(draft\)/);
+  assert.match(workspace, /<OrganizerEventFields values=\{form\} onChange=\{setForm\}/);
+  assert.match(workspace, /saveMyPrivateDraftDetails\(supabase, \{\s*\n\s*eventId: draft\.event_id,\s*\n\s*values: form,\s*\n\s*expected: baseline,/);
+  // on success the displayed draft is updated from the RPC result
+  assert.match(workspace, /setDraft\(result\.draft\)/);
+});
+
+test("P-3A: a stale-save shows a refresh-required message and does not overwrite", () => {
+  assert.match(workspace, /result\.status === "stale"/);
+  assert.match(workspace, /setSaveStale\(true\)/);
+  assert.match(workspace, /This event changed somewhere else[\s\S]*?were not saved/i);
+  assert.match(workspace, /Refresh this page to load the latest details/i);
+  // stale path returns before touching the displayed draft
+  assert.match(workspace, /if \(result\.status === "stale"\) \{\s*\n\s*setSaveStale\(true\);\s*\n\s*return;/);
+});
+
+test("P-3A: the organizer edit surface shows no FCOC / admin / event-space terminology and no launch/publish control", () => {
+  const visible = workspace.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.doesNotMatch(visible, /\bFCOC\b|\badmin\b|event space|\btenant\b/i);
+  assert.doesNotMatch(visible, /\bEvent Admin\b|admin_save_event_details|has_event_admin_authority/);
+  // the no-launch boundary messaging is retained
+  assert.match(workspace, /Private draft — not live/);
+  assert.match(workspace, /None of those actions are available from this draft yet/);
+});
+
+test("P-3A: delete behavior on the workspace is unchanged (still present alongside the new edit action)", () => {
+  assert.match(workspace, /Delete unfinished event/);
+  assert.match(workspace, /deleteMyUnfinishedEvent\(supabase/);
+});

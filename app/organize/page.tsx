@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  emptyOrganizerEventForm,
+  OrganizerEventFields,
+  type OrganizerEventFormValues,
+} from "@/components/organize/OrganizerEventFields";
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import { Page } from "@/components/ui/Page";
@@ -22,32 +27,7 @@ import { supabase } from "@/lib/supabase";
 
 type AccessState = "checking" | "signed_out" | "unverified" | "ready";
 
-type EventForm = {
-  eventName: string;
-  startDate: string;
-  endDate: string;
-  timezone: string;
-  locationMode: "location" | "online" | "no_location";
-  location: string;
-  starterTemplate: string;
-};
-
-const STARTER_TEMPLATES = [
-  { key: "casual", label: "Casual gathering", detail: "A simple starting point for a get-together." },
-  { key: "birthday_family", label: "Birthday or family", detail: "A welcoming plan for family and friends." },
-  { key: "club_rv", label: "Club or RV group", detail: "A familiar starting point for a club gathering." },
-  { key: "conference_corporate", label: "Conference or organization", detail: "A starting point for a larger organized event." },
-  { key: "dinner", label: "Dinner", detail: "A focused starting point for a meal together." },
-  { key: "sports_activity", label: "Sports or activity", detail: "A starting point for an activity-centered event." },
-] as const;
-
-function browserTimezone() {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-  } catch {
-    return "";
-  }
-}
+type EventForm = OrganizerEventFormValues;
 
 function newIdempotencyKey() {
   return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -55,83 +35,13 @@ function newIdempotencyKey() {
     : "";
 }
 
-function emptyEventForm(): EventForm {
-  return {
-    eventName: "",
-    startDate: "",
-    endDate: "",
-    timezone: browserTimezone(),
-    locationMode: "no_location",
-    location: "",
-    starterTemplate: "casual",
-  };
-}
+const emptyEventForm = emptyOrganizerEventForm;
 
 function formatSchedule(draft: OrganizerDraft) {
   if (!draft.start_date || draft.start_date === draft.end_date) {
     return `${draft.end_date} · ${draft.timezone}`;
   }
   return `${draft.start_date} to ${draft.end_date} · ${draft.timezone}`;
-}
-
-function EventFields({
-  form,
-  onChange,
-}: {
-  form: EventForm;
-  onChange: (next: EventForm) => void;
-}) {
-  function update<Key extends keyof EventForm>(key: Key, value: EventForm[Key]) {
-    onChange({ ...form, [key]: value });
-  }
-  function updateLocationMode(value: EventForm["locationMode"]) {
-    onChange({ ...form, locationMode: value, location: value === "location" ? form.location : "" });
-  }
-  return (
-    <>
-      <label>
-        Event name
-        <input className="app-form-input" value={form.eventName} onChange={(event) => update("eventName", event.target.value)} required />
-      </label>
-      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
-        <label>
-          Start date <span style={{ fontWeight: 400 }}>(optional)</span>
-          <input className="app-form-input" type="date" value={form.startDate} onChange={(event) => update("startDate", event.target.value)} />
-        </label>
-        <label>
-          End date
-          <input className="app-form-input" type="date" min={form.startDate || undefined} value={form.endDate} onChange={(event) => update("endDate", event.target.value)} required />
-        </label>
-        <label>
-          Time zone
-          <input className="app-form-input" value={form.timezone} onChange={(event) => update("timezone", event.target.value)} placeholder="America/Los_Angeles" required />
-        </label>
-      </div>
-      <label>
-        Event place
-        <select className="app-form-input" value={form.locationMode} onChange={(event) => updateLocationMode(event.target.value as EventForm["locationMode"])}>
-          <option value="no_location">No location yet</option>
-          <option value="online">Online</option>
-          <option value="location">A physical location</option>
-        </select>
-      </label>
-      {form.locationMode === "location" ? (
-        <label>
-          Location
-          <input className="app-form-input" value={form.location} onChange={(event) => update("location", event.target.value)} required />
-        </label>
-      ) : null}
-      <label>
-        Starter template
-        <select className="app-form-input" value={form.starterTemplate} onChange={(event) => update("starterTemplate", event.target.value)}>
-          {STARTER_TEMPLATES.map((template) => <option key={template.key} value={template.key}>{template.label}</option>)}
-        </select>
-      </label>
-      <p style={{ margin: 0, color: "var(--color-text-muted, #475569)" }}>
-        {STARTER_TEMPLATES.find((template) => template.key === form.starterTemplate)?.detail}
-      </p>
-    </>
-  );
 }
 
 const SUBSCRIPTION_NOTE =
@@ -419,7 +329,7 @@ export default function OrganizePage() {
           ) : null}
           <p style={{ marginTop: 0, color: "var(--color-text-muted, #475569)" }}>{SUBSCRIPTION_NOTE}</p>
           <form onSubmit={createEvent} style={{ display: "grid", gap: 14 }}>
-            <EventFields form={form} onChange={setForm} />
+            <OrganizerEventFields values={form} onChange={setForm} />
             {createError ? <Alert tone="danger">{createError}</Alert> : null}
             <div>
               <AppButton type="submit" variant="primary" loading={creating} disabled={secureRequestUnavailable}>

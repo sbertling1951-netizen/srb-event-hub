@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import {
+  OrganizerEventFields,
+  type OrganizerEventFormValues,
+  organizerEventValuesFromDraft,
+} from "@/components/organize/OrganizerEventFields";
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import { Page } from "@/components/ui/Page";
@@ -12,6 +17,7 @@ import {
   deleteMyUnfinishedEvent,
   getMyPrivateEventDraft,
   type OrganizerDraft,
+  saveMyPrivateDraftDetails,
 } from "@/lib/organizerDrafts";
 import { supabase } from "@/lib/supabase";
 
@@ -32,6 +38,14 @@ function newIdempotencyKey() {
 export default function OrganizerDraftWorkspacePage({ params }: WorkspacePageProps) {
   const [draft, setDraft] = useState<OrganizerDraft | null>(null);
   const [state, setState] = useState<"checking" | "denied" | "ready" | "missing" | "error">("checking");
+
+  // Edit-in-place of the Event details.
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<OrganizerEventFormValues | null>(null);
+  const [baseline, setBaseline] = useState<OrganizerEventFormValues | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveStale, setSaveStale] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteKey, setDeleteKey] = useState("");
@@ -59,6 +73,56 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
       void load(resolvedEventId);
     });
   }, [load, params]);
+
+  function startEditing() {
+    if (!draft) {
+      return;
+    }
+    const current = organizerEventValuesFromDraft(draft);
+    setForm(current);
+    setBaseline(current);
+    setSaveError(null);
+    setSaveStale(false);
+    setEditing(true);
+  }
+
+  function cancelEditing() {
+    setEditing(false);
+    setForm(null);
+    setBaseline(null);
+    setSaveError(null);
+    setSaveStale(false);
+  }
+
+  async function saveDetails() {
+    if (!draft || !form || !baseline || saving) {
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    setSaveStale(false);
+    try {
+      const result = await saveMyPrivateDraftDetails(supabase, {
+        eventId: draft.event_id,
+        values: form,
+        expected: baseline,
+      });
+      if (result.status === "stale") {
+        setSaveStale(true);
+        return;
+      }
+      setDraft(result.draft);
+      setEditing(false);
+      setForm(null);
+      setBaseline(null);
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "We could not save your changes. Please try again.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function confirmDelete() {
     if (!draft || deleting) {
@@ -97,13 +161,40 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
     <Page style={{ maxWidth: 860, margin: "0 auto", display: "grid", gap: 16 }}>
       <PageHeader title={draft.event_name} headingLevel="h1" />
       <Alert tone="warning">Private draft — not live. Guests cannot access, discover, join, share, register for, or be invited to this Event yet.</Alert>
+
       <PageSection title="Event details" variant="card">
-        <dl style={{ display: "grid", gap: 10, margin: 0 }}>
-          <div><dt>Schedule</dt><dd>{formatSchedule(draft)}</dd></div>
-          <div><dt>Location</dt><dd>{draft.location_mode === "online" ? "Online" : draft.location || "No location yet"}</dd></div>
-          <div><dt>Starter template</dt><dd>{draft.starter_template}</dd></div>
-        </dl>
+        {editing && form ? (
+          <div style={{ display: "grid", gap: 14 }}>
+            {saveStale ? (
+              <Alert tone="warning">
+                This event changed somewhere else since you opened it. Your changes were not saved.
+                Refresh this page to load the latest details, then edit again.
+              </Alert>
+            ) : null}
+            {saveError ? <Alert tone="danger">{saveError}</Alert> : null}
+            <OrganizerEventFields values={form} onChange={setForm} />
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <AppButton variant="primary" loading={saving} onClick={() => void saveDetails()}>
+                Save changes
+              </AppButton>
+              <AppButton onClick={cancelEditing} disabled={saving}>Cancel</AppButton>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            <dl style={{ display: "grid", gap: 10, margin: 0 }}>
+              <div><dt>Event name</dt><dd>{draft.event_name}</dd></div>
+              <div><dt>Schedule</dt><dd>{formatSchedule(draft)}</dd></div>
+              <div><dt>Location</dt><dd>{draft.location_mode === "online" ? "Online" : draft.location || "No location yet"}</dd></div>
+              <div><dt>Starter template</dt><dd>{draft.starter_template}</dd></div>
+            </dl>
+            <div>
+              <AppButton onClick={startEditing}>Edit event details</AppButton>
+            </div>
+          </div>
+        )}
       </PageSection>
+
       <PageSection title="Launch readiness" variant="section">
         <p>This private workspace is the safe beginning. Later stages will add Event planning, guest access choices, invitations, and launch checkout. None of those actions are available from this draft yet.</p>
       </PageSection>

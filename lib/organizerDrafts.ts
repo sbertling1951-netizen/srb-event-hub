@@ -83,7 +83,17 @@ function isIanaTimezone(value: string) {
   }
 }
 
-function organizerEventInputError(input: OrganizerEventInput): string | null {
+/** The organizer event-detail field rules -- shared verbatim by create, add,
+ * and P-3A edit. Mirrors the server-side validation in
+ * create_self_service_organizer_draft / save_my_self_service_private_draft_details. */
+export function organizerEventDetailsError(input: {
+  eventName: string;
+  startDate: string;
+  endDate: string;
+  timezone: string;
+  locationMode: "location" | "online" | "no_location";
+  location: string;
+}): string | null {
   if (!input.eventName.trim()) {
     return "Enter an Event name.";
   }
@@ -101,6 +111,14 @@ function organizerEventInputError(input: OrganizerEventInput): string | null {
   }
   if (input.locationMode !== "location" && input.location.trim()) {
     return "Location text is only used when the Event has a location.";
+  }
+  return null;
+}
+
+function organizerEventInputError(input: OrganizerEventInput): string | null {
+  const detailsError = organizerEventDetailsError(input);
+  if (detailsError) {
+    return detailsError;
   }
   if (!input.idempotencyKey) {
     return "Your browser could not start a secure draft. Use an up-to-date browser over a secure (https) connection, then try again.";
@@ -353,4 +371,83 @@ export async function deleteMyUnfinishedEvent(
     deletionScope: scope,
     deletedWorkspace: scope === "event_and_empty_workspace",
   };
+}
+
+/**
+ * P-3A: the shared organizer event-detail field values (kept structurally in
+ * sync with `components/organize/OrganizerEventFields.tsx`'s
+ * `OrganizerEventFormValues`, without importing a client component into this
+ * adapter module).
+ */
+export type OrganizerEventDetailValues = {
+  eventName: string;
+  startDate: string;
+  endDate: string;
+  timezone: string;
+  locationMode: "location" | "online" | "no_location";
+  location: string;
+  starterTemplate: string;
+};
+
+/**
+ * P-3A: an owner edits her own unfinished private draft's setup details
+ * through the one governed organizer RPC. It never grants Event Admin
+ * authority, never touches tenant/organization fields, and never changes the
+ * Draft's status / active / visible flags.
+ *
+ * `expected` is the baseline the editor loaded; on a stale row the server
+ * writes nothing and this returns `{ status: "stale" }` so the UI can require
+ * a refresh instead of clobbering a concurrent change.
+ */
+export type SaveOrganizerDraftDetailsResult =
+  | { status: "saved"; draft: OrganizerDraft }
+  | { status: "stale" };
+
+export async function saveMyPrivateDraftDetails(
+  client: OrganizerDraftRpcClient,
+  input: {
+    eventId: string;
+    values: OrganizerEventDetailValues;
+    expected: OrganizerEventDetailValues;
+  },
+): Promise<SaveOrganizerDraftDetailsResult> {
+  if (!input.eventId) {
+    throw new Error("Choose a draft to edit.");
+  }
+  const detailsError = organizerEventDetailsError(input.values);
+  if (detailsError) {
+    throw new Error(detailsError);
+  }
+
+  const { data, error } = await client.rpc("save_my_self_service_private_draft_details", {
+    p_event_id: input.eventId,
+    p_event_name: input.values.eventName.trim(),
+    p_start_date: input.values.startDate || null,
+    p_end_date: input.values.endDate,
+    p_timezone: input.values.timezone,
+    p_location_mode: input.values.locationMode,
+    p_location: input.values.location.trim() || null,
+    p_starter_template: input.values.starterTemplate,
+    // baseline as loaded -- persisted values, not re-normalized
+    p_expected_event_name: input.expected.eventName || null,
+    p_expected_start_date: input.expected.startDate || null,
+    p_expected_end_date: input.expected.endDate || null,
+    p_expected_timezone: input.expected.timezone || null,
+    p_expected_location: input.expected.location || null,
+    p_expected_location_mode: input.expected.locationMode,
+    p_expected_starter_template: input.expected.starterTemplate,
+  });
+
+  if (error) {
+    if (error.message === "stale_draft_details") {
+      return { status: "stale" };
+    }
+    throw new Error(error.message);
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== "object") {
+    throw new Error("EpicentraX did not return the updated draft.");
+  }
+  return { status: "saved", draft: row as OrganizerDraft };
 }

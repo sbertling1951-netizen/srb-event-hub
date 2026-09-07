@@ -11,6 +11,8 @@ import {
   listMyPrivateOrganizations,
   organizerDraftInputError,
   type OrganizerDraftRpcClient,
+  organizerEventDetailsError,
+  saveMyPrivateDraftDetails,
 } from "./organizerDrafts";
 
 const input = {
@@ -402,5 +404,118 @@ test("P-2D: deleteMyUnfinishedEvent surfaces a non-owned / not-found rejection v
   await assert.rejects(
     () => deleteMyUnfinishedEvent(client, { eventId: "someone-elses", idempotencyKey: "k" }),
     /Event not found\./,
+  );
+});
+
+test("P-3A: saveMyPrivateDraftDetails maps values + baseline onto the 15-arg RPC contract", async () => {
+  const calls: Array<{ name: string; args?: Record<string, unknown> }> = [];
+  const client: OrganizerDraftRpcClient = {
+    async rpc(name, args) {
+      calls.push({ name, args });
+      return {
+        data: [{
+          tenant_id: "t", organizer_appointment_id: "a", organizer_person_id: "p",
+          event_id: "e1", organization_name: "Sofia Personal Org", event_name: "Renamed Dinner",
+          start_date: null, end_date: "2026-11-02", timezone: "America/Denver",
+          location_mode: "online", location: null, starter_template: "dinner",
+          status: "Draft", is_active: false, visible_to_members: false,
+          created_at: "2026-09-05T00:00:00Z",
+        }],
+        error: null,
+      };
+    },
+  };
+
+  const result = await saveMyPrivateDraftDetails(client, {
+    eventId: "e1",
+    values: {
+      eventName: "  Renamed Dinner  ", startDate: "", endDate: "2026-11-02",
+      timezone: "America/Denver", locationMode: "online", location: "  ",
+      starterTemplate: "dinner",
+    },
+    expected: {
+      eventName: "Autumn Dinner", startDate: "", endDate: "2026-10-10",
+      timezone: "America/Los_Angeles", locationMode: "location", location: "Community Hall",
+      starterTemplate: "casual",
+    },
+  });
+
+  assert.equal(result.status, "saved");
+  assert.equal(result.status === "saved" ? result.draft.event_name : null, "Renamed Dinner");
+  assert.equal(calls[0]?.name, "save_my_self_service_private_draft_details");
+  assert.deepEqual(calls[0]?.args, {
+    p_event_id: "e1",
+    p_event_name: "Renamed Dinner",
+    p_start_date: null,
+    p_end_date: "2026-11-02",
+    p_timezone: "America/Denver",
+    p_location_mode: "online",
+    p_location: null,
+    p_starter_template: "dinner",
+    p_expected_event_name: "Autumn Dinner",
+    p_expected_start_date: null,
+    p_expected_end_date: "2026-10-10",
+    p_expected_timezone: "America/Los_Angeles",
+    p_expected_location: "Community Hall",
+    p_expected_location_mode: "location",
+    p_expected_starter_template: "casual",
+  });
+});
+
+test("P-3A: a stale-save rejection is a discriminated result, not a thrown error", async () => {
+  const client: OrganizerDraftRpcClient = {
+    async rpc() {
+      return { data: null, error: { message: "stale_draft_details" } };
+    },
+  };
+  const result = await saveMyPrivateDraftDetails(client, {
+    eventId: "e1",
+    values: { eventName: "X", startDate: "", endDate: "2026-10-10", timezone: "UTC", locationMode: "no_location", location: "", starterTemplate: "casual" },
+    expected: { eventName: "Y", startDate: "", endDate: "2026-10-10", timezone: "UTC", locationMode: "no_location", location: "", starterTemplate: "casual" },
+  });
+  assert.deepEqual(result, { status: "stale" });
+});
+
+test("P-3A: client-side validation and real RPC errors are surfaced without a write", async () => {
+  const client: OrganizerDraftRpcClient = {
+    async rpc() {
+      throw new Error("rpc should not be called on invalid input");
+    },
+  };
+  await assert.rejects(
+    () => saveMyPrivateDraftDetails(client, {
+      eventId: "e1",
+      values: { eventName: "", startDate: "", endDate: "2026-10-10", timezone: "UTC", locationMode: "no_location", location: "", starterTemplate: "casual" },
+      expected: { eventName: "", startDate: "", endDate: "2026-10-10", timezone: "UTC", locationMode: "no_location", location: "", starterTemplate: "casual" },
+    }),
+    /Enter an Event name/,
+  );
+
+  const failing: OrganizerDraftRpcClient = {
+    async rpc() {
+      return { data: null, error: { message: "Draft not found." } };
+    },
+  };
+  await assert.rejects(
+    () => saveMyPrivateDraftDetails(failing, {
+      eventId: "not-mine",
+      values: { eventName: "X", startDate: "", endDate: "2026-10-10", timezone: "UTC", locationMode: "no_location", location: "", starterTemplate: "casual" },
+      expected: { eventName: "X", startDate: "", endDate: "2026-10-10", timezone: "UTC", locationMode: "no_location", location: "", starterTemplate: "casual" },
+    }),
+    /Draft not found\./,
+  );
+});
+
+test("P-3A: organizerEventDetailsError is the shared field-rule validator (no idempotency key needed)", () => {
+  const ok = {
+    eventName: "Dinner", startDate: "", endDate: "2026-10-10", timezone: "UTC",
+    locationMode: "no_location" as const, location: "",
+  };
+  assert.equal(organizerEventDetailsError(ok), null);
+  assert.match(organizerEventDetailsError({ ...ok, eventName: " " }) ?? "", /Enter an Event name/);
+  assert.match(organizerEventDetailsError({ ...ok, timezone: "Nope/Zone" }) ?? "", /valid time zone/);
+  assert.match(
+    organizerEventDetailsError({ ...ok, locationMode: "online", location: "somewhere" }) ?? "",
+    /only used when the Event has a location/,
   );
 });
