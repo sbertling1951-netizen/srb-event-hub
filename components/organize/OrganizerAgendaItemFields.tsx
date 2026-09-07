@@ -2,6 +2,8 @@
 
 import type { OrganizerAgendaItem, OrganizerAgendaItemInput } from "@/lib/organizerAgenda";
 
+import { OrganizerTimeField } from "./OrganizerTimeField";
+
 /**
  * The one organizer-facing agenda-item field set, used unchanged by both the
  * "add an agenda item" form and each in-place "edit" form on
@@ -75,12 +77,21 @@ export function OrganizerAgendaItemFields({
           <input className="app-form-input" type="date" value={values.agendaDate} onChange={(event) => update("agendaDate", event.target.value)} />
         </label>
         <label>
-          Start time
-          <input className="app-form-input" type="time" value={values.startTime} onChange={(event) => update("startTime", event.target.value)} required />
+          Start time <span style={{ fontWeight: 400 }}>(24-hour, e.g. 17:00)</span>
+          <OrganizerTimeField
+            value={values.startTime}
+            onChange={(next) => update("startTime", next)}
+            ariaLabel="Start time (24-hour HH:MM)"
+            required
+          />
         </label>
         <label>
-          End time <span style={{ fontWeight: 400 }}>(optional)</span>
-          <input className="app-form-input" type="time" value={values.endTime} min={values.startTime || undefined} onChange={(event) => update("endTime", event.target.value)} />
+          End time <span style={{ fontWeight: 400 }}>(optional, 24-hour)</span>
+          <OrganizerTimeField
+            value={values.endTime}
+            onChange={(next) => update("endTime", next)}
+            ariaLabel="End time (24-hour HH:MM)"
+          />
         </label>
       </div>
     </>
