@@ -76,11 +76,20 @@ const EXACT_EXCEPTION_ROUTES: readonly string[] = [
  * correction. `/coach-map*` therefore remains "legacy" (unchanged) until
  * a separate, explicitly authorized task gives it its own exit control.
  * See the Stage 2B report for this exact reasoning.
+ *
+ * `/organize` (the self-service organizer route family: `/organize`,
+ * `/organize/account`, `/organize/[eventId]`) is a prefix exception because
+ * it is a platform-neutral, pre-tenant flow with no resolved Workspace --
+ * it must never inherit the legacy Admin sidebar or any tenant (e.g. Saint
+ * George) context it would otherwise fall through to. The organizer pages
+ * render their own standalone chrome; this registry now enforces "no
+ * application shell" structurally for the whole family.
  */
 const PREFIX_EXCEPTION_ROUTES: readonly string[] = [
   "/admin/print",
   "/admin/reports/coach-plates/print",
   "/admin/reports/name-tags/print",
+  "/organize",
   "/slideshow",
 ];
 
