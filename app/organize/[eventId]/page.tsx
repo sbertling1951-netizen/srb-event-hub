@@ -225,6 +225,17 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
         </Link>
       </PageSection>
 
+      <PageSection title="Place plan" variant="card">
+        <p style={{ marginTop: 0, color: "var(--color-text-muted, #475569)" }}>
+          Keep a private list of places you are considering holding this at. It is visible only to you —
+          nothing here contacts a place, holds a date, or books anything, and marking one “Selected”
+          does not set this Event’s location.
+        </p>
+        <Link href={`/organize/${encodeURIComponent(draft.event_id)}/venues`} className="app-button">
+          Open the place plan
+        </Link>
+      </PageSection>
+
       <PageSection title="Launch readiness" variant="section">
         <p>This private workspace is the safe beginning. Later stages will add Event planning, guest access choices, invitations, and launch checkout. None of those actions are available from this draft yet.</p>
       </PageSection>
