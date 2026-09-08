@@ -1,5 +1,6 @@
 "use client";
 
+import type { Route } from "next";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -300,6 +301,48 @@ export default function MemberAccountPage() {
             </Link>
           </div>
         </div>
+      </div>
+
+      {/* Platform-level organizer entry point. Complements the public
+          LoginSelector's "Create an Event" for a signed-in account holder:
+          it is not FCOC-, tenant-, or member-event-specific, and it does not
+          touch this account's registrations, access, or session. */}
+      <div
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 12,
+          background: "white",
+          padding: 18,
+          marginBottom: 18,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ display: "grid", gap: 2 }}>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>Create an Event</div>
+          <div style={{ color: "#475569", fontSize: 14 }}>
+            Planning an event? Start a private event draft.
+          </div>
+        </div>
+        <Link
+          href={"/organize" as Route}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 8,
+            border: "1px solid #cbd5e1",
+            background: "#0b5cff",
+            color: "#ffffff",
+            fontWeight: 700,
+            fontSize: 13,
+            textDecoration: "none",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Create an Event
+        </Link>
       </div>
 
       {contextInvalid ? (

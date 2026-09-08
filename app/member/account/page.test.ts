@@ -51,6 +51,30 @@ test("Open Event refreshes the shared workspace after canonical session completi
   assert.equal(/contextInvalid/.test(openRegistration), false);
 });
 
+test("exposes a platform-level 'Create an Event' pathway linking to /organize, above the member-event list", () => {
+  // the action + its supporting copy are present
+  assert.match(SOURCE, /Create an Event/);
+  assert.match(SOURCE, /Planning an event\? Start a private event draft\./);
+  // it links exactly to /organize (typed-route convention, same as LoginSelector)
+  assert.match(SOURCE, /href=\{"\/organize" as Route\}/);
+  assert.match(SOURCE, /import type \{ Route \} from "next"/);
+
+  // it sits immediately below the EpicentraX Account card and before the
+  // Upcoming Events section -- visually separate from the member-event cards
+  const accountCard = SOURCE.indexOf("EpicentraX Account");
+  const cta = SOURCE.indexOf('Planning an event? Start a private event draft.');
+  const upcoming = SOURCE.indexOf('title="Upcoming Events"');
+  const eventGroupComponent = SOURCE.indexOf("function EventGroup");
+  assert.ok(accountCard >= 0 && cta > accountCard, "the CTA follows the EpicentraX Account card");
+  assert.ok(upcoming > cta, "the CTA precedes the Upcoming Events section");
+  assert.ok(cta < eventGroupComponent, "the CTA is not part of the member-event card list");
+
+  // it is a plain navigation link -- it does not touch registrations, session,
+  // sign-out, or event access
+  const ctaBlock = SOURCE.slice(cta - 400, cta + 400);
+  assert.equal(/handleSignOut|resolve_member_account|enterResolvedRegistration|openRegistration/.test(ctaBlock), false);
+});
+
 test("shows an explicit, non-alarming message and does not expose internal authorization detail", () => {
   assert.match(
     SOURCE,
