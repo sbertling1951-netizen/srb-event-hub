@@ -1,8 +1,9 @@
 # EpicentraX Private Venue / Place Plan Contract
 
-**Status:** Accepted architecture contract; implementation not yet authorized
+**Status:** Accepted architecture contract. First capability implemented
+(P-3E). Amended 2026-09-08 to record the approved adoption path (§B.1).
 
-**Date:** 2026-09-08
+**Date:** 2026-09-08 (amended 2026-09-08)
 
 **Purpose:** Define a private workspace where an organizer can consider
 possible places to hold an event — before any booking, public listing, vendor
@@ -52,7 +53,9 @@ This contract does not define or authorize:
 - catalog contribution — proposing a typed place as shared knowledge;
 - public visibility, publishing, Passport, or payment;
 - venue accounts, venue self-claim, notification, or admission;
-- writing the Event's own location, venue name, address, or coordinates;
+- writing the Event's own location, venue name, address, or coordinates —
+  a planning entry never writes them; the adoption path in §B.1 only pre-fills
+  the existing editable Location field for the organizer to save deliberately;
 - Nearby, maps, directions, or any member- or guest-facing content.
 
 ## B. Lifecycle
@@ -80,11 +83,46 @@ observes, and not a commitment.
 
 **Exit — and the rule that matters most.** Marking an entry *selected* changes
 nothing outside this workspace. In particular it does **not** set the Event's
-location. Moving a considered place into the Event's actual location is a
-separate, explicit, deliberate act by the owner through the existing governed
-Event-detail path (§F), and turning it into an operational or public
-relationship is a further separate act again. Neither is a side effect of
-planning, and neither is specified here.
+location. Moving a considered place into the Event's actual location happens
+only through the adoption path below, which is a deliberate act by the owner
+on the existing governed Event-details form. Turning a place into an
+operational or public relationship is a further separate act again, and
+remains unspecified here. Neither is ever a side effect of planning.
+
+### B.1 Adoption into the Event's location
+
+**Approved 2026-09-08.** This replaces the earlier position that no adoption
+path existed and that an organizer had to retype a chosen place by hand.
+
+Adoption is a **pre-fill on an existing form**, not a new write path:
+
+1. On the private Draft's existing Event-details edit form, the organizer may
+   choose one of their **own** private venue/place plan entries from a
+   selector.
+2. Choosing an entry pre-fills the existing editable **Location** field from
+   the entry's place name and, when present, its location description.
+3. **The selector choice alone performs no write.** Nothing is saved, and
+   nothing changes, by choosing.
+4. The Event's official location changes **only** when the organizer uses the
+   existing governed Event-details **Save changes** action.
+5. That existing action remains the entire authority boundary: the same owner
+   authorization, the same Draft-only eligibility rules, the same
+   optimistic-concurrency baseline check, and the same event-detail
+   validation. **No new direct adoption command is introduced**, and no
+   planning RPC gains the ability to write the Event.
+6. The organizer may freely **edit the pre-filled Location text** before
+   saving. The pre-fill is a convenience, not a binding.
+7. A planning status — **including *selected*** — remains inert by itself. It
+   never adopts, saves, publishes, geocodes, maps, or exposes anything. An
+   organizer may adopt an entry at any status, or mark one *selected* and
+   never adopt it.
+8. The venue plan record **stays private after adoption**. Adoption copies
+   text into the Location field; it creates no link back. Later editing or
+   deleting the plan entry does **not** retroactively change the saved Event
+   location.
+9. Adoption adds **no** catalog, vendor admission, identity, Nearby,
+   coordinate, map, invitation, payment, or public behavior. It moves text the
+   organizer already typed into a field the organizer already controls.
 
 ## C. First field set and privacy treatment
 
@@ -181,9 +219,11 @@ anything.
 with its optimistic-concurrency baseline check. The broader event record also
 carries `venue_name`, `street_address`, `lat`, and `lng` — the canonical
 coordinate source, with their own governed handling and their own past
-incidents. **A venue plan entry writes none of these, ever.** Adopting a
-considered place as the Event's location is the owner's separate, deliberate
-act through that existing path.
+incidents. **A venue plan entry writes none of these, ever.** Adoption (§B.1)
+does not change that: it pre-fills the Location field on the existing
+Event-details form, and only that form's own governed Save — with its owner
+check, Draft-only rules, baseline comparison, and validation — writes
+`events.location`. The pre-fill leaves no link between the two records.
 
 **3. Shared catalog venue asset.** The platform-governed, reusable description
 of a real place, in the catalog's *venues and locations* category. Read-only
@@ -238,11 +278,16 @@ or an Event location that some other record refers to.
 Planning data retained under archive stays owner-private; archiving does not
 make it visible.
 
-**Promotion.** Every step out of this workspace — adopting an entry as the
-Event's location, admitting a venue as a vendor, publishing anything — is a
-separate, explicit, authorized act. Never a side effect of marking an entry
-*selected*, of publishing, or of paying. The mechanics are deliberately out of
-scope.
+**Promotion.** Every step out of this workspace is a separate, explicit,
+authorized act, never a side effect of marking an entry *selected*, of
+publishing, or of paying. Adoption into the Event's location now has an
+approved mechanism — the §B.1 pre-fill plus the existing governed
+Event-details Save. Admitting a venue as a vendor and publishing anything
+remain unspecified here.
+
+Because adoption copies text rather than creating a reference, a plan entry
+deleted with the Draft — or edited afterwards — leaves a previously saved
+Event location untouched.
 
 ## H. Scope and exclusions
 
@@ -255,7 +300,9 @@ change.
 **Explicitly excluded:**
 
 - writing `events.location`, `location_mode`, `venue_name`, `street_address`,
-  `lat`, or `lng`;
+  `lat`, or `lng` from any planning command — the §B.1 adoption path only
+  pre-fills the Location field on the existing Event-details form, which the
+  organizer then saves through that form's own governed action;
 - catalog reference, browse, search, or contribution;
 - geocoding, coordinates, map pins, distance, or geographic search;
 - Nearby, maps, directions, or any member/guest-facing rendering;
@@ -293,10 +340,11 @@ Recorded as future decisions. None is implied or committed.
    added. Venue planning genuinely has that step, but the first capability
    keeps one shared three-word vocabulary; a visit can live in the note until
    this is decided.
-4. **Adoption path.** The concrete governed step from a *selected* entry to
-   the Event's actual location — whether it is a one-click adopt, a prefill,
-   or purely manual re-entry — and how it interacts with the Event-detail
-   save's optimistic-concurrency baseline.
+4. **Adoption path — RESOLVED 2026-09-08, no longer open.** Decided in favour
+   of a pre-fill on the existing Event-details form, with that form's existing
+   governed Save remaining the only writer and the only authority boundary.
+   See §B.1. (Kept at this number so earlier references to "open decision 4"
+   still resolve.)
 5. **Coordinates and maps.** Whether an entry may ever carry a position, and
    what would have to be true first given that `events.lat`/`lng` is the
    canonical coordinate source and map assets are Platform Admin governed.
