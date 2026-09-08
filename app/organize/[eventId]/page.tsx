@@ -275,6 +275,16 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
         </Link>
       </PageSection>
 
+      <PageSection title="Planning checklist" variant="card">
+        <p style={{ marginTop: 0, color: "var(--color-text-muted, #475569)" }}>
+          A blank page for whatever you want to remember. It is yours alone — nobody else can see it,
+          and ticking things off does not control whether this Event is ready or when it can launch.
+        </p>
+        <Link href={`/organize/${encodeURIComponent(draft.event_id)}/checklist`} className="app-button">
+          Open the checklist
+        </Link>
+      </PageSection>
+
       <PageSection title="Launch readiness" variant="section">
         <p>This private workspace is the safe beginning. Later stages will add Event planning, guest access choices, invitations, and launch checkout. None of those actions are available from this draft yet.</p>
       </PageSection>
