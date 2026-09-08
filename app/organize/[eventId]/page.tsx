@@ -285,6 +285,17 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
         </Link>
       </PageSection>
 
+      <PageSection title="Budget plan" variant="card">
+        <p style={{ marginTop: 0, color: "var(--color-text-muted, #475569)" }}>
+          Keep a private note of what you expect things to cost, and what they actually cost. It is yours
+          alone — writing an amount here does not pay it, charge you, send an invoice, or commit you to
+          anything, and EpicentraX never adds your numbers up or tells you what to spend.
+        </p>
+        <Link href={`/organize/${encodeURIComponent(draft.event_id)}/budget`} className="app-button">
+          Open the budget plan
+        </Link>
+      </PageSection>
+
       <PageSection title="Launch readiness" variant="section">
         <p>This private workspace is the safe beginning. Later stages will add Event planning, guest access choices, invitations, and launch checkout. None of those actions are available from this draft yet.</p>
       </PageSection>
