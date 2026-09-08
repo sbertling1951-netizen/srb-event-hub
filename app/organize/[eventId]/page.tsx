@@ -20,6 +20,10 @@ import {
   type OrganizerDraft,
   saveMyPrivateDraftDetails,
 } from "@/lib/organizerDrafts";
+import {
+  listMyPrivateDraftVenuePlans,
+  venuePlanLocationText,
+} from "@/lib/organizerVenuePlan";
 import { supabase } from "@/lib/supabase";
 
 type WorkspacePageProps = { params: Promise<{ eventId: string }> };
@@ -47,6 +51,10 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveStale, setSaveStale] = useState(false);
   const [saving, setSaving] = useState(false);
+  // §B.1 adoption pre-fill: the organizer's OWN planned places for THIS draft,
+  // reduced to display text only. No planning record or id is retained, so a
+  // pre-fill can never link the Event back to a plan entry (copy-not-link).
+  const [plannedPlaceOptions, setPlannedPlaceOptions] = useState<string[]>([]);
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteKey, setDeleteKey] = useState("");
@@ -85,6 +93,20 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
     setSaveError(null);
     setSaveStale(false);
     setEditing(true);
+    // Read-only convenience load through the existing owner-only venue-plan
+    // read path -- the same RPC the place-plan route uses, scoped to this exact
+    // draft. It is not required for editing: if it fails the selector simply
+    // does not appear, and no message is shown.
+    void loadPlannedPlaceOptions(draft.event_id);
+  }
+
+  async function loadPlannedPlaceOptions(eventId: string) {
+    try {
+      const entries = await listMyPrivateDraftVenuePlans(supabase, eventId);
+      setPlannedPlaceOptions(entries.map(venuePlanLocationText).filter(Boolean));
+    } catch {
+      setPlannedPlaceOptions([]);
+    }
   }
 
   function cancelEditing() {
@@ -93,6 +115,7 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
     setBaseline(null);
     setSaveError(null);
     setSaveStale(false);
+    setPlannedPlaceOptions([]);
   }
 
   async function saveDetails() {
@@ -116,6 +139,7 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
       setEditing(false);
       setForm(null);
       setBaseline(null);
+      setPlannedPlaceOptions([]);
     } catch (error) {
       setSaveError(
         error instanceof Error ? error.message : "We could not save your changes. Please try again.",
@@ -173,7 +197,11 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
               </Alert>
             ) : null}
             {saveError ? <Alert tone="danger">{saveError}</Alert> : null}
-            <OrganizerEventFields values={form} onChange={setForm} />
+            <OrganizerEventFields
+              values={form}
+              onChange={setForm}
+              plannedPlaceOptions={plannedPlaceOptions}
+            />
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <AppButton variant="primary" loading={saving} onClick={() => void saveDetails()}>
                 Save changes

@@ -104,3 +104,124 @@ test("no organizer surface renders a raw stored template key as user-facing text
     assert.doesNotMatch(src, />\s*\{?\s*["']?(casual|birthday_family|club_rv|conference_corporate|sports_activity)["']?\s*\}?\s*</);
   }
 });
+
+// ---------------------------------------------------------------------------
+// §B.1 adoption pre-fill: the "Use a planned place" selector.
+// The contract's rule is a PRE-FILL ON AN EXISTING FORM, never a write path.
+// ---------------------------------------------------------------------------
+
+const venuePlanAdapter = readFileSync(
+  fileURLToPath(new URL("../../lib/organizerVenuePlan.ts", import.meta.url)),
+  "utf8",
+);
+
+test("the selector uses the exact approved wording", () => {
+  assert.match(shared, /Use a planned place/);
+  assert.match(shared, /<option value="">Choose a planned place<\/option>/);
+  assert.match(shared, /This fills the Location field\. Save changes to use it for this Event\./);
+});
+
+test("the selector renders ONLY when options exist and the Location field is showing", () => {
+  // guarded on a non-empty option list -- no confusing empty UI
+  assert.match(shared, /plannedPlaceOptions && plannedPlaceOptions\.length > 0 \? \(/);
+  // and it lives inside the existing locationMode === "location" branch
+  const locBlock = shared.slice(
+    shared.indexOf('values.locationMode === "location" ? ('),
+    shared.indexOf("Starter template"),
+  );
+  assert.ok(locBlock.includes("Use a planned place"), "the selector sits with the Location field");
+  assert.ok(locBlock.includes("Location\n"), "the Location input is still rendered in that branch");
+});
+
+test("the create surface passes no options, so it is unchanged", () => {
+  assert.doesNotMatch(createPage, /plannedPlaceOptions/);
+  assert.match(shared, /plannedPlaceOptions\?: string\[\]/, "the prop is optional");
+});
+
+test("COPY-NOT-LINK: the component receives only strings -- never an id or record", () => {
+  assert.match(shared, /plannedPlaceOptions\?: string\[\]/);
+  // no venue-plan type, id, or status is imported or referenced by the field set
+  assert.doesNotMatch(shared, /VenuePlanEntry|venuePlanId|venue_plan_id|planningStatus|planning_status/);
+  assert.doesNotMatch(shared, /organizerVenuePlan/);
+  // the page maps entries to TEXT before handing them over
+  assert.match(workspacePage, /entries\.map\(venuePlanLocationText\)/);
+  // and never keeps the entries themselves in the form or the save payload
+  assert.doesNotMatch(workspacePage, /venuePlanId|venue_plan_id|p_venue_plan_id/);
+});
+
+test("SELECTION WRITES ONLY values.location -- never locationMode or any other field", () => {
+  const onChangeBlock = shared.slice(
+    shared.indexOf("Use a planned place"),
+    shared.indexOf("Choose a planned place"),
+  );
+  assert.match(onChangeBlock, /update\("location", text\)/);
+  // exactly one update call in the selector, and it targets location
+  const updates = [...onChangeBlock.matchAll(/update\("(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(updates, ["location"]);
+  // the selector never calls the mode helper or touches any other stored field
+  assert.doesNotMatch(onChangeBlock, /updateLocationMode|locationMode|venue_name|street_address|lat|lng/);
+});
+
+test("NO WRITE ON SELECTION: the selector performs no save, RPC, or navigation", () => {
+  const selectorBlock = shared.slice(
+    shared.indexOf("Use a planned place"),
+    shared.indexOf("Starter template"),
+  );
+  assert.doesNotMatch(selectorBlock, /supabase|\.rpc\(|await |async |fetch\(|router|window\.location|assign\(/);
+  // the shared field set as a whole stays presentational
+  assert.doesNotMatch(shared, /supabase|\.rpc\(|fetch\(/);
+});
+
+test("the select is a one-shot action, not bound state (always returns to its placeholder)", () => {
+  const selectorBlock = shared.slice(
+    shared.indexOf("Use a planned place"),
+    shared.indexOf("Starter template"),
+  );
+  assert.match(selectorBlock, /value=""/, "bound to the empty string, so it never holds a selection");
+  assert.match(selectorBlock, /if \(text\) \{/, "the empty placeholder choice does nothing");
+});
+
+test("the page loads options through the EXISTING owner-only venue-plan read path", () => {
+  assert.match(workspacePage, /listMyPrivateDraftVenuePlans\(supabase, eventId\)/);
+  // scoped to this exact draft, and only when the organizer starts editing
+  assert.match(workspacePage, /void loadPlannedPlaceOptions\(draft\.event_id\)/);
+  // no independent table query and no new adoption command
+  assert.doesNotMatch(workspacePage, /self_service_private_draft_venue_plans|adopt_|\.from\(/);
+  // a failure degrades silently to no selector -- no content-bearing error
+  assert.match(workspacePage, /catch \{\s*\n\s*setPlannedPlaceOptions\(\[\]\);/);
+});
+
+test("SAVE remains the sole writer of official Event details", () => {
+  // exactly one call to the governed save, unchanged
+  assert.equal((workspacePage.match(/saveMyPrivateDraftDetails\(/g) ?? []).length, 1);
+  // it still sends the baseline for the optimistic-concurrency check
+  assert.match(workspacePage, /expected: baseline/);
+  assert.match(workspacePage, /result\.status === "stale"/);
+  // the pre-fill path introduces no other writer. Asserted against CODE, not
+  // comments -- the explanatory comment legitimately names the adoption path.
+  const workspaceCode = workspacePage
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/[^\n]*/g, "");
+  assert.doesNotMatch(workspaceCode, /adopt|p_venue_plan_id|set_event_location/i);
+});
+
+test("'selected' gets no special treatment anywhere in the pre-fill path", () => {
+  for (const source of [shared, workspacePage]) {
+    assert.doesNotMatch(source, /['"]selected['"]/);
+    assert.doesNotMatch(source, /planningStatus/);
+  }
+  // the helper that builds the text ignores status entirely
+  const helper = venuePlanAdapter.slice(
+    venuePlanAdapter.indexOf("export function venuePlanLocationText"),
+    venuePlanAdapter.indexOf("function coerceEntry"),
+  );
+  assert.doesNotMatch(helper, /planningStatus|selected|status/);
+});
+
+test("manual Location typing is untouched by the pre-fill", () => {
+  // the Location input keeps its own onChange straight into values.location
+  assert.match(
+    shared,
+    /value=\{values\.location\} onChange=\{\(event\) => update\("location", event\.target\.value\)\} required/,
+  );
+});

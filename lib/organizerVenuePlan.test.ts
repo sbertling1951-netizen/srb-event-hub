@@ -12,6 +12,7 @@ import {
   VENUE_PLAN_STATUSES,
   venuePlanError,
   type VenuePlanInput,
+  venuePlanLocationText,
   venuePlanValues,
 } from "./organizerVenuePlan";
 
@@ -284,4 +285,57 @@ test("a server error on delete is surfaced, never swallowed", async () => {
     () => deleteMyPrivateDraftVenuePlan(failing, { eventId: "e1", venuePlanId: "v9" }),
     /Venue plan entry not found\./,
   );
+});
+
+// ---------------------------------------------------------------------------
+// §B.1 adoption pre-fill text. A pure string builder: no write, no RPC, no id.
+// ---------------------------------------------------------------------------
+
+function entry(over: Partial<Parameters<typeof venuePlanLocationText>[0]> = {}) {
+  return {
+    id: "v1",
+    placeName: "Riverbend Legion Hall",
+    locationDescription: null,
+    website: null,
+    contactName: null,
+    contactPhone: null,
+    planningStatus: "considering" as const,
+    organizerNote: null,
+    ...over,
+  };
+}
+
+test("venuePlanLocationText: 'Place name — location description' when a description exists", () => {
+  assert.equal(
+    venuePlanLocationText(entry({ locationDescription: "behind the fairgrounds, gravel lot" })),
+    "Riverbend Legion Hall — behind the fairgrounds, gravel lot",
+  );
+});
+
+test("venuePlanLocationText: 'Place name' alone when there is no description", () => {
+  assert.equal(venuePlanLocationText(entry()), "Riverbend Legion Hall");
+  assert.equal(venuePlanLocationText(entry({ locationDescription: "" })), "Riverbend Legion Hall");
+  assert.equal(venuePlanLocationText(entry({ locationDescription: "   " })), "Riverbend Legion Hall");
+});
+
+test("venuePlanLocationText trims but never reformats, parses, or geocodes", () => {
+  const messy = "  behind the fairgrounds — gravel lot, no street number  ";
+  assert.equal(
+    venuePlanLocationText(entry({ placeName: "  Aunt Ruth's barn  ", locationDescription: messy })),
+    "Aunt Ruth's barn — behind the fairgrounds — gravel lot, no street number",
+  );
+});
+
+test("venuePlanLocationText returns TEXT ONLY -- the entry id never appears", () => {
+  const text = venuePlanLocationText(entry({ id: "abc-123-uuid", locationDescription: "221 Mill Road" }));
+  assert.equal(text, "Riverbend Legion Hall — 221 Mill Road");
+  assert.ok(!text.includes("abc-123-uuid"), "copy-not-link: no id leaks into the pre-filled text");
+});
+
+test("venuePlanLocationText ignores planning status entirely -- 'selected' is inert", () => {
+  const considering = venuePlanLocationText(entry({ planningStatus: "considering" }));
+  const contacted = venuePlanLocationText(entry({ planningStatus: "contacted" }));
+  const selected = venuePlanLocationText(entry({ planningStatus: "selected" }));
+  assert.equal(considering, contacted);
+  assert.equal(contacted, selected, "a selected entry pre-fills exactly like any other");
 });

@@ -142,7 +142,10 @@ test("P-3A: the Event details section has an Edit event details action with Save
 
 test("P-3A: edit prefills current values via the shared component and saves through the organizer RPC", () => {
   assert.match(workspace, /organizerEventValuesFromDraft\(draft\)/);
-  assert.match(workspace, /<OrganizerEventFields values=\{form\} onChange=\{setForm\}/);
+  // whitespace-tolerant: the element gained an optional plannedPlaceOptions
+  // prop (§B.1 pre-fill) and is now wrapped across lines, but form/setForm are
+  // still exactly how the edit surface is wired to the shared component
+  assert.match(workspace, /<OrganizerEventFields\b[\s\S]{0,160}?values=\{form\}[\s\S]{0,80}?onChange=\{setForm\}/);
   assert.match(workspace, /saveMyPrivateDraftDetails\(supabase, \{\s*\n\s*eventId: draft\.event_id,\s*\n\s*values: form,\s*\n\s*expected: baseline,/);
   // on success the displayed draft is updated from the RPC result
   assert.match(workspace, /setDraft\(result\.draft\)/);

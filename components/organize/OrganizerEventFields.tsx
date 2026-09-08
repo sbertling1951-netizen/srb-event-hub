@@ -11,6 +11,20 @@ import type { OrganizerDraft } from "@/lib/organizerDrafts";
  * It is deliberately organizer-neutral: no tenant / organization / "event
  * space" input, no status / visibility / launch control. The one name field is
  * "Event name"; the internal container reuses that name and is never surfaced.
+ *
+ * `plannedPlaceOptions` is the OPTIONAL §B.1 adoption pre-fill. When the
+ * caller supplies texts, a small selector appears beside the Location field
+ * that copies one of them into `values.location`. Deliberately:
+ *
+ *   * it is a plain array of STRINGS -- no venue-plan id, status, or record
+ *     ever reaches this component, so a pre-fill cannot link the Event back to
+ *     a planning record (copy-not-link);
+ *   * the select is bound to the empty string, so it is a one-shot action
+ *     rather than stored state, and it always returns to its placeholder;
+ *   * it writes ONLY `values.location`. It never touches `locationMode` or any
+ *     other field, and it performs no write, RPC, or navigation of its own;
+ *   * it renders only when options exist and the Location field itself is
+ *     showing, so the create form (which passes nothing) is unchanged.
  */
 
 export type OrganizerLocationMode = "location" | "online" | "no_location";
@@ -94,9 +108,12 @@ export function organizerEventValuesFromDraft(draft: OrganizerDraft): OrganizerE
 export function OrganizerEventFields({
   values,
   onChange,
+  plannedPlaceOptions,
 }: {
   values: OrganizerEventFormValues;
   onChange: (next: OrganizerEventFormValues) => void;
+  /** Optional §B.1 pre-fill texts. Strings only -- never a planning record. */
+  plannedPlaceOptions?: string[];
 }) {
   function update<Key extends keyof OrganizerEventFormValues>(
     key: Key,
@@ -136,10 +153,35 @@ export function OrganizerEventFields({
         </select>
       </label>
       {values.locationMode === "location" ? (
-        <label>
-          Location
-          <input className="app-form-input" value={values.location} onChange={(event) => update("location", event.target.value)} required />
-        </label>
+        <>
+          {plannedPlaceOptions && plannedPlaceOptions.length > 0 ? (
+            <label>
+              Use a planned place <span style={{ fontWeight: 400 }}>(optional)</span>
+              <select
+                className="app-form-input"
+                value=""
+                onChange={(event) => {
+                  const text = event.target.value;
+                  if (text) {
+                    update("location", text);
+                  }
+                }}
+              >
+                <option value="">Choose a planned place</option>
+                {plannedPlaceOptions.map((text, index) => (
+                  <option key={index} value={text}>{text}</option>
+                ))}
+              </select>
+              <span style={{ fontWeight: 400, color: "var(--color-text-muted, #475569)", fontSize: "0.85em" }}>
+                This fills the Location field. Save changes to use it for this Event.
+              </span>
+            </label>
+          ) : null}
+          <label>
+            Location
+            <input className="app-form-input" value={values.location} onChange={(event) => update("location", event.target.value)} required />
+          </label>
+        </>
       ) : null}
       <label>
         Starter template

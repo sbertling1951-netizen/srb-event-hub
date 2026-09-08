@@ -121,6 +121,25 @@ export function venuePlanError(input: VenuePlanInput): string | null {
   return null;
 }
 
+/**
+ * The Location text a planned place pre-fills on the Event-details form, per
+ * the contract's §B.1 adoption path:
+ *
+ *   "Place name — location description"   when a description exists
+ *   "Place name"                          when it does not
+ *
+ * This is a PURE STRING BUILDER. It performs no write, no RPC, and no lookup,
+ * and it deliberately returns only text: the entry's id is never part of the
+ * result, so a pre-fill can copy a place into the Location field without ever
+ * linking the Event back to the planning record (contract §B.1 rule 8,
+ * copy-not-link).
+ */
+export function venuePlanLocationText(entry: VenuePlanEntry): string {
+  const name = (entry.placeName ?? "").trim();
+  const description = (entry.locationDescription ?? "").trim();
+  return description ? `${name} — ${description}` : name;
+}
+
 function coerceEntry(row: unknown): VenuePlanEntry {
   const value = (row ?? {}) as Record<string, unknown>;
   const status = value.planning_status;
