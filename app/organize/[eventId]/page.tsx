@@ -215,6 +215,16 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
         </Link>
       </PageSection>
 
+      <PageSection title="Vendor plan" variant="card">
+        <p style={{ marginTop: 0, color: "var(--color-text-muted, #475569)" }}>
+          Keep a private list of vendors and suppliers you are considering. It is visible only to you —
+          adding a vendor here does not notify them, create an account, invite them, or make them part of this Event.
+        </p>
+        <Link href={`/organize/${encodeURIComponent(draft.event_id)}/vendors`} className="app-button">
+          Open the vendor plan
+        </Link>
+      </PageSection>
+
       <PageSection title="Launch readiness" variant="section">
         <p>This private workspace is the safe beginning. Later stages will add Event planning, guest access choices, invitations, and launch checkout. None of those actions are available from this draft yet.</p>
       </PageSection>
