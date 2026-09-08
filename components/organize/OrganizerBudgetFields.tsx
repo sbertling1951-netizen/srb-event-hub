@@ -115,8 +115,9 @@ export function OrganizerBudgetFields({
           id="budget-decimal-hint"
           style={{ fontWeight: 400, color: "var(--color-text-muted, #475569)", fontSize: "0.85em" }}
         >
-          {decimalHint} Digits only — no symbols or commas. Writing an amount down here does not pay
-          it, and EpicentraX never charges you for it.
+          {decimalHint} Grouping commas are fine when placed the usual way, like 1,250.00 — but no
+          currency symbols, plus or minus signs, spaces, or scientific notation. Writing an amount
+          down here does not pay it, and EpicentraX never charges you for it.
         </span>
       </label>
       <label>

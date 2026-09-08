@@ -182,3 +182,26 @@ test("NO total, subtotal, count, progress, affordability, payment, or readiness 
   // each amount is shown beside its OWN line's currency, never merged
   assert.match(pageSource, /currency=\{line\.currency\}/);
 });
+
+test("the amount hint says correctly grouped commas are allowed and names exactly what is refused", () => {
+  for (const input of [emptyBudgetLine(), { ...values, currency: "BTC" as const }]) {
+    const html = renderToStaticMarkup(<OrganizerBudgetFields values={input} onChange={() => {}} />);
+
+    // commas are ALLOWED, with the approved example -- the old prohibition is gone
+    assert.match(html, /Grouping commas are fine when placed the usual way, like 1,250\.00/);
+    assert.doesNotMatch(html, /no symbols or commas|commas are not|without commas/i);
+
+    // what stays refused is still stated plainly, in one sentence
+    assert.match(html, /no\s+currency symbols, plus or minus signs, spaces, or scientific notation/);
+
+    // the currency-specific decimal hint and the no-payment / no-conversion
+    // language are retained alongside it
+    assert.match(html, /amounts can have up to (2|8) decimal places\./);
+    assert.match(html, /does not pay it, and EpicentraX never charges you for it/);
+    assert.match(html, /EpicentraX never converts between currencies/);
+  }
+  // the hint is the single element the amount inputs are described by
+  const html = renderToStaticMarkup(<OrganizerBudgetFields values={values} onChange={() => {}} />);
+  assert.equal((html.match(/aria-describedby="budget-decimal-hint"/g) ?? []).length, 2);
+  assert.equal((html.match(/id="budget-decimal-hint"/g) ?? []).length, 1);
+});

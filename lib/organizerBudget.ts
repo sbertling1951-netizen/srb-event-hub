@@ -34,6 +34,14 @@
  * module calls Number(), parseFloat(), or any arithmetic operator on an
  * amount, so no IEEE-754 double ever holds an organizer's money value.
  *
+ * GROUPING COMMAS. An organizer may type standard US-style grouping commas in
+ * an amount's integer part (12,250.00). A comma is accepted ONLY where
+ * correct grouping puts one -- malformed grouping is refused, never repaired.
+ * The organizer's own typed value (commas and all) stays untouched in form
+ * state; commas are removed -- by text substitution only, never by rounding
+ * or recalculation -- at the submission boundary, so the RPC wire payload
+ * always carries a plain decimal string.
+ *
  * The database commands remain the authoritative authorization and validation
  * boundary (the self-service organizer-owner rule only); this module only
  * keeps route components from constructing RPC argument objects ad hoc, and
@@ -105,12 +113,37 @@ export function budgetLineValues(line: BudgetLine): BudgetLineInput {
 }
 
 /**
+ * Matches a plain decimal amount, or one using standard US-style grouping
+ * commas in the integer part: 1,000 / 12,250.50 / 1,234,567.89 are all
+ * accepted, exactly like their ungrouped equivalents. A comma is accepted
+ * ONLY where correct three-digit grouping puts one, so malformed grouping --
+ * 1,00 / 12,34 / 1,2345 -- a leading or trailing comma, and more than one
+ * decimal point are all refused rather than repaired. Currency symbols,
+ * plus/minus signs, spaces, and scientific notation never match either
+ * branch.
+ */
+const AMOUNT_PATTERN = /^(\d+|\d{1,3}(?:,\d{3})+)(\.\d+)?$/;
+
+/**
+ * Removes grouping commas from an amount whose format has already been
+ * approved by budgetAmountError (so every comma present is known to sit at a
+ * correct three-digit group boundary). Pure text substitution -- no
+ * Number(), no parseFloat(), no rounding, no arithmetic. A blank input stays
+ * blank. This is the ONLY place a comma is ever removed, and it never
+ * changes a digit: "12,250.00" becomes "12250.00", not a different amount.
+ */
+export function removeGroupingCommas(raw: string): string {
+  return raw.trim().replace(/,/g, "");
+}
+
+/**
  * Validates ONE amount as typed, against its line's own currency.
  *
- * Purely textual: a non-negative decimal with no more fractional digits than
- * the currency allows. A value with too many decimals is REFUSED here and by
- * the database -- neither rounds it. The minus sign is simply not part of the
- * accepted shape, so a negative amount can never be entered.
+ * Purely textual: a non-negative decimal, optionally grouped with commas,
+ * with no more fractional digits than the currency allows. A value with too
+ * many decimals is REFUSED here and by the database -- neither rounds it.
+ * The minus sign is simply not part of the accepted shape, so a negative
+ * amount can never be entered.
  */
 export function budgetAmountError(raw: string, currency: BudgetCurrency): string | null {
   const value = raw.trim();
@@ -118,10 +151,14 @@ export function budgetAmountError(raw: string, currency: BudgetCurrency): string
     return null; // optional
   }
   const decimals = budgetCurrencyDecimals(currency);
-  if (!/^\d+(\.\d+)?$/.test(value)) {
-    return "Enter an amount as digits, like 1250.00 — no currency symbols, commas, or minus signs.";
+  if (!AMOUNT_PATTERN.test(value)) {
+    return "Enter an amount as digits, like 1,250.00 — no currency symbols, plus or minus signs, spaces, or scientific notation.";
   }
-  const fraction = value.split(".")[1] ?? "";
+  // Precision and length are measured on the comma-free digits: grouping
+  // commas never touch the fractional part, so this cannot change which
+  // amounts pass, only how the integer part's digit count is read.
+  const plain = removeGroupingCommas(value);
+  const fraction = plain.split(".")[1] ?? "";
   if (fraction.length > decimals) {
     return currency === "BTC"
       ? "A Bitcoin amount can have at most 8 decimal places."
@@ -129,7 +166,7 @@ export function budgetAmountError(raw: string, currency: BudgetCurrency): string
   }
   // Length guard mirroring the database's storage-hygiene ceiling. Not a
   // budget limit, a spending cap, or a judgement about the amount.
-  if ((value.split(".")[0] ?? "").replace(/^0+/, "").length > 12) {
+  if ((plain.split(".")[0] ?? "").replace(/^0+/, "").length > 12) {
     return "That amount is larger than this field can hold.";
   }
   return null;
@@ -198,8 +235,11 @@ function lineArgs(input: BudgetLineInput) {
     p_category: input.category.trim() || null,
     p_currency: input.currency,
     // Sent as exact decimal STRINGS -- never Number(), never parseFloat().
-    p_estimated_amount: input.estimatedAmount.trim() || null,
-    p_actual_amount: input.actualAmount.trim() || null,
+    // Grouping commas are removed ONLY here, at the submission boundary: the
+    // organizer's own typed value (with commas, if any) is never rewritten
+    // in form state, but the wire payload always carries a plain decimal.
+    p_estimated_amount: removeGroupingCommas(input.estimatedAmount) || null,
+    p_actual_amount: removeGroupingCommas(input.actualAmount) || null,
     p_organizer_note: input.note.trim() || null,
   };
 }

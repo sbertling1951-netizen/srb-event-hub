@@ -15,6 +15,7 @@ import {
   isBudgetCurrency,
   listMyPrivateDraftBudgetLines,
   type OrganizerBudgetRpcClient,
+  removeGroupingCommas,
   updateMyPrivateDraftBudgetLine,
 } from "./organizerBudget";
 
@@ -127,13 +128,66 @@ test("EXCESS PRECISION IS REJECTED, NEVER SILENTLY ROUNDED", () => {
   assert.doesNotMatch(CODE, /toFixed|Math\.round|slice\(0,\s*\d\)|truncat/i);
 });
 
+test("GROUPING: correctly-grouped US-style commas are accepted, in either currency", () => {
+  for (const ok of ["1,000", "12,250", "12,250.00", "12,250.50", "1,234,567.89", "999", "100,000,000"]) {
+    assert.equal(budgetAmountError(ok, "USD"), null, `${ok} is a valid grouped USD amount`);
+  }
+  // grouping only ever applies to the integer part -- the fraction is unaffected
+  for (const ok of ["12,345.87654321", "1,234.5", "100,000.00000001"]) {
+    assert.equal(budgetAmountError(ok, "BTC"), null, `${ok} is a valid grouped BTC amount`);
+  }
+  // plain, ungrouped values of any length remain valid
+  for (const ok of ["12250", "1000000"]) {
+    assert.equal(budgetAmountError(ok, "USD"), null, `${ok} (ungrouped) is still valid`);
+  }
+});
+
+test("GROUPING: malformed comma placement is refused, never repaired", () => {
+  for (const bad of [
+    "1,00", // final group has 2 digits, not 3
+    "12,34", // final group has 2 digits, not 3
+    "1,2345", // final group has 4 digits, not 3
+    ",250", // leading comma
+    "12,", // trailing comma, no digits after it
+    "1234,567", // first group has 4 digits, not 1-3
+    "12,25,0", // a valid-looking group followed by a malformed one
+    "12.25.00", // two decimal points
+    "1,,000", // doubled comma
+  ]) {
+    assert.notEqual(budgetAmountError(bad, "USD"), null, `${bad} is refused, not silently regrouped`);
+  }
+});
+
+test("GROUPING: precision limits are still enforced AFTER grouping commas are removed", () => {
+  // three fractional digits on a grouped USD amount -- still too many
+  assert.match(String(budgetAmountError("12,250.567", "USD")), /at most 2 decimal places/);
+  // nine fractional digits on a grouped BTC amount -- still too many
+  assert.match(String(budgetAmountError("1,234.123456789", "BTC")), /at most 8 decimal places/);
+  // a grouped amount at exactly the currency's own limit is accepted
+  assert.equal(budgetAmountError("12,250.56", "USD"), null);
+  assert.equal(budgetAmountError("1,234.12345678", "BTC"), null);
+});
+
+test("removeGroupingCommas is pure text substitution -- no rounding, no arithmetic, digits preserved", () => {
+  assert.equal(removeGroupingCommas("12,250.00"), "12250.00");
+  assert.equal(removeGroupingCommas("1,234,567.89"), "1234567.89");
+  assert.equal(removeGroupingCommas("1,000"), "1000");
+  assert.equal(removeGroupingCommas("  12,250.00  "), "12250.00");
+  assert.equal(removeGroupingCommas(""), "");
+  assert.equal(removeGroupingCommas("   "), "");
+  // no commas present -- unchanged
+  assert.equal(removeGroupingCommas("1250.50"), "1250.50");
+});
+
 test("NEGATIVE amounts cannot be entered, in either currency", () => {
   for (const currency of BUDGET_CURRENCIES) {
     assert.notEqual(budgetAmountError("-1", currency), null);
     assert.notEqual(budgetAmountError("-0.01", currency), null);
   }
-  // and other non-amount shapes are refused rather than coerced
-  for (const bad of ["$1,250", "1,250.00", "abc", "1e5", "12.", ".5", "1 250"]) {
+  // and other non-amount shapes are refused rather than coerced -- a currency
+  // symbol prefix is refused even though "1,250" alone (correctly grouped)
+  // is now accepted; see the GROUPING tests below.
+  for (const bad of ["$1,250", "abc", "1e5", "12.", ".5", "1 250", "+12.50"]) {
     assert.notEqual(budgetAmountError(bad, "USD"), null, `${bad} is refused`);
   }
 });
@@ -185,6 +239,68 @@ test("amounts travel to the RPC as exact strings, with blanks sent as null", asy
     p_organizer_note: "they want half up front",
   });
   assert.equal(typeof calls[0]?.args?.p_estimated_amount, "string", "the amount is a string, not a number");
+});
+
+test("GROUPING: a grouped USD amount submits to add_my_private_draft_budget_line as a plain decimal string", async () => {
+  const { client, calls } = capturingClient();
+  const input: BudgetLineInput = { ...values, estimatedAmount: "12,250.00", actualAmount: "1,300" };
+  await addMyPrivateDraftBudgetLine(client, { eventId: "e1", values: input });
+  assert.equal(calls[0]?.name, "add_my_private_draft_budget_line");
+  assert.deepEqual(calls[0]?.args, {
+    p_event_id: "e1",
+    p_line_name: "Hall deposit",
+    p_category: "Venue",
+    p_currency: "USD",
+    p_estimated_amount: "12250.00",
+    p_actual_amount: "1300",
+    p_organizer_note: "they want half up front",
+  });
+  assert.equal(typeof calls[0]?.args?.p_estimated_amount, "string", "still a string, never a number");
+  // the organizer's own typed value (with commas) is untouched -- only the
+  // wire payload was normalized, and only at this submission boundary
+  assert.equal(input.estimatedAmount, "12,250.00", "form state is never rewritten");
+  assert.equal(input.actualAmount, "1,300", "form state is never rewritten");
+});
+
+test("GROUPING: a grouped BTC amount submits to update_my_private_draft_budget_line as a plain decimal string", async () => {
+  const { client, calls } = capturingClient({ currency: "BTC" });
+  const input: BudgetLineInput = {
+    ...values,
+    currency: "BTC",
+    estimatedAmount: "12,345.87654321",
+    actualAmount: "",
+  };
+  await updateMyPrivateDraftBudgetLine(client, { eventId: "e1", budgetLineId: "b1", values: input });
+  assert.equal(calls[0]?.name, "update_my_private_draft_budget_line");
+  assert.deepEqual(calls[0]?.args, {
+    p_event_id: "e1",
+    p_budget_line_id: "b1",
+    p_line_name: "Hall deposit",
+    p_category: "Venue",
+    p_currency: "BTC",
+    p_estimated_amount: "12345.87654321",
+    p_actual_amount: null,
+    p_organizer_note: "they want half up front",
+  });
+  assert.equal(input.estimatedAmount, "12,345.87654321", "form state is never rewritten on edit either");
+});
+
+test("GROUPING: malformed grouping never reaches the network on add or update", async () => {
+  const { client, calls } = capturingClient();
+  await assert.rejects(
+    () => addMyPrivateDraftBudgetLine(client, { eventId: "e1", values: { ...values, estimatedAmount: "1,00" } }),
+    /Enter an amount as digits/,
+  );
+  await assert.rejects(
+    () =>
+      updateMyPrivateDraftBudgetLine(client, {
+        eventId: "e1",
+        budgetLineId: "b1",
+        values: { ...values, currency: "BTC", estimatedAmount: "1,2345" },
+      }),
+    /Enter an amount as digits/,
+  );
+  assert.equal(calls.length, 0, "no RPC call was attempted for malformed grouping");
 });
 
 test("the update RPC carries the line id and re-sends the whole field set", async () => {
