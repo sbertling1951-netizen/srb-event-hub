@@ -12,10 +12,19 @@ import {
  * "add a vendor" form and each in-place "edit" form on
  * `app/organize/[eventId]/vendors/page.tsx`. No second field implementation.
  *
- * Organizer-neutral and planning-only: name / category / status / website /
- * contact detail / private note. No admission, access, invitation, or payment
- * control, and deliberately no cost or quote field -- a vendor plan entry is a
- * private note to the organizer, nothing more.
+ * Organizer-neutral and planning-only: vendor or supplier / category / status /
+ * website / contact name / phone number / private note. No admission, access,
+ * invitation, or payment control, and deliberately no cost or quote field -- a
+ * vendor plan entry is a private note to the organizer, nothing more.
+ *
+ * "Vendor or supplier" is the business name. Contact name is the person the
+ * organizer speaks to there; it is a second, different field, never a
+ * duplicate business-name box.
+ *
+ * A pre-20261002000000 entry may still carry one generic free-text contact
+ * value. It is rendered read-only under an explicit "Saved earlier" heading so
+ * it is never mistaken for -- or silently converted into -- a contact name or
+ * a phone number.
  */
 
 export function OrganizerVendorPlanFields({
@@ -73,14 +82,35 @@ export function OrganizerVendorPlanFields({
           />
         </label>
         <label>
-          Contact detail <span style={{ fontWeight: 400 }}>(optional)</span>
+          Contact name <span style={{ fontWeight: 400 }}>(optional)</span>
           <input
             className="app-form-input"
-            value={values.contactDetail}
-            onChange={(event) => update("contactDetail", event.target.value)}
+            value={values.contactName}
+            onChange={(event) => update("contactName", event.target.value)}
           />
         </label>
       </div>
+      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+        <label>
+          Phone number <span style={{ fontWeight: 400 }}>(optional)</span>
+          <input
+            className="app-form-input"
+            value={values.contactPhone}
+            onChange={(event) => update("contactPhone", event.target.value)}
+          />
+        </label>
+      </div>
+      {values.legacyContactDetail ? (
+        <div className="card" style={{ display: "grid", gap: 4 }}>
+          <strong style={{ fontSize: "0.9em" }}>Contact information saved earlier</strong>
+          <span style={{ color: "var(--color-text-muted, #475569)" }}>
+            {values.legacyContactDetail}
+          </span>
+          <span style={{ color: "var(--color-text-muted, #475569)", fontSize: "0.85em" }}>
+            Kept exactly as you typed it. Copy anything you need into the fields above.
+          </span>
+        </div>
+      ) : null}
       <label>
         Private note <span style={{ fontWeight: 400 }}>(optional, only you can see this)</span>
         <textarea

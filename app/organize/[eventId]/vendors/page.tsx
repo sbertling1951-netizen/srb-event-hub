@@ -31,8 +31,21 @@ const PRIVACY_COPY =
   "This private vendor plan is visible only to you. Adding a vendor here does not notify them, create an account, invite them, or make them part of this Event.";
 
 function planDetails(entry: VendorPlanEntry) {
-  return [entry.serviceCategory, entry.website, entry.contactDetail].filter(Boolean).join(" · ") ||
-    "No other details yet";
+  return [entry.serviceCategory, entry.website].filter(Boolean).join(" · ") || "No other details yet";
+}
+
+/**
+ * The contact line for a saved card. Contact name and phone are labelled for
+ * what they are; a pre-20261002000000 free-text value is shown separately and
+ * explicitly as saved-earlier text, never relabelled as a name or a number.
+ */
+function planContact(entry: VendorPlanEntry) {
+  return [
+    entry.contactName ? `Contact: ${entry.contactName}` : null,
+    entry.contactPhone ? `Phone: ${entry.contactPhone}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export default function OrganizerVendorPlanPage({ params }: VendorsPageProps) {
@@ -213,6 +226,14 @@ export default function OrganizerVendorPlanPage({ params }: VendorsPageProps) {
                     <span style={{ color: "var(--color-text-muted, #475569)" }}>
                       {VENDOR_PLAN_STATUS_LABELS[entry.planningStatus]} — {planDetails(entry)}
                     </span>
+                    {planContact(entry) ? (
+                      <span style={{ color: "var(--color-text-muted, #475569)" }}>{planContact(entry)}</span>
+                    ) : null}
+                    {entry.legacyContactDetail ? (
+                      <span style={{ color: "var(--color-text-muted, #475569)" }}>
+                        Contact information saved earlier: {entry.legacyContactDetail}
+                      </span>
+                    ) : null}
                     {entry.organizerNote ? <p style={{ margin: 0 }}>Note: {entry.organizerNote}</p> : null}
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                       <AppButton onClick={() => startEdit(entry)}>Edit</AppButton>

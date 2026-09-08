@@ -20,8 +20,10 @@ const values: VendorPlanInput = {
   serviceCategory: "Caterers and food",
   status: "contacted",
   website: "https://riverbend.example.invalid",
-  contactDetail: "ask for Dana, 555-0182",
-  note: "Waiting on the written quote",
+  contactName: "Dana Whitfield",
+  contactPhone: "+1 555 0182",
+  note: "Waiting on the written note",
+  legacyContactDetail: "",
 };
 
 test("exactly the three approved statuses exist", () => {
@@ -37,14 +39,15 @@ test("exactly the three approved statuses exist", () => {
 test("vendorPlanError requires a name and leaves every other field optional", () => {
   assert.equal(vendorPlanError(values), null);
   assert.equal(
-    vendorPlanError({ ...values, serviceCategory: "", website: "", contactDetail: "", note: "" }),
+    vendorPlanError({ ...values, serviceCategory: "", website: "", contactName: "", contactPhone: "", note: "" }),
     null,
   );
   assert.match(vendorPlanError({ ...values, vendorName: "  " }) ?? "", /Enter a name/);
   assert.match(vendorPlanError({ ...values, vendorName: "x".repeat(201) }) ?? "", /200 characters or fewer/);
   assert.match(vendorPlanError({ ...values, serviceCategory: "x".repeat(121) }) ?? "", /category must be 120/);
   assert.match(vendorPlanError({ ...values, website: "x".repeat(501) }) ?? "", /website must be 500/);
-  assert.match(vendorPlanError({ ...values, contactDetail: "x".repeat(321) }) ?? "", /contact detail must be 320/);
+  assert.match(vendorPlanError({ ...values, contactName: "x".repeat(201) }) ?? "", /contact name must be 200/);
+  assert.match(vendorPlanError({ ...values, contactPhone: "x".repeat(51) }) ?? "", /phone number must be 50/);
   assert.match(vendorPlanError({ ...values, note: "x".repeat(2001) }) ?? "", /note must be 2000/);
 });
 
@@ -59,8 +62,10 @@ test("emptyVendorPlan / vendorPlanValues shape and prefill", () => {
     serviceCategory: "",
     status: "considering",
     website: "",
-    contactDetail: "",
+    contactName: "",
+    contactPhone: "",
     note: "",
+    legacyContactDetail: "",
   });
   assert.deepEqual(
     vendorPlanValues({
@@ -69,7 +74,9 @@ test("emptyVendorPlan / vendorPlanValues shape and prefill", () => {
       serviceCategory: null,
       planningStatus: "selected",
       website: null,
-      contactDetail: null,
+      contactName: null,
+      contactPhone: null,
+      legacyContactDetail: null,
       organizerNote: "Free, we bring tables",
     }),
     {
@@ -77,8 +84,10 @@ test("emptyVendorPlan / vendorPlanValues shape and prefill", () => {
       serviceCategory: "",
       status: "selected",
       website: "",
-      contactDetail: "",
+      contactName: "",
+      contactPhone: "",
       note: "Free, we bring tables",
+      legacyContactDetail: "",
     },
   );
 });
@@ -97,6 +106,8 @@ test("listMyPrivateDraftVendorPlans parses rows and surfaces a not-found error v
             planning_status: "contacted",
             website: null,
             contact_detail: null,
+            contact_name: "Dana Whitfield",
+            contact_phone: "+1 555 0182",
             organizer_note: null,
           },
         ],
@@ -111,7 +122,9 @@ test("listMyPrivateDraftVendorPlans parses rows and surfaces a not-found error v
       serviceCategory: null,
       planningStatus: "contacted",
       website: null,
-      contactDetail: null,
+      contactName: "Dana Whitfield",
+      contactPhone: "+1 555 0182",
+      legacyContactDetail: null,
       organizerNote: null,
     },
   ]);
@@ -138,7 +151,7 @@ test("an unrecognized status from the server falls back to considering, never cr
   assert.equal(entry.planningStatus, "considering");
 });
 
-test("add sends exactly the seven planning arguments, trimming blanks to null", async () => {
+test("add sends exactly the nine planning arguments, trimming blanks to null", async () => {
   const client: OrganizerVendorPlanRpcClient = {
     async rpc(name, args) {
       assert.equal(name, "add_my_private_draft_vendor_plan");
@@ -150,6 +163,8 @@ test("add sends exactly the seven planning arguments, trimming blanks to null", 
         p_website: null,
         p_contact_detail: null,
         p_organizer_note: null,
+        p_contact_name: null,
+        p_contact_phone: null,
       });
       return {
         data: [{ id: "v2", vendor_name: "Aunt Ruth's barn", planning_status: "considering" }],
@@ -219,4 +234,87 @@ test("a server error on delete is surfaced, never swallowed", async () => {
     () => deleteMyPrivateDraftVendorPlan(failing, { eventId: "e1", vendorPlanId: "v9" }),
     /Vendor plan entry not found\./,
   );
+});
+
+test("blank contact name and phone are valid", () => {
+  assert.equal(vendorPlanError({ ...values, contactName: "", contactPhone: "" }), null);
+  assert.equal(vendorPlanError({ ...emptyVendorPlan(), vendorName: "Aunt Ruth's barn" }), null);
+});
+
+test("a legacy contact_detail is carried through untouched, never parsed into the new fields", () => {
+  const legacy = "Dana on 555-0182, ask about the Saturday rate";
+  const prefilled = vendorPlanValues({
+    id: "v1",
+    vendorName: "Legacy Catering Co",
+    serviceCategory: null,
+    planningStatus: "contacted",
+    website: null,
+    contactName: null,
+    contactPhone: null,
+    legacyContactDetail: legacy,
+    organizerNote: null,
+  });
+  // the legacy blob is carried, and NOT split / guessed into name or phone
+  assert.equal(prefilled.legacyContactDetail, legacy);
+  assert.equal(prefilled.contactName, "");
+  assert.equal(prefilled.contactPhone, "");
+});
+
+test("saving an edited legacy entry sends the legacy value back verbatim", async () => {
+  const legacy = "Dana on 555-0182, ask about the Saturday rate";
+  let sent: Record<string, unknown> | undefined;
+  const client: OrganizerVendorPlanRpcClient = {
+    async rpc(_name, args) {
+      sent = args;
+      return { data: [{ id: "v1", vendor_name: "Legacy Catering Co", planning_status: "selected" }], error: null };
+    },
+  };
+  await updateMyPrivateDraftVendorPlan(client, {
+    eventId: "e1",
+    vendorPlanId: "v1",
+    values: {
+      ...emptyVendorPlan(),
+      vendorName: "Legacy Catering Co",
+      status: "selected",
+      contactName: "Dana Whitfield",
+      contactPhone: "555-0182",
+      legacyContactDetail: legacy,
+    },
+  });
+  // the legacy value round-trips unchanged, so an unrelated edit cannot drop it
+  assert.equal(sent?.p_contact_detail, legacy);
+  assert.equal(sent?.p_contact_name, "Dana Whitfield");
+  assert.equal(sent?.p_contact_phone, "555-0182");
+});
+
+test("a new entry sends no legacy contact_detail at all", async () => {
+  let sent: Record<string, unknown> | undefined;
+  const client: OrganizerVendorPlanRpcClient = {
+    async rpc(_name, args) {
+      sent = args;
+      return { data: [{ id: "v2", vendor_name: "Riverbend Catering", planning_status: "considering" }], error: null };
+    },
+  };
+  await addMyPrivateDraftVendorPlan(client, {
+    eventId: "e1",
+    values: { ...emptyVendorPlan(), vendorName: "Riverbend Catering", contactPhone: "  555-0199  " },
+  });
+  assert.equal(sent?.p_contact_detail, null);
+  assert.equal(sent?.p_contact_phone, "555-0199", "the phone is trimmed but otherwise stored as typed");
+});
+
+test("the phone is never normalized, reformatted, or stripped", async () => {
+  const messy = "+1 (555) 018-2 ext. 4 — ask for Dana";
+  let sent: Record<string, unknown> | undefined;
+  const client: OrganizerVendorPlanRpcClient = {
+    async rpc(_name, args) {
+      sent = args;
+      return { data: [{ id: "v3", vendor_name: "X", planning_status: "considering" }], error: null };
+    },
+  };
+  await addMyPrivateDraftVendorPlan(client, {
+    eventId: "e1",
+    values: { ...emptyVendorPlan(), vendorName: "X", contactPhone: messy },
+  });
+  assert.equal(sent?.p_contact_phone, messy, "opaque text: exactly what the organizer typed");
 });

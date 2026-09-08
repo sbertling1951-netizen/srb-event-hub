@@ -9,6 +9,15 @@
  * authorization and validation boundary (the self-service organizer-owner rule
  * only -- never Event task authority); this module only keeps route components
  * from constructing RPC argument objects ad hoc.
+ *
+ * Contact fields (20261002000000): new entries carry an optional `contactName`
+ * and `contactPhone`. Both are opaque planner-entered text -- never
+ * normalized, parsed, matched, dialled, messaged, or resolved to a Person.
+ *
+ * `legacyContactDetail` is the single free-text field entries written before
+ * that migration used. It is READ-ONLY here and deliberately NOT parsed into
+ * the new fields: the adapter carries whatever the server returned straight
+ * back on the next save, so editing an old entry never silently discards it.
  */
 
 type RpcResult = { data: unknown; error: { message: string } | null };
@@ -37,7 +46,10 @@ export type VendorPlanEntry = {
   serviceCategory: string | null;
   planningStatus: VendorPlanStatus;
   website: string | null;
-  contactDetail: string | null;
+  contactName: string | null;
+  contactPhone: string | null;
+  /** Pre-20261002000000 free-text contact field. Read-only; never reinterpreted. */
+  legacyContactDetail: string | null;
   organizerNote: string | null;
 };
 
@@ -50,8 +62,15 @@ export type VendorPlanInput = {
   serviceCategory: string;
   status: VendorPlanStatus;
   website: string;
-  contactDetail: string;
+  contactName: string;
+  contactPhone: string;
   note: string;
+  /**
+   * Carried, not edited. Whatever legacy contact_detail the server returned is
+   * passed straight back so an edit preserves it verbatim; the form never
+   * shows it as an editable contact name or phone number.
+   */
+  legacyContactDetail: string;
 };
 
 export function emptyVendorPlan(): VendorPlanInput {
@@ -60,8 +79,10 @@ export function emptyVendorPlan(): VendorPlanInput {
     serviceCategory: "",
     status: "considering",
     website: "",
-    contactDetail: "",
+    contactName: "",
+    contactPhone: "",
     note: "",
+    legacyContactDetail: "",
   };
 }
 
@@ -71,8 +92,11 @@ export function vendorPlanValues(entry: VendorPlanEntry): VendorPlanInput {
     serviceCategory: entry.serviceCategory ?? "",
     status: isVendorPlanStatus(entry.planningStatus) ? entry.planningStatus : "considering",
     website: entry.website ?? "",
-    contactDetail: entry.contactDetail ?? "",
+    contactName: entry.contactName ?? "",
+    contactPhone: entry.contactPhone ?? "",
     note: entry.organizerNote ?? "",
+    // carried through untouched so a save cannot drop it
+    legacyContactDetail: entry.legacyContactDetail ?? "",
   };
 }
 
@@ -92,8 +116,11 @@ export function vendorPlanError(input: VendorPlanInput): string | null {
   if (input.website.trim().length > 500) {
     return "The website must be 500 characters or fewer.";
   }
-  if (input.contactDetail.trim().length > 320) {
-    return "The contact detail must be 320 characters or fewer.";
+  if (input.contactName.trim().length > 200) {
+    return "The contact name must be 200 characters or fewer.";
+  }
+  if (input.contactPhone.trim().length > 50) {
+    return "The phone number must be 50 characters or fewer.";
   }
   if (input.note.trim().length > 2000) {
     return "The note must be 2000 characters or fewer.";
@@ -110,7 +137,9 @@ function coerceEntry(row: unknown): VendorPlanEntry {
     serviceCategory: (value.service_category as string | null) ?? null,
     planningStatus: isVendorPlanStatus(status) ? status : "considering",
     website: (value.website as string | null) ?? null,
-    contactDetail: (value.contact_detail as string | null) ?? null,
+    contactName: (value.contact_name as string | null) ?? null,
+    contactPhone: (value.contact_phone as string | null) ?? null,
+    legacyContactDetail: (value.contact_detail as string | null) ?? null,
     organizerNote: (value.organizer_note as string | null) ?? null,
   };
 }
@@ -129,8 +158,11 @@ function planArgs(input: VendorPlanInput) {
     p_service_category: input.serviceCategory.trim() || null,
     p_planning_status: input.status,
     p_website: input.website.trim() || null,
-    p_contact_detail: input.contactDetail.trim() || null,
+    // the legacy value is round-tripped verbatim, never re-derived
+    p_contact_detail: input.legacyContactDetail.trim() || null,
     p_organizer_note: input.note.trim() || null,
+    p_contact_name: input.contactName.trim() || null,
+    p_contact_phone: input.contactPhone.trim() || null,
   };
 }
 

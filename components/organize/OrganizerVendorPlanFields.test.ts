@@ -26,7 +26,8 @@ test("the shared component owns the one vendor-plan field set", () => {
     "Service category",
     "Status",
     "Website",
-    "Contact detail",
+    "Contact name",
+    "Phone number",
     "Private note",
   ]) {
     assert.ok(shared.includes(label), `shared vendor field set must render "${label}"`);
@@ -116,4 +117,38 @@ test("the adapter never asks the server to match a vendor against a catalog or i
 test("the shared vendor field set carries no admission / access / role / cost control", () => {
   const code = shared.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
   assert.doesNotMatch(code, /invite|role|access|admit|household|capacity|rsvp|register|cost|quote|currency|budget|price/i);
+});
+
+test("the business name and the contact name are two distinct fields, not a duplicate", () => {
+  // "Vendor or supplier" is the business; "Contact name" is the person there
+  assert.ok(shared.includes("Vendor or supplier"));
+  assert.ok(shared.includes("Contact name"));
+  assert.match(shared, /value=\{values\.vendorName\}/);
+  assert.match(shared, /value=\{values\.contactName\}/);
+  // exactly one input is bound to each, so there is no second business-name box
+  assert.equal((shared.match(/values\.vendorName/g) ?? []).length, 1);
+  assert.equal((shared.match(/values\.contactName/g) ?? []).length, 1);
+  // the replaced generic field is gone from the editable form
+  assert.doesNotMatch(shared, /update\("contactDetail"/);
+});
+
+test("a legacy contact value is rendered read-only and clearly labelled, never as a name or phone", () => {
+  // shown under an explicit saved-earlier heading
+  assert.match(shared, /Contact information saved earlier/);
+  assert.match(shared, /values\.legacyContactDetail/);
+  // it is displayed, never bound to an input or a change handler
+  assert.doesNotMatch(shared, /value=\{values\.legacyContactDetail\}/);
+  assert.doesNotMatch(shared, /update\("legacyContactDetail"/);
+  // and the saved card labels it the same way, distinct from Contact:/Phone:
+  assert.match(vendorsPage, /Contact information saved earlier: \{entry\.legacyContactDetail\}/);
+  assert.match(vendorsPage, /`Contact: \$\{entry\.contactName\}`/);
+  assert.match(vendorsPage, /`Phone: \$\{entry\.contactPhone\}`/);
+});
+
+test("the legacy value is never parsed, split, or reinterpreted anywhere in the UI", () => {
+  for (const source of [shared, vendorsPage, adapter]) {
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    assert.doesNotMatch(code, /legacyContactDetail[^\n]*\.(split|match|replace|slice|substring|indexOf|search)\b/);
+    assert.doesNotMatch(code, /(split|match|exec)\([^)]*legacyContactDetail/);
+  }
 });

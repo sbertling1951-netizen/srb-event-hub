@@ -82,7 +82,8 @@ specified here.
 | Service category | Yes | Private. Drawn from the Shared Planning Catalog's category list so a later catalog reference lines up. |
 | Planning status | Yes | Private. Exactly one of *considering* / *contacted* / *selected*. |
 | Website | No | Private. A convenience link the organizer saved; carries no verification claim. |
-| Contact detail | No | **Third-party PII entered by the organizer.** Held as opaque free text. Never resolved, matched, deduplicated, indexed for search, used to notify, or joined to any identity, member, or vendor record. |
+| Contact name | No | **Third-party PII entered by the organizer.** The person the organizer speaks to at that vendor — a different field from the vendor/supplier name, never a duplicate of it. Held as opaque free text. Never resolved, matched, deduplicated, indexed for search, used to notify, or joined to any identity, member, or vendor record. |
+| Phone number | No | **Third-party PII entered by the organizer.** Held as opaque text, stored exactly as typed apart from trimming. Never normalized, reformatted, parsed into a dialable value, matched, dialled, messaged, or used to resolve a Person. |
 | Estimated cost or quote | No | Private and commercially sensitive. Never aggregated, benchmarked, reported, or surfaced outside the owning event. |
 | Private organizer note | No | Private, unstructured, and the most sensitive field. Never rendered anywhere but the owner's own view; never copied into audit, analytics, telemetry, error payloads, or the catalog. |
 
@@ -91,10 +92,32 @@ audience: the verified organizer-owner (§D). None of it is member-visible,
 tenant-visible, provider-visible, or publicly visible. None of it flows into
 the shared catalog, any operational table, or any deletion audit (§G).
 
-The contact detail and note fields deserve the sharpest line: a contact detail
-here is a real person's or business's information that the organizer wrote
-down, and it is held only so the organizer can read it back. It must never
-become a reason to contact anyone.
+The contact and note fields deserve the sharpest line: a contact name or phone
+number here is a real person's or business's information that the organizer
+wrote down, and it is held only so the organizer can read it back. It must
+never become a reason to contact anyone.
+
+### Legacy contact detail
+
+The first implementation carried one combined **contact detail** field instead
+of a separate name and number. Entries written then keep that value.
+
+The rule for it is *preserve, never reinterpret*:
+
+- the stored value is retained verbatim — never parsed, split, guessed at,
+  migrated, backfilled into the newer fields, or deleted;
+- it is shown to the owner under an explicit saved-earlier heading, never
+  relabelled as a contact name or a phone number;
+- an unrelated edit to the entry must not silently discard it;
+- it carries exactly the same privacy treatment as the fields that replaced it.
+
+Whether an owner may eventually clear or re-file a legacy value themselves is
+an open decision (§I), not a commitment.
+
+**Field changes are additive.** A change to this field set adds nullable
+columns and appends optional parameters; it never renames, retypes, reorders,
+or removes what already exists. That is what lets the schema change land ahead
+of the application deploy without breaking the build still serving.
 
 ## D. Authority and event-state rules
 
@@ -242,6 +265,11 @@ Recorded as future decisions. None is implied or committed.
 7. **Cross-event reuse.** Whether an organizer's records may be copied from
    one of their own Drafts to another, or carried when a Draft is deleted and
    restarted. Undecided.
+
+7a. **Legacy contact detail disposition.** Whether an owner may clear a legacy
+   combined contact value once they have re-entered it as a name and number,
+   or whether it stays read-only for the life of the entry. Today it is
+   read-only and preserved; no automatic conversion will ever be added.
 8. **Post-launch behavior.** What happens to Vendor Plan records when a Draft
    is published and becomes a launched event — retained owner-private,
    archived, or migrated.
