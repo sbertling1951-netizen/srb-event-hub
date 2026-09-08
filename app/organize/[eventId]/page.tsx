@@ -264,6 +264,17 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
         </Link>
       </PageSection>
 
+      <PageSection title="Registry plan" variant="card">
+        <p style={{ marginTop: 0, color: "var(--color-text-muted, #475569)" }}>
+          Keep a private note of the registry you plan to use. It is visible only to you —
+          nothing here is shared with guests, sent to a registry, or connected to an account,
+          and any link you save is kept as plain text that EpicentraX never opens.
+        </p>
+        <Link href={`/organize/${encodeURIComponent(draft.event_id)}/registry`} className="app-button">
+          Open the registry plan
+        </Link>
+      </PageSection>
+
       <PageSection title="Launch readiness" variant="section">
         <p>This private workspace is the safe beginning. Later stages will add Event planning, guest access choices, invitations, and launch checkout. None of those actions are available from this draft yet.</p>
       </PageSection>
