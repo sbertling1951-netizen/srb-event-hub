@@ -55,6 +55,7 @@ export const STARTER_TEMPLATES = [
   { key: "conference_corporate", label: "Conference or organization", detail: "A starting point for a larger organized event." },
   { key: "dinner", label: "Dinner", detail: "A focused starting point for a meal together." },
   { key: "sports_activity", label: "Sports or activity", detail: "A starting point for an activity-centered event." },
+  { key: "wedding", label: "Wedding", detail: "A starting point for a wedding celebration." },
 ] as const;
 
 export const STARTER_TEMPLATE_KEYS = STARTER_TEMPLATES.map((template) => template.key);

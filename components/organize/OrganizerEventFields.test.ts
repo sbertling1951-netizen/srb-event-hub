@@ -63,6 +63,7 @@ const AGREED_LABELS: Record<string, string> = {
   conference_corporate: "Conference or organization",
   dinner: "Dinner",
   sports_activity: "Sports or activity",
+  wedding: "Wedding",
 };
 
 test("every supported stored key maps to the agreed organizer-facing label", () => {
@@ -74,7 +75,9 @@ test("every supported stored key maps to the agreed organizer-facing label", () 
 });
 
 test("an unexpected / null stored key resolves to a neutral friendly fallback, never the raw value", () => {
-  for (const bad of ["", "legacy_potluck", "wedding", null, undefined]) {
+  // NB: "wedding" used to sit in this list. It is now a real supported key
+  // (see the wedding test below), so an unrecognized sample replaces it.
+  for (const bad of ["", "legacy_potluck", "housewarming", null, undefined]) {
     const shown = starterTemplateLabel(bad as string);
     assert.equal(shown, UNKNOWN_STARTER_TEMPLATE_LABEL);
     if (typeof bad === "string" && bad) {
@@ -82,6 +85,58 @@ test("an unexpected / null stored key resolves to a neutral friendly fallback, n
     }
   }
   assert.doesNotMatch(UNKNOWN_STARTER_TEMPLATE_LABEL, /_|^[a-z]+$/);
+});
+
+test("WEDDING: the approved key, label, and detail are in the one canonical catalog", () => {
+  const wedding = STARTER_TEMPLATES.find((t) => t.key === "wedding");
+  assert.ok(wedding, "wedding is a supported starter template");
+  assert.equal(wedding.key, "wedding", "the stored key is exactly 'wedding'");
+  assert.equal(wedding.label, "Wedding", "the approved organizer label");
+  assert.equal(wedding.detail, "A starting point for a wedding celebration.", "the approved detail");
+  // it resolves through the one helper, so create, edit, and the saved card
+  // all render it identically
+  assert.equal(starterTemplateLabel("wedding"), "Wedding");
+  assert.notEqual(starterTemplateLabel("wedding"), UNKNOWN_STARTER_TEMPLATE_LABEL);
+});
+
+test("WEDDING: adding it changed no existing key, label, detail, or order", () => {
+  const before = [
+    ["casual", "Casual gathering", "A simple starting point for a get-together."],
+    ["birthday_family", "Birthday or family", "A welcoming plan for family and friends."],
+    ["club_rv", "Club or RV group", "A familiar starting point for a club gathering."],
+    ["conference_corporate", "Conference or organization", "A starting point for a larger organized event."],
+    ["dinner", "Dinner", "A focused starting point for a meal together."],
+    ["sports_activity", "Sports or activity", "A starting point for an activity-centered event."],
+  ];
+  // the six originals are still first, in their original order, untouched
+  assert.deepEqual(
+    STARTER_TEMPLATES.slice(0, 6).map((t) => [t.key, t.label, t.detail]),
+    before,
+  );
+  // and wedding is appended, not inserted
+  assert.equal(STARTER_TEMPLATES.length, 7);
+  assert.equal(STARTER_TEMPLATES[6].key, "wedding");
+});
+
+test("WEDDING carries no wedding-specific behavior -- it is a neutral starting point", () => {
+  // the catalog entry is data only: key, label, detail. No flags, no fields.
+  for (const t of STARTER_TEMPLATES) {
+    assert.deepEqual(Object.keys(t).sort(), ["detail", "key", "label"]);
+  }
+  // and no organizer surface branches on the wedding key
+  for (const src of [shared, createPage, workspacePage]) {
+    assert.doesNotMatch(src, /["']wedding["']\s*(===|!==|==)/);
+    assert.doesNotMatch(src, /(===|!==|==)\s*["']wedding["']/);
+  }
+  // Every mention of "wedding" in the component's code sits on ONE line -- the
+  // catalog entry itself (which names it three times: key, label, and inside
+  // the detail sentence). There is no second line to branch on, style by, or
+  // special-case. (Asserted on comment-stripped code: the file's doc comments
+  // legitimately discuss unrelated features.)
+  const sharedCode = shared.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  const weddingLines = sharedCode.split("\n").filter((l) => /wedding/i.test(l));
+  assert.equal(weddingLines.length, 1, "wedding is mentioned on exactly one line of code");
+  assert.match(weddingLines[0], /\{ key: "wedding", label: "Wedding", detail: "A starting point for a wedding celebration\." \},/);
 });
 
 test("the create/edit selector options are built from the same canonical catalog", () => {
@@ -101,7 +156,7 @@ test("the saved Event details card renders the friendly label via the shared hel
 test("no organizer surface renders a raw stored template key as user-facing text", () => {
   for (const src of [shared, createPage, workspacePage]) {
     // a bare stored key used as JSX text content
-    assert.doesNotMatch(src, />\s*\{?\s*["']?(casual|birthday_family|club_rv|conference_corporate|sports_activity)["']?\s*\}?\s*</);
+    assert.doesNotMatch(src, />\s*\{?\s*["']?(casual|birthday_family|club_rv|conference_corporate|sports_activity|wedding)["']?\s*\}?\s*</);
   }
 });
 
