@@ -205,6 +205,16 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
         </Link>
       </PageSection>
 
+      <PageSection title="Guest list" variant="card">
+        <p style={{ marginTop: 0, color: "var(--color-text-muted, #475569)" }}>
+          Keep a private list of who you are thinking of inviting. It is visible only to you —
+          adding someone here does not invite them, create an account, give access, or register them.
+        </p>
+        <Link href={`/organize/${encodeURIComponent(draft.event_id)}/guests`} className="app-button">
+          Open the guest list
+        </Link>
+      </PageSection>
+
       <PageSection title="Launch readiness" variant="section">
         <p>This private workspace is the safe beginning. Later stages will add Event planning, guest access choices, invitations, and launch checkout. None of those actions are available from this draft yet.</p>
       </PageSection>
