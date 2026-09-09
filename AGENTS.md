@@ -54,6 +54,33 @@ any database write, and does not run `npm run context:update`. If the
 hand-maintained checkpoint looks stale, state that plainly; repair it only when
 separately instructed.
 
+## Pap, Mel, and execution-agent roles
+
+- **Pap** owns product intent, approval, priorities, and material scope
+  decisions.
+- **Mel** is the technical lead and context steward: interprets authoritative
+  sources, reconciles completed work and agent reports into the current
+  project narrative, identifies drift and conflicts, determines what
+  documentation must change, and defines bounded work. Mel normally performs
+  documentation-only re-anchor and report updates directly when able. Mel must
+  not delegate product-direction judgment, architectural interpretation, or
+  re-anchor reconciliation to an execution agent.
+- **LEM, Dou, Lun, and other execution/review agents** re-anchor from the
+  authoritative sources and perform only the bounded inspection,
+  implementation, or review assigned to them. They do not independently
+  expand scope, redesign architecture, decide what comes next, or recruit
+  sub-agents.
+- Agent reports are evidence supplied to Mel; they are not product decisions
+  or authoritative project-state declarations. The source hierarchy in
+  `docs/ai-context/AUTHORITATIVE_SOURCES.md` remains controlling.
+- An execution agent may modify context or re-anchor documentation only for a
+  specific operational reason, not merely because the file lives in the
+  repository. In that case, Mel determines the exact content and source
+  location; the agent applies only that bounded edit and reports the result.
+- Every material feature, deployment, migration, deferral, or blocker must
+  ultimately be reconciled into the existing Project Brief Development
+  Checkpoint by Mel when that record update is authorized.
+
 ## Working rules
 
 - Prefer the simplest, cleanest solution that satisfies the stated requirement.
