@@ -38,6 +38,15 @@ const PRIVACY_COPY =
 const LINK_COPY =
   "A link you save is kept as plain text for your own reference. EpicentraX never opens it, checks it, or shows a preview of it.";
 
+// A fixed, nontechnical notice for a catalog-aware read failure that is NOT
+// identity_resolution_required (e.g. the catalog RPC surface is temporarily
+// missing, misconfigured, or otherwise unavailable). Deliberately never the
+// caught error's own message -- an unrecognized catalog error is passed
+// through as raw server text by the adapter (see catalogRpcError in
+// lib/organizerRegistryPlan.ts), and this page must never render that.
+const CATALOG_UNAVAILABLE_NOTICE =
+  "Catalog features are temporarily unavailable. You can still use your Registry Plan.";
+
 export default function OrganizerRegistryPlanPage({ params }: RegistryPageProps) {
   const [eventId, setEventId] = useState<string>("");
   const [draft, setDraft] = useState<OrganizerDraft | null>(null);
@@ -45,12 +54,18 @@ export default function OrganizerRegistryPlanPage({ params }: RegistryPageProps)
 
   const [entries, setEntries] = useState<RegistryPlanEntryWithCatalog[]>([]);
   // Catalog P2 search/attach/detach requires an exactly resolved canonical
-  // Person. When that has not completed, the page falls back to the
-  // ordinary (untouched) plain read so the organizer's typed entries still
-  // show, and shows a neutral identity notice instead of the catalog
-  // controls -- never a match detail.
+  // Person. When that has not completed -- OR the catalog-aware reader fails
+  // for ANY other reason (a missing/misconfigured RPC, a temporary grants or
+  // schema problem, or any other catalog-only server condition) -- the page
+  // falls back to the ordinary (untouched) plain read so the organizer's
+  // typed entries always still show. Catalog behavior is strictly optional
+  // and must never block ordinary Registry Plan access. identityNotice keeps
+  // its own specific, already-neutral, server-controlled copy; catalogNotice
+  // is a fixed, nontechnical notice for every OTHER catalog failure -- never
+  // that error's own (possibly raw) message.
   const [catalogAvailable, setCatalogAvailable] = useState(false);
   const [identityNotice, setIdentityNotice] = useState<string | null>(null);
+  const [catalogNotice, setCatalogNotice] = useState<string | null>(null);
 
   const [addForm, setAddForm] = useState<RegistryPlanInput>(emptyRegistryPlan());
   const [addOpen, setAddOpen] = useState(false);
@@ -71,18 +86,27 @@ export default function OrganizerRegistryPlanPage({ params }: RegistryPageProps)
       setEntries(rows);
       setCatalogAvailable(true);
       setIdentityNotice(null);
+      setCatalogNotice(null);
     } catch (error) {
-      if (error instanceof RegistryCatalogIdentityResolutionRequiredError) {
-        // The organizer's ordinary Registry Plan (untouched by Catalog P2)
-        // still loads and works fully -- only the catalog controls are held
-        // back.
-        const plain = await listMyPrivateDraftRegistryPlans(supabase, id);
-        setEntries(plain.map((entry) => ({ ...entry, catalog: null })));
-        setCatalogAvailable(false);
-        setIdentityNotice(error.message);
-        return;
-      }
-      throw error;
+      // The catalog-aware reader is a strict, OPTIONAL addition to the
+      // ordinary Registry Plan read (Catalog P2 §5: catalog behavior must
+      // never block ordinary typed access). ANY failure here -- unresolved
+      // identity, a missing or temporarily misconfigured catalog RPC, or any
+      // other catalog-only server condition -- falls back to the untouched
+      // ordinary reader below. Only a genuine failure of THAT ordinary
+      // reader (thrown, uncaught, below) is allowed to surface as a load
+      // failure; an unrecognized catalog error is never mistaken for one.
+      const isIdentityNotice = error instanceof RegistryCatalogIdentityResolutionRequiredError;
+      const plain = await listMyPrivateDraftRegistryPlans(supabase, id);
+      setEntries(plain.map((entry) => ({ ...entry, catalog: null })));
+      setCatalogAvailable(false);
+      // The identity case keeps its own specific, already-neutral message.
+      // Every other catalog failure shows one fixed, nontechnical notice --
+      // never the caught error's own message, which an unrecognized catalog
+      // error passes through as raw server text (see catalogRpcError in
+      // lib/organizerRegistryPlan.ts).
+      setIdentityNotice(isIdentityNotice ? error.message : null);
+      setCatalogNotice(isIdentityNotice ? null : CATALOG_UNAVAILABLE_NOTICE);
     }
   }, []);
 
@@ -240,6 +264,7 @@ export default function OrganizerRegistryPlanPage({ params }: RegistryPageProps)
 
       {rowError ? <Alert tone="danger">{rowError}</Alert> : null}
       {identityNotice ? <Alert tone="info">{identityNotice}</Alert> : null}
+      {catalogNotice ? <Alert tone="info">{catalogNotice}</Alert> : null}
 
       <PageSection title="Registries you are planning" variant="section">
         {entries.length === 0 ? (
