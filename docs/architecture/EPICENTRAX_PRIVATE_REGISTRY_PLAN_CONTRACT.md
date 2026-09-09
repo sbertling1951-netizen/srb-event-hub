@@ -326,7 +326,14 @@ Recorded as future decisions. None is implied or committed.
    when a placeholder is attached to an asset.
 6. **Contribution upward.** Whether a typed provider may ever be proposed as a
    shared catalog provider. The catalog contract's default until decided is
-   no, and this contract does not change it.
+   no, and this contract does not change it. **Update 2026-09-09:** this
+   remains **undecided and the default remains no.** A Catalog P3 exploration
+   of a creator-private provider candidate and upward submission is recorded
+   in
+   [EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md](EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md),
+   but per that document's 2026-09-09 scope freeze it is **deferred future
+   design material only** — not an accepted decision and not authorized. A
+   private event's typed entries stay event-private and feed no catalog.
 7. **Status vocabulary.** Whether registry planning needs a status the shared
    three words do not express — *created*, for instance, meaning the registry
    exists at the provider. Undecided; the note field covers it meanwhile.

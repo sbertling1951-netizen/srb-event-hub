@@ -273,7 +273,14 @@ to build it, and nothing below may be treated as implied.
 3. **Organizer contribution.** Whether an organizer may ever propose a new
    catalog asset from a private placeholder, and if so, what review that
    proposal requires before it becomes shared. Undecided; the default until
-   decided is no.
+   decided is no. **Update 2026-09-09:** still **undecided; the default
+   remains no**, for every category including registry providers. A Catalog
+   P3 exploration of a creator-private provider candidate with upward
+   submission is recorded in
+   [EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md](EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md),
+   but its 2026-09-09 scope freeze **defers it as future design material
+   only** — not accepted, not authorized. Under that freeze a private event
+   contributes nothing outward by default.
 
 4. **Provider participation.** Whether a described provider may ever claim,
    correct, or manage its own catalog entry, and how such a claim would be
@@ -290,6 +297,11 @@ to build it, and nothing below may be treated as implied.
 7. **Cross-event reuse for one organizer.** Whether an organizer's own
    private notes about an asset may follow them from one of their events to
    another, or whether references are strictly per-event. Undecided.
+   **Update 2026-09-09:** still **undecided.** A Catalog P3 exploration
+   ([EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md](EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md))
+   considered cross-event reuse for a creator-private provider candidate, but
+   its 2026-09-09 scope freeze defers that concept as future design material
+   only. A Registry Plan entry's private notes remain strictly per-event.
 
 8. **Templates, maps, and content assets.** Their arrival as catalog
    categories, and the additional governance they require given that maps

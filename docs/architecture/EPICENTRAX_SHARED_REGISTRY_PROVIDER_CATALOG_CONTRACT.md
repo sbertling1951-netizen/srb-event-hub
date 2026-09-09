@@ -238,3 +238,26 @@ These questions are unresolved; listing them authorizes no additional scope.
    group, or annotate providers under the Shared Catalog contract. No curation
    is enabled here, and any later layer must preserve platform ownership and
    owner-private plans without giving tenants reverse selection visibility.
+
+## 9. Catalog P3 exploration — deferred (2026-09-09 scope freeze)
+
+**Added 2026-09-09.** A Catalog P3 design exploration — a provider-first
+Registry Plan flow with a **creator-private provider candidate** and a
+Platform review/promotion path — is recorded in
+[EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md](EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md).
+
+Per the 2026-09-09 scope freeze in that document (Part I), **the P3
+exploration is deferred and supersedes nothing here.** Every clause of this
+contract stands in full, including the §5 governance table and §7 "no
+organizer contribution back to the catalog," the §4 framing of selection, and
+the §3 rule that the public website is never fetched, opened, previewed,
+crawled, or externally validated by EPX. The §8 open decisions all remain
+open.
+
+The current shipped and authorized catalog capability is **P1 + P2 only**:
+Platform-curated shared provider cards, plus an organizer's optional use of
+those already-approved cards. There is no creator submission, promotion, or
+reuse feature, and none is authorized. The P3 concepts may be reconsidered
+only through a new product decision, a fresh authority/privacy audit, a
+category-specific data-model design, and a separate implementation
+authorization.

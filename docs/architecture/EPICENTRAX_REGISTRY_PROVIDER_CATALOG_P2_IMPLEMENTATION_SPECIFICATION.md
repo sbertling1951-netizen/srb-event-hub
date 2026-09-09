@@ -211,3 +211,23 @@ before it.
 - No file under `app/admin/registry-providers/` or
   `lib/registryProviderCatalogAdmin.ts` (Catalog P1's Platform Admin
   surface) was touched.
+
+## 12. Catalog P3 exploration — deferred (2026-09-09 scope freeze)
+
+**Added 2026-09-09.** A Catalog P3 design exploration — a provider-first
+Registry Plan flow, a creator-private provider candidate created via "Add a
+provider not listed," a Platform review/promotion path, and a deliberate
+one-click new-tab open of a provider's public registry-start page — is
+recorded in
+[EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md](EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md).
+
+Per the 2026-09-09 scope freeze in that document, **the P3 exploration is
+deferred and changes nothing about P2.** The flow this spec shipped —
+search the catalog, then attach an already-approved shared card onto a
+Registry Plan entry — remains the current and only organizer-facing catalog
+flow. P2's strict canonical-Person rule (§2), snapshot-at-save behavior (§5),
+inert-website handling (§7 — no website value is navigable), and content-free
+/ read-RPC-free / no-reverse-usage audit posture (§8) all stand unchanged.
+There is no creator candidate, submission, promotion, or cross-event reuse
+feature, and none is authorized. This note is a forward pointer only and
+changes no P2 code or behavior.
