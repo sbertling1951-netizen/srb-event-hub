@@ -194,3 +194,162 @@ export async function deleteMyPrivateDraftRegistryPlan(
   const row = oneRow(data);
   return { deletedId: String(row.deleted_id ?? input.registryPlanId) };
 }
+
+/**
+ * Catalog P2: an optional, owner-private search and attachment against the
+ * Registry Provider Catalog (migration 20261009000000). Everything above
+ * this point (list/add/update/delete, RegistryPlanEntry, coerceEntry) is
+ * completely UNCHANGED by Catalog P2 and keeps working for every existing
+ * caller, including an account that has not finished identity resolution
+ * (the "no_link" case) -- catalog search, attach, detach, and the
+ * catalog-aware reader below all instead require an EXACTLY resolved
+ * canonical Person and refuse anyone else with
+ * RegistryCatalogIdentityResolutionRequiredError, never silently.
+ *
+ * THE PUBLIC WEBSITE IS INERT TEXT, exactly like the plain registryUrl field
+ * above. This module and everything built on it must never fetch, open,
+ * preview, unfurl, crawl, or navigate to a catalog card's public website.
+ */
+
+/** Thrown when the caller's account has not completed the governed identity
+ *  path required for catalog operations (the bare 'identity_resolution_required'
+ *  sentinel). A typed error so callers can branch on it without matching
+ *  translated text. */
+export class RegistryCatalogIdentityResolutionRequiredError extends Error {
+  constructor() {
+    super("Finish verifying your account to use the registry provider catalog.");
+    this.name = "RegistryCatalogIdentityResolutionRequiredError";
+  }
+}
+
+function catalogRpcError(message: string): Error {
+  if (message === "identity_resolution_required") {
+    return new RegistryCatalogIdentityResolutionRequiredError();
+  }
+  if (message === "registry_provider_catalog_asset_inactive") {
+    return new Error("That provider is no longer available. Try searching again.");
+  }
+  return new Error(message);
+}
+
+export type CatalogSearchResult = {
+  id: string;
+  providerName: string;
+  shortDescription: string;
+  /** Opaque, inert text. Never dereferenced, never rendered as a link. */
+  publicWebsite: string;
+};
+
+function coerceCatalogResult(row: unknown): CatalogSearchResult {
+  const value = (row ?? {}) as Record<string, unknown>;
+  return {
+    id: String(value.id ?? ""),
+    providerName: String(value.provider_name ?? ""),
+    shortDescription: String(value.short_description ?? ""),
+    publicWebsite: String(value.public_website ?? ""),
+  };
+}
+
+/** The attached catalog card, snapshotted at the moment the organizer selected it. */
+export type RegistryPlanCatalogSnapshot = {
+  catalogAssetId: string;
+  providerName: string;
+  shortDescription: string;
+  /** Opaque, inert text. Never dereferenced, never rendered as a link. */
+  publicWebsite: string;
+};
+
+/** A registry plan entry plus its current catalog attachment, if any. */
+export type RegistryPlanEntryWithCatalog = RegistryPlanEntry & {
+  catalog: RegistryPlanCatalogSnapshot | null;
+};
+
+function coerceEntryWithCatalog(row: unknown): RegistryPlanEntryWithCatalog {
+  const base = coerceEntry(row);
+  const value = (row ?? {}) as Record<string, unknown>;
+  const catalogAssetId = (value.catalog_asset_id as string | null) ?? null;
+  return {
+    ...base,
+    catalog: catalogAssetId
+      ? {
+          catalogAssetId,
+          providerName: String(value.catalog_provider_name_snapshot ?? ""),
+          shortDescription: String(value.catalog_description_snapshot ?? ""),
+          publicWebsite: String(value.catalog_website_snapshot ?? ""),
+        }
+      : null,
+  };
+}
+
+/**
+ * Searches active catalog providers by name prefix. Mirrors the server's own
+ * two-character minimum client-side so a too-short query never reaches the
+ * network -- the server enforces the same rule independently regardless.
+ */
+export async function searchMyPrivateDraftRegistryProviderCatalog(
+  client: OrganizerRegistryPlanRpcClient,
+  input: { eventId: string; query: string },
+): Promise<CatalogSearchResult[]> {
+  const trimmed = input.query.trim();
+  if (trimmed.length < 2) {
+    return [];
+  }
+  const { data, error } = await client.rpc("search_my_private_draft_registry_provider_catalog", {
+    p_event_id: input.eventId,
+    p_query: trimmed,
+  });
+  if (error) {
+    throw catalogRpcError(error.message);
+  }
+  return Array.isArray(data) ? data.map(coerceCatalogResult) : [];
+}
+
+export async function listMyPrivateDraftRegistryPlansWithCatalog(
+  client: OrganizerRegistryPlanRpcClient,
+  eventId: string,
+): Promise<RegistryPlanEntryWithCatalog[]> {
+  if (!eventId) {
+    throw new Error("Choose a draft to plan.");
+  }
+  const { data, error } = await client.rpc("list_my_private_draft_registry_plans_with_catalog", {
+    p_event_id: eventId,
+  });
+  if (error) {
+    throw catalogRpcError(error.message);
+  }
+  return Array.isArray(data) ? data.map(coerceEntryWithCatalog) : [];
+}
+
+/** Attaches a catalog provider to one existing plan entry, or replaces an
+ *  existing selection with a new one. Never touches the entry's typed
+ *  provider name, actual URL, status, or note. */
+export async function attachMyPrivateDraftRegistryPlanCatalogSelection(
+  client: OrganizerRegistryPlanRpcClient,
+  input: { eventId: string; registryPlanId: string; catalogAssetId: string },
+): Promise<RegistryPlanEntryWithCatalog> {
+  const { data, error } = await client.rpc("attach_my_private_draft_registry_plan_catalog_selection", {
+    p_event_id: input.eventId,
+    p_registry_plan_id: input.registryPlanId,
+    p_catalog_asset_id: input.catalogAssetId,
+  });
+  if (error) {
+    throw catalogRpcError(error.message);
+  }
+  return coerceEntryWithCatalog(oneRow(data));
+}
+
+/** Clears the catalog selection from one entry. Preserves every ordinary
+ *  typed field untouched. */
+export async function detachMyPrivateDraftRegistryPlanCatalogSelection(
+  client: OrganizerRegistryPlanRpcClient,
+  input: { eventId: string; registryPlanId: string },
+): Promise<RegistryPlanEntryWithCatalog> {
+  const { data, error } = await client.rpc("detach_my_private_draft_registry_plan_catalog_selection", {
+    p_event_id: input.eventId,
+    p_registry_plan_id: input.registryPlanId,
+  });
+  if (error) {
+    throw catalogRpcError(error.message);
+  }
+  return coerceEntryWithCatalog(oneRow(data));
+}

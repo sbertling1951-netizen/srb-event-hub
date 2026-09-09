@@ -57,13 +57,23 @@ test("THE LINK IS INERT: captured as text, rendered as text, never an anchor", (
 
 test("NO OUTBOUND CONTACT: nothing fetches, previews, or opens the saved value", () => {
   for (const source of [shared, registryPage, adapter]) {
-    // strip comments AND the user-facing copy, which necessarily names the
-    // very behaviors it promises never happen ("never ... shows a preview")
-    const c = code(source)
-      .replace(/"[^"]*never opens[^"]*"/gi, '""')
-      .replace(/"[^"]*preview[^"]*"/gi, '""');
+    // Strip comments, then strip ONLY the already-approved copy that
+    // explicitly PROMISES this never happens (e.g. "EpicentraX never opens
+    // it, checks it, or shows a preview of it.") -- a negation phrase, not a
+    // blanket ban on the word "preview" itself. This is deliberately
+    // narrower than a bare word-strip: it requires "never" together with the
+    // very verb it is negating, inside the SAME quoted string, so it cannot
+    // accidentally swallow an adjacent, unrelated quoted literal.
+    const c = code(source).replace(
+      /"[^"]*\bnever\b[^"]*\b(?:opens?|checks?|previews?|unfurls?)\b[^"]*"/gi,
+      '""',
+    );
     assert.doesNotMatch(c, /\bfetch\s*\(|XMLHttpRequest|axios|new Image|<img|window\.open|location\.assign|location\.href|navigator\.sendBeacon|EventSource|WebSocket/i);
-    assert.doesNotMatch(c, /preview|unfurl|oembed|opengraph|og:|favicon|screenshot|crawl|link-preview/i);
+    // `\b` before "og:" so this still catches a real Open Graph tag/property
+    // ("og:title") without false-tripping on the ordinary object key
+    // "catalog:" (Catalog P2's `catalog: RegistryPlanCatalogSnapshot | null`
+    // literally contains the substring "og:").
+    assert.doesNotMatch(c, /\bpreview\b|unfurl|oembed|opengraph|\bog:|favicon|screenshot|crawl|link-preview/i);
   }
   // the route reaches the network ONLY through the four registry adapter calls
   const calls = [...registryPage.matchAll(/\b(list|add|update|delete)MyPrivateDraftRegistryPlans?\b/g)].map((m) => m[0]);
@@ -127,17 +137,99 @@ test("the flow preserves event context and leaks no content into URLs or logs", 
   assert.doesNotMatch(adapter, /console\./);
 });
 
-test("the adapter never asks the server to resolve, match, or connect anything", () => {
-  const c = code(adapter);
-  assert.doesNotMatch(c, /match|resolve|lookup|identity|\bperson\b|\baccount\b|catalog|connect|oauth|credential/i);
+/**
+ * Extracts one `export async function <name>(...) { ... }` declaration's own
+ * source, from its `export async function <name>(` header up to (but not
+ * including) the next top-level `export` declaration, on the comment-stripped
+ * adapter source. Lets each ordinary or catalog function's behavior be
+ * checked in isolation from the others, rather than scanning the whole file
+ * as one blob -- the obsolete "no catalog word anywhere" rule did that, and
+ * broke the instant Catalog P2 legitimately introduced the word "catalog"
+ * anywhere in the file (e.g. the `catalog:` field on `RegistryPlanEntryWithCatalog`).
+ */
+function adapterFunctionSource(name: string): string {
+  const strippedAdapter = code(adapter);
+  const marker = `export async function ${name}(`;
+  const start = strippedAdapter.indexOf(marker);
+  assert.notEqual(start, -1, `expected to find "${marker}" in lib/organizerRegistryPlan.ts`);
+  const rest = strippedAdapter.slice(start + 1);
+  const nextExportOffset = rest.indexOf("\nexport ");
+  const end = nextExportOffset === -1 ? strippedAdapter.length : start + 1 + nextExportOffset;
+  return strippedAdapter.slice(start, end);
+}
+
+/** The four original ordinary Registry Plan functions and the one RPC each
+ *  has always called -- unchanged by, and untouched by, Catalog P2. */
+const ORDINARY_REGISTRY_PLAN_RPCS: Record<string, string> = {
+  listMyPrivateDraftRegistryPlans: "list_my_private_draft_registry_plans",
+  addMyPrivateDraftRegistryPlan: "add_my_private_draft_registry_plan",
+  updateMyPrivateDraftRegistryPlan: "update_my_private_draft_registry_plan",
+  deleteMyPrivateDraftRegistryPlan: "delete_my_private_draft_registry_plan",
+};
+
+test("the four original ordinary Registry Plan operations (list, add, update, delete) remain present, each its own dedicated RPC call, untouched by Catalog P2", () => {
+  for (const [fnName, rpcName] of Object.entries(ORDINARY_REGISTRY_PLAN_RPCS)) {
+    assert.match(adapter, new RegExp(`export async function ${fnName}\\(`), `${fnName} must still exist`);
+    const seg = adapterFunctionSource(fnName);
+    const calls = [...seg.matchAll(/client\.rpc\("([a-z_]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(calls, [rpcName], `${fnName} must call ONLY its own original RPC, unchanged`);
+    // An ordinary operation is never routed through the catalog-aware error
+    // mapper (identity-resolution-required etc.) -- that would silently
+    // impose Catalog P2's stricter canonical-Person requirement onto a plain
+    // typed edit, which the accepted contract forbids.
+    assert.doesNotMatch(seg, /catalogRpcError/, `${fnName} must not be weakened by catalog error handling`);
+    // An ordinary operation's own RPC arguments never carry a catalog field.
+    assert.doesNotMatch(seg, /p_catalog_asset_id/, `${fnName} must never take a catalog argument`);
+    // Scoped (not file-wide) version of the original identity/matching ban:
+    // an ordinary CRUD function has no legitimate reason to mention any of
+    // these concepts at all.
+    assert.doesNotMatch(
+      seg,
+      /\bmatch\b|\bresolve\b|\blookup\b|\bidentity\b|\bperson\b|\baccount\b|\bcatalog\b|\bconnect\b|\boauth\b|\bcredential\b/i,
+      `${fnName} must not gain any identity/matching/catalog concept`,
+    );
+  }
+});
+
+test("Catalog P2's search/catalog-aware-list/attach/detach are permitted, separate, and optional -- they never replace, redirect, or weaken an ordinary typed operation", () => {
+  const catalogFunctions = [
+    "searchMyPrivateDraftRegistryProviderCatalog",
+    "listMyPrivateDraftRegistryPlansWithCatalog",
+    "attachMyPrivateDraftRegistryPlanCatalogSelection",
+    "detachMyPrivateDraftRegistryPlanCatalogSelection",
+  ];
+  for (const fnName of catalogFunctions) {
+    assert.match(adapter, new RegExp(`export async function ${fnName}\\(`), `${fnName} must exist as its own dedicated function`);
+    const seg = adapterFunctionSource(fnName);
+    // Every catalog operation is gated behind the governed identity path --
+    // it is the one thing that legitimately distinguishes "permitted, but
+    // separate" catalog behavior from an ordinary operation.
+    assert.match(seg, /catalogRpcError/, `${fnName} must go through the catalog-aware (identity-gated) error path`);
+  }
+  // The ordinary four RPC names and the catalog RPC names are disjoint, and
+  // together are the adapter's ENTIRE RPC surface -- catalog behavior is
+  // additive, never a rename or silent replacement of an ordinary one, and
+  // nothing else (no stray resolve/match RPC) is called from this file.
+  const allRpcNames = [...adapter.matchAll(/client\.rpc\("([a-z_]+)"/g)].map((m) => m[1]);
+  const ordinaryRpcNames = new Set(Object.values(ORDINARY_REGISTRY_PLAN_RPCS));
+  const catalogRpcNames = allRpcNames.filter((name) => !ordinaryRpcNames.has(name));
   assert.deepEqual(
-    [...adapter.matchAll(/client\.rpc\("([a-z_]+)"/g)].map((m) => m[1]).sort(),
-    [
-      "add_my_private_draft_registry_plan",
-      "delete_my_private_draft_registry_plan",
-      "list_my_private_draft_registry_plans",
-      "update_my_private_draft_registry_plan",
-    ],
+    new Set(catalogRpcNames),
+    new Set([
+      "search_my_private_draft_registry_provider_catalog",
+      "list_my_private_draft_registry_plans_with_catalog",
+      "attach_my_private_draft_registry_plan_catalog_selection",
+      "detach_my_private_draft_registry_plan_catalog_selection",
+    ]),
+  );
+  // And on the route itself, catalog behavior remains optional: it renders
+  // only when available, and an unresolved identity falls back to the plain
+  // ordinary read rather than failing the whole page.
+  assert.match(registryPage, /catalogAvailable \? \(/, "catalog controls must be conditionally, optionally rendered");
+  assert.match(
+    registryPage,
+    /RegistryCatalogIdentityResolutionRequiredError/,
+    "the route must fall back to the plain ordinary read, not fail, when identity is unresolved",
   );
 });
 

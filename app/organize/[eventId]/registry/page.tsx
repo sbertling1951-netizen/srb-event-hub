@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { OrganizerRegistryCatalogSelector } from "@/components/organize/OrganizerRegistryCatalogSelector";
 import { OrganizerRegistryPlanFields } from "@/components/organize/OrganizerRegistryPlanFields";
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
@@ -12,11 +13,15 @@ import { PageSection } from "@/components/ui/PageSection";
 import { getMyPrivateEventDraft, type OrganizerDraft } from "@/lib/organizerDrafts";
 import {
   addMyPrivateDraftRegistryPlan,
+  attachMyPrivateDraftRegistryPlanCatalogSelection,
   deleteMyPrivateDraftRegistryPlan,
+  detachMyPrivateDraftRegistryPlanCatalogSelection,
   emptyRegistryPlan,
   listMyPrivateDraftRegistryPlans,
+  listMyPrivateDraftRegistryPlansWithCatalog,
   REGISTRY_PLAN_STATUS_LABELS,
-  type RegistryPlanEntry,
+  RegistryCatalogIdentityResolutionRequiredError,
+  type RegistryPlanEntryWithCatalog,
   registryPlanError,
   type RegistryPlanInput,
   registryPlanValues,
@@ -38,7 +43,14 @@ export default function OrganizerRegistryPlanPage({ params }: RegistryPageProps)
   const [draft, setDraft] = useState<OrganizerDraft | null>(null);
   const [state, setState] = useState<LoadState>("checking");
 
-  const [entries, setEntries] = useState<RegistryPlanEntry[]>([]);
+  const [entries, setEntries] = useState<RegistryPlanEntryWithCatalog[]>([]);
+  // Catalog P2 search/attach/detach requires an exactly resolved canonical
+  // Person. When that has not completed, the page falls back to the
+  // ordinary (untouched) plain read so the organizer's typed entries still
+  // show, and shows a neutral identity notice instead of the catalog
+  // controls -- never a match detail.
+  const [catalogAvailable, setCatalogAvailable] = useState(false);
+  const [identityNotice, setIdentityNotice] = useState<string | null>(null);
 
   const [addForm, setAddForm] = useState<RegistryPlanInput>(emptyRegistryPlan());
   const [addOpen, setAddOpen] = useState(false);
@@ -54,7 +66,24 @@ export default function OrganizerRegistryPlanPage({ params }: RegistryPageProps)
   const [rowError, setRowError] = useState<string | null>(null);
 
   const loadEntries = useCallback(async (id: string) => {
-    setEntries(await listMyPrivateDraftRegistryPlans(supabase, id));
+    try {
+      const rows = await listMyPrivateDraftRegistryPlansWithCatalog(supabase, id);
+      setEntries(rows);
+      setCatalogAvailable(true);
+      setIdentityNotice(null);
+    } catch (error) {
+      if (error instanceof RegistryCatalogIdentityResolutionRequiredError) {
+        // The organizer's ordinary Registry Plan (untouched by Catalog P2)
+        // still loads and works fully -- only the catalog controls are held
+        // back.
+        const plain = await listMyPrivateDraftRegistryPlans(supabase, id);
+        setEntries(plain.map((entry) => ({ ...entry, catalog: null })));
+        setCatalogAvailable(false);
+        setIdentityNotice(error.message);
+        return;
+      }
+      throw error;
+    }
   }, []);
 
   const load = useCallback(
@@ -99,7 +128,7 @@ export default function OrganizerRegistryPlanPage({ params }: RegistryPageProps)
     setAddError(null);
     try {
       const entry = await addMyPrivateDraftRegistryPlan(supabase, { eventId, values: addForm });
-      setEntries((current) => [...current, entry]);
+      setEntries((current) => [...current, { ...entry, catalog: null }]);
       setAddForm(emptyRegistryPlan());
       setAddOpen(false);
     } catch (error) {
@@ -109,7 +138,7 @@ export default function OrganizerRegistryPlanPage({ params }: RegistryPageProps)
     }
   }
 
-  function startEdit(entry: RegistryPlanEntry) {
+  function startEdit(entry: RegistryPlanEntryWithCatalog) {
     setEditingId(entry.id);
     setEditForm(registryPlanValues(entry));
     setEditError(null);
@@ -140,7 +169,13 @@ export default function OrganizerRegistryPlanPage({ params }: RegistryPageProps)
         registryPlanId: editingId,
         values: editForm,
       });
-      setEntries((current) => current.map((existing) => (existing.id === entry.id ? entry : existing)));
+      // An ordinary edit never touches the catalog attachment (Catalog P2
+      // §5) -- the untouched update RPC does not return catalog fields at
+      // all, so the existing local snapshot is carried over explicitly
+      // rather than dropped.
+      setEntries((current) =>
+        current.map((existing) => (existing.id === entry.id ? { ...entry, catalog: existing.catalog } : existing)),
+      );
       cancelEdit();
     } catch (error) {
       setEditError(error instanceof Error ? error.message : "We could not save that registry.");
@@ -149,7 +184,7 @@ export default function OrganizerRegistryPlanPage({ params }: RegistryPageProps)
     }
   }
 
-  async function removeEntry(entry: RegistryPlanEntry) {
+  async function removeEntry(entry: RegistryPlanEntryWithCatalog) {
     if (deletingId) {
       return;
     }
@@ -163,6 +198,21 @@ export default function OrganizerRegistryPlanPage({ params }: RegistryPageProps)
     } finally {
       setDeletingId(null);
     }
+  }
+
+  /** Attaches (or replaces) a catalog selection on one entry. Errors are
+   *  handled by OrganizerRegistryCatalogSelector itself. */
+  async function attachCatalog(registryPlanId: string, catalogAssetId: string) {
+    const updated = await attachMyPrivateDraftRegistryPlanCatalogSelection(supabase, {
+      eventId, registryPlanId, catalogAssetId,
+    });
+    setEntries((current) => current.map((existing) => (existing.id === updated.id ? updated : existing)));
+  }
+
+  /** Clears a catalog selection from one entry. */
+  async function detachCatalog(registryPlanId: string) {
+    const updated = await detachMyPrivateDraftRegistryPlanCatalogSelection(supabase, { eventId, registryPlanId });
+    setEntries((current) => current.map((existing) => (existing.id === updated.id ? updated : existing)));
   }
 
   if (state === "checking") {
@@ -189,6 +239,7 @@ export default function OrganizerRegistryPlanPage({ params }: RegistryPageProps)
       <Alert tone="info">{LINK_COPY}</Alert>
 
       {rowError ? <Alert tone="danger">{rowError}</Alert> : null}
+      {identityNotice ? <Alert tone="info">{identityNotice}</Alert> : null}
 
       <PageSection title="Registries you are planning" variant="section">
         {entries.length === 0 ? (
@@ -233,6 +284,14 @@ export default function OrganizerRegistryPlanPage({ params }: RegistryPageProps)
                         Remove
                       </AppButton>
                     </div>
+                    {catalogAvailable ? (
+                      <OrganizerRegistryCatalogSelector
+                        eventId={eventId}
+                        attached={entry.catalog}
+                        onAttach={(catalogAssetId) => attachCatalog(entry.id, catalogAssetId)}
+                        onDetach={() => detachCatalog(entry.id)}
+                      />
+                    ) : null}
                   </>
                 )}
               </li>
