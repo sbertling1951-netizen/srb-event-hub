@@ -34,6 +34,11 @@ export function buildAdminNavSections(
     },
     hasPermission(admin, "can_manage_admins") && { id: "admin-users", label: "Admin Users", href: "/admin/admin-users" },
     admin?.isSuperAdmin && { id: "tenants", label: "Tenant Administration", href: "/admin/tenants" },
+    admin?.isSuperAdmin && {
+      id: "registry-providers",
+      label: "Registry Provider Catalog",
+      href: "/admin/registry-providers",
+    },
     hasPermission(admin, "can_manage_admins") && { id: "permissions", label: "Permissions", href: "/admin/permissions" },
   ].filter(Boolean) as ShellNavItem[];
 
