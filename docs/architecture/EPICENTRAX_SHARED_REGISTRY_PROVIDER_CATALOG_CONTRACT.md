@@ -51,19 +51,28 @@ not become an alternative source for the current shared provider description.
 
 ## 3. Catalog content and organizer discovery
 
-The pilot contains a small set of provider descriptions manually seeded and
-governed by Platform Administration. It is platform-shared across tenants,
-with no default tenant and no tenant-owned substitute catalog. Manual seeding
-is the approved source; import and external API connections are excluded.
-The exact initial set and quality criteria remain open decisions (§8).
+The pilot begins with approximately 8–12 providers, manually curated and
+governed by Platform Administration. Actual provider names remain a separate
+later seeding decision (§8). Every entry requires a Platform-Admin-reviewed
+official public website and a factual short public description. The catalog
+is platform-shared across tenants, with no default tenant and no tenant-owned
+substitute catalog. Manual seeding is the approved source; import and
+external API connections are excluded.
+
+Platform Admin creates assets inactive by default and explicitly activates
+them after review. Provider name, short public description, and public
+provider website are all required catalog fields.
 
 Organizer access to catalog content is read-only, inside the private Registry
-Plan pathway. The first release uses case-insensitive name search only. No
-geography, aliases, ranking, popularity, external lookup, import, or provider
-interaction is permitted. This introduces no general catalog browse surface,
-category filtering, recommendations, or discovery outside private planning.
+Plan pathway. The first release uses case-insensitive provider-name prefix
+search only, with a minimum of two characters, alphabetical deterministic
+order, and a maximum of 10 results. Blank input and wildcard characters must
+not create browse or wildcard-search behavior. No ranking, popularity,
+category, geography, alias, recommendation, external lookup, import, or
+provider interaction is permitted. This introduces no general catalog browse
+surface or discovery outside private planning.
 
-A result card may contain only:
+A result card contains only these three approved public display fields:
 
 - Provider name.
 - Short public description of the provider.
@@ -76,32 +85,47 @@ internal administrative note, provider-held personal information, or actual
 registry URL. The catalog provider's public website and the organizer's actual
 registry URL are different values. Selecting a catalog provider must never
 populate, replace, validate, fetch, or open the private actual-registry URL.
-Display and selection do not dereference either
-website; no automatic fetch, preview, unfurl, validation, or opening occurs.
+The public provider website is display text only: never fetched, opened,
+previewed, crawled, or externally validated by EPX. Neither website value is
+dereferenced through this capability.
 
 ## 4. Selection and private authority
 
-An explicit organizer selection creates a private Registry Plan reference or
-attaches the chosen provider asset to an owner-private plan entry. Its only
-effect is inside that owner's plan. It does not infer a provider match from a
-typed placeholder, silently replace private notes or an actual URL, or require
-an organizer to abandon private placeholder planning.
+Catalog selection is optional. An explicit owner action creates a private
+Registry Plan reference or attaches the chosen provider asset to an
+owner-private plan entry. Attach, replace, or remove a catalog selection only
+through an explicit owner action, never through an ordinary private-plan
+save. Selection never overwrites the organizer's typed provider name, opaque
+actual-registry URL, private note, or planning status. It does not infer a
+provider match from a typed placeholder or require an organizer to abandon
+private placeholder planning.
 
-**Selection durability.** A private Registry Plan selection retains both a
-stable catalog-asset ID and a private snapshot of the catalog card's approved
-public display data: provider name, short public description, and public
-website. Later catalog edits or deactivation never rewrite the organizer's
-existing plan. The snapshot remains owner-private planning data, subject to
-the same authority, one-way-flow, and deletion boundaries as its reference.
+**Selection timing and durability.** On an explicit owner selection, EPX
+atomically stores the stable catalog-asset ID plus a private snapshot of the
+approved card fields as they exist at save time: provider name, short public
+description, and public website. Stored snapshots never automatically refresh
+after catalog edits, retirement, deactivation, or reactivation. Later catalog
+changes never rewrite the organizer's existing plan. The snapshot remains
+owner-private planning data, subject to the same authority, one-way-flow, and
+deletion boundaries as its reference.
 
-The existing Registry Plan owner predicate and event-state rules apply on
-every read and write: resolve the canonical organizer Person through the
-existing self-service organizer authority path, and verify a self-service
-private Draft that is inactive and not member-visible. Authentication proves
-access to the Person; client assertions, route access, and role labels do not
-establish ownership. Ordinary tenant or Event administrative authority does
-not grant access. This pilot adds no co-planner or staff sharing and does not
-apply this surface to launched, public, or ordinary tenant Events.
+**Canonical Person ownership.** The private Registry Plan catalog path uses
+canonical Person ownership only. Resolve the canonical organizer Person
+through the existing governed identity-resolution process before granting
+access to catalog-related private-plan operations. The existing `no_link`
+account fallback is not an approved long-term authorization path for catalog
+search or catalog selection. An unresolved account must complete that
+identity-resolution process before it can access these operations. This is
+an implementation requirement; this contract does not change existing code
+or authorize implementation.
+
+On every catalog-related private-plan read and write, verify ownership and a
+self-service private Draft that is inactive and not member-visible.
+Authentication proves access to the Person; client assertions, route access,
+and role labels do not establish ownership. Ordinary tenant or Event
+administrative authority does not grant access. This pilot adds no co-planner
+or staff sharing and does not apply this surface to launched, public, or
+ordinary tenant Events.
 
 Selecting, attaching, changing planning status, or removing a reference never:
 
@@ -123,7 +147,7 @@ private notes to self; selection proves no external action or commitment.
 | Actor | Catalog authority | Private Registry Plan authority |
 | --- | --- | --- |
 | Platform Administrator | Govern manual seeding, descriptions, correction, retirement, and duplicate resolution under the Shared Catalog contract. | No routine read access; catalog stewardship grants none. |
-| Verified Draft owner | Read-only name search and provider reference selection. No catalog edits, contribution, rating, or deletion. | Read and control only their own plan under the existing owner predicate. |
+| Verified Draft owner | Read-only name search and provider reference selection. No catalog edits, contribution, rating, or deletion. | Read and control only their own plan; catalog-related operations require canonical Person ownership (§4). |
 | Tenant administrator | No curation authority in this pilot. | No access from tenant authority. |
 | Provider, vendor, member, guest, or public caller | No access through this planning surface and no claim or management rights. | No access or awareness of references. |
 
@@ -134,6 +158,19 @@ notes, status, actual URL, and selection never update, enrich, correct, rank,
 rate, flag, or increment usage or popularity signals on the shared asset.
 No reverse selection list, cross-event usage report, popularity analytics,
 or provider notification may be derived from private references.
+
+Platform Administration manually reviews and corrects the public website and
+description using public provider materials. This manual review authorizes no
+scraping, automated website validation, external API, provider contact, claim
+workflow, or private-plan inspection. It does not make stored websites
+navigable or authorize EPX to dereference them.
+
+**Duplicate handling.** Normalize provider names only to detect a collision
+for manual Platform-Admin review. An unresolved normalized-name collision
+blocks creation until manually resolved. Do not automatically merge, alias,
+relink, or deduplicate assets. Website uniqueness must not be enforced as an
+identity rule. Collision review must not rewrite private selections or reveal
+who referenced an asset.
 
 Platform Administration governs catalog quality using catalog information,
 not routine inspection of private registry plans. Neither catalog maintenance
@@ -167,8 +204,9 @@ selection without rewriting past planning history, as the Shared Catalog
 contract requires. Inactive catalog entries disappear from new organizer
 searches. Existing private selections remain visible to their owner from
 their snapshot; they are not deleted, relinked, or newly exposed by
-deactivation. Duplicate-resolution mechanics remain open and must not
-silently rewrite private content or expose who referenced an asset.
+deactivation. Reactivation does not refresh existing snapshots. Manual
+collision review follows §5 and must not silently rewrite private content or
+expose who referenced an asset.
 
 ## 7. Explicit exclusions and later boundaries
 
@@ -189,23 +227,14 @@ permission to expose or connect a private registry.
 
 These questions are unresolved; listing them authorizes no additional scope.
 
-1. **Manual seeding quality.** Which small initial provider set is suitable,
-   what public evidence and description quality are required, and how catalog
-   review keeps that evidence current. Manual seeding is settled for the pilot;
-   imports and external connections are not alternatives within this scope.
-2. **Website ownership and correction.** What evidence establishes that a
-   public website belongs to the described provider, how a changed or disputed
-   address reaches Platform Administration, and how corrections are reviewed.
-   No provider claim flow, private-plan inspection, or automated website
-   validation is implied.
-3. **Duplicates.** How brands, aliases, regional services, and apparent
-   duplicates are distinguished; when assets should remain separate; and how
-   governed corrections preserve existing references without private-data
-   disclosure or silent private-content changes.
-4. **Provider categories.** Whether a future classification is useful and what
+1. **Actual provider-name seed list.** Which approximately 8–12 providers
+   enter the pilot remains a separate later seeding decision. The manual
+   review and quality requirements in §3 and §5 are settled; no provider names
+   are approved by this contract.
+2. **Provider categories.** Whether a future classification is useful and what
    its vocabulary would be. Categories are absent from pilot cards and search;
    naming this question does not authorize category fields or filters.
-5. **Later tenant curation.** Whether and how tenants may eventually recommend,
+3. **Later tenant curation.** Whether and how tenants may eventually recommend,
    group, or annotate providers under the Shared Catalog contract. No curation
    is enabled here, and any later layer must preserve platform ownership and
    owner-private plans without giving tenants reverse selection visibility.
