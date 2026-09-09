@@ -160,6 +160,7 @@ These numbers are historical context, not permission to reuse them as current pr
 - **RESOLVED — Vendor profile write bypass.** `app/api/vendor/workspace/profile/route.ts` PATCH previously wrote to `public.vendors` through the service-role admin client, bypassing RLS. Identified 2026-08-13 during the Event Lifecycle architecture audit; resolved by commit `68a780a` ("Govern vendor profile updates through RLS"), durable on `origin/main`: PATCH now runs through a vendor token-bound client, and the write is authorized by `vendors_update_policy` (RLS-enforced, keyed off `auth.uid()`), not the application-layer role check alone. That check remains only as a fast-fail UX shortcut.
 - **RESOLVED — Public Event Read Surface Split.** `public.events` SELECT is no longer unconditionally open. As of HEAD `c922a7d`: `anon` has no direct SELECT grant or policy on `public.events`; `authenticated` direct SELECT is restricted to `public.has_event_admin_authority(auth.uid(), id)`, the same canonical predicate already governing UPDATE. All non-admin discovery/continuity reads are served by governed `SECURITY DEFINER` RPCs (`get_public_discoverable_events`, `get_event_continuity_context`, `get_current_active_event`, `get_tenant_owned_event_ids`) added and adopted across `7dd8029`..`c922a7d`. Originally identified 2026-08-13 during the Events RLS/grant drift audit (`20260813140000_reconcile_events_rls_grant_drift.sql`, ADR-013 §2/§10 item 3).
 - **OPEN — Public / anonymous SELECT breadth on platform master-map data.** `public read master_maps` and `public read master_map_sites` (`{anon, authenticated}`, `USING (true)`), plus the `is_active`-only admin SELECT policies, expose every draft / archived map and all marker coordinates to any caller. Stage 6B (`acafa99` / `20260915000000`) deliberately did **not** touch this — it governed the *write* authority only — and the anonymous read is likely intentional for the public Coach Map, but an explicit read-surface decision (splitting public map display from admin/draft visibility, analogous to the Events read-surface split above) is not yet made. Flagged here as a separate future decision, not owned by Stage 6B or Stage 6C.
+- **OPEN — Legacy vendor / place / Nearby / map authority boundaries (Dou source-only review).** A source-code review by Dou (recorded in [`EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md`](../architecture/EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md) §I.4) flags five legacy read/authority boundaries as broader than the current private-planning model: (1) tenant-private / unreviewed Nearby reads (`nearby_master_authenticated_select_policy` `USING (true)`; `search_shared_places` trusts a caller-supplied tenant id); (2) operational Event place reads (`event_locations` / `event_nearby_places` SELECT `USING (true)`; `resolve_effective_nearby_places` lacks Event visibility / Draft / attendee checks); (3) operational vendor visibility (public `event_vendors` / active-vendor policies without Event public-eligibility or membership checks); (4) draft / archived `master_maps` / `master_map_sites` reads (`USING (true)` — overlaps the master-map item above); (5) a Platform-authorized Google Nearby search route reading a **known private Event id**'s location with a service client (`has_event_admin_authority` returns true for Platform authority with no private-Draft exclusion). **Source-only — NOT a confirmed breach or deployed disclosure; not runtime-verified.** Any vendor / place / Nearby / map catalog expansion or P3-style contribution/promotion pattern is **blocked** until each finding is independently verified at runtime and any confirmed issue closed. Next permitted step is read-only verification of these boundaries; see the 2026-09-09 Re-anchor reconciliation in the Development checkpoint.
 - **RESOLVED — Vendor profile GET read path.** `app/api/vendor/workspace/profile/route.ts` GET no longer performs its own service-role `public.vendors` read. Resolved by commit `4fe7e61` ("Govern vendor profile GET reads through RLS"), durable on `origin/main`: GET now obtains the vendor auth token from the existing session cookie and reads through `createVendorTokenBoundClient(accessToken)`, so the already-live `vendors_select_policy` — its self-access branch, keyed to the authenticated vendor user's active `vendor_org_access` row — is the authoritative database boundary, not application-layer filtering alone. No RLS policy, RPC, grant, or schema change was required or made. This does not mean vendor session plumbing is now free of service-role usage: `resolveVendorAccessFromCookies()` (shared by both GET and PATCH, in `lib/server/vendorAccess.ts`) still uses the admin client internally to validate the session token and resolve the caller's permitted vendors; that shared identity-resolution mechanism was explicitly outside this closed workstream and remains unreviewed on its own terms.
 
 Update this section only with verified current facts. Move resolved items to project history rather than letting this become an unbounded diary.
@@ -230,6 +231,108 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Re-anchor reconciliation — 2026-09-09 (Registry Provider Catalog + deferred records)
+
+There is **no** separate tracked "EpicentraX Architecture Re-Anchor Brief"
+file. The hand-maintained navigator is this Development checkpoint subsection;
+`AUTHORITATIVE_SOURCES.md` is the source-of-truth index it points into; the
+Librarian-generated block below is machine-owned and non-authoritative. This
+reconciliation updates only those existing records — it creates no competing
+index.
+
+- **Current substantive baseline: `1de0e95`** — "fix(registry): preserve plan
+  access when catalog is unavailable" — on top of Registry Provider
+  **Catalog P1** (`9de5eee`, "feat(catalog): add platform registry provider
+  curation") and **Catalog P2** (`e3c7963`, "feat(catalog): add private
+  registry provider selection"). All three are single product commits
+  fast-forwarded to `main`. **Application behavior was last
+  production-verified at `1de0e95`.** Per Pap/Mel's recorded facts the two
+  Catalog database migrations **`20261008000000`** (P1 foundation) and
+  **`20261009000000`** (P2 plan-selection) were applied to production **in
+  order after a verified preflight**, and the migration ledger is
+  **synchronized**; this documentation reconciliation did **not** itself
+  query the production ledger.
+  - **Catalog P1 (`9de5eee`) — LIVE.** Platform-Admin-only curated
+    registry-provider catalog: `registry_provider_catalog_assets` + a
+    content-free curation audit, four governed `SECURITY DEFINER` RPCs
+    (`has_platform_admin_authority` only), inactive-first creation,
+    normalized-name collision block, inert website text, and the
+    `/admin/registry-providers` workspace. Source of truth:
+    [P1 spec](../architecture/EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P1_IMPLEMENTATION_SPECIFICATION.md),
+    [Shared Registry Provider Catalog Contract](../architecture/EPICENTRAX_SHARED_REGISTRY_PROVIDER_CATALOG_CONTRACT.md).
+  - **Catalog P2 (`e3c7963`) — LIVE.** Optional, owner-private search /
+    attach / detach of an already-approved shared card from inside an
+    eligible private Draft's Registry Plan; strict canonical-Person
+    ownership (no `no_link` fallback); snapshot-at-save; content-free,
+    read-RPC-free selection audit with no reverse usage signal. Source of
+    truth:
+    [P2 spec](../architecture/EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P2_IMPLEMENTATION_SPECIFICATION.md),
+    [Private Registry Plan Contract](../architecture/EPICENTRAX_PRIVATE_REGISTRY_PLAN_CONTRACT.md),
+    [Shared Planning Catalog Contract](../architecture/EPICENTRAX_SHARED_PLANNING_CATALOG_CONTRACT.md).
+  - **Registry Plan compatibility repair (`1de0e95`) — LIVE.** Ordinary
+    typed Registry Plan access (list / add / edit / delete) survives catalog
+    RPC unavailability — the catalog-aware read falls back to the plain read
+    and shows a fixed neutral notice; catalog behavior is strictly optional
+    and never blocks typed plan access. Client-only
+    (`app/organize/[eventId]/registry/page.tsx`); no schema change.
+  - **Catalog P1/P2 tables are intentionally EMPTY.** No provider seed data
+    exists anywhere; a fresh apply leaves the catalog empty and the only
+    `INSERT` path is the governed P1 create RPC, which the migrations never
+    call.
+- **Documentation-only commits on top of `1de0e95` — these move NO baseline
+  and change NO runtime behavior:**
+  - **`6dcbd11` — Catalog P3 scope freeze (deployed as docs; no runtime
+    effect).** P3 (a provider-first flow, a creator-private provider
+    candidate, a Platform review/promotion path, a deliberate provider-start
+    navigation) is **DEFERRED — future design material only, not an accepted
+    product decision, not authorized.** Private-event rule: a private event
+    may consume an approved shared catalog item but contributes **no**
+    asset / provider / vendor / place / contact / venue / map / plan /
+    personal URL / event-derived information outward by default. Source:
+    [P3 contract](../architecture/EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md).
+  - **`c2a9f9a` — Deferred offline operations architecture record (docs; no
+    runtime effect).** Offline PWA / IndexedDB working store + durable
+    operation queue: **DEFERRED, no implementation authorized** (no service
+    worker, client DB, queue, sync engine, or offline UI). A bounded
+    check-in workflow is only a **future pilot candidate**, gated on a
+    separate offline-readiness inventory and a separate authorization.
+    Check-In owns arrival state; Parking owns physical placement; a
+    member-reported site does not change canonical placement. Source:
+    [offline record](../architecture/EPICENTRAX_OFFLINE_OPERATIONS_AND_SYNCHRONIZATION_ARCHITECTURE.md).
+- **BLOCKED — vendor / place / Nearby / map catalog expansion.** Dou's
+  vendor/place/map report is **source-only code review — NOT a confirmed
+  breach or deployed disclosure.** Extending any catalog / reuse / promotion
+  / harmonization pattern into the vendor, place, Nearby, or map domains is
+  **blocked** pending separate **read-only runtime/authority verification and
+  closure** of the five reported legacy-boundary concerns: (1) tenant-private
+  / unreviewed Nearby read boundaries; (2) operational Event place reads;
+  (3) operational vendor visibility; (4) draft / archived map asset reads;
+  (5) Platform-authorized Google search against a known private Event id.
+  Recorded in
+  [P3 contract §I.4](../architecture/EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md)
+  and §11 Known active concerns.
+- **Non-negotiable invariants — preserved by all of the above.**
+  Person-centered identity resolution (canonical `public.people`; no silent
+  Person creation; no identity inference); private-Draft isolation
+  (`is_self_service_private_draft`, owner-only RPCs, no admin / authority
+  row); and every authentication / authorization / RLS / tenant-isolation
+  boundary. None was weakened by P1, P2, the compatibility repair, or the two
+  documentation commits.
+- **Next permitted work — nothing else is authorized:**
+  1. **Read-only verification** of the legacy vendor / place / Nearby / map
+     authority boundaries named in Dou's report — deployed grants, RLS
+     policies, `SECURITY DEFINER` reachability, and service-client routes.
+     Any database or runtime check requires its own explicit authorization.
+  2. **No P3, offline, or asset-sharing implementation** — not a schema,
+     migration, RPC, route, or UI — **without a new explicit Pap approval.**
+- **Librarian block staleness:** the machine-generated block below still
+  reports baseline `87c25af` / `origin/main 87c25af`; it lags this
+  reconciliation and `git` is authoritative. `npm run context:update` should
+  be run by whoever next moves the baseline (not run by this documentation
+  task).
+
+---
+
 - **Substantive baseline:** `87c25af` — "feat(onboarding): support reusable personal event spaces" (P-2C), on top of `3b2f32a` "feat(onboarding): add person-centered private event drafts" (P-2A/P-2B). Both are single product commits (fast-forward, no merge) promoted to `main` and deployed to production. **Production Status confirmed clean at `87c25af`**: service online, deployed commit `87c25af`, production working tree clean. The two new migrations `20260924000000` and `20260925000000` are **included in those deployed commits** and are left to the repository's normal GitHub-webhook migration process; **no migration was applied manually**, and this reconciliation **did not independently query the production migration ledger** — Production Status does not itself prove the exact ledger.
 - **What `3b2f32a` (P-2A/P-2B — person-centered self-service organizer draft foundation) delivered — in deployed commit `3b2f32a`; migration `20260924000000` (ledger application left to the normal webhook process, not verified here):**
   - A verified EpicentraX account can create its own **private, hidden draft Event** under a **system-generated private Tenant** with **no admin authority**. One governed, idempotent, `SECURITY DEFINER` command (`create_self_service_organizer_draft`) is the sole browser mutation boundary: it validates a narrow input set, resolves the actor's **canonical `public.people` identity before any write** (`resolve_auth_person_link`; for a genuinely unlinked account the audited `resolve_self_service_organizer_person`), then atomically creates the Tenant inactive-first, records a **Person-scoped Organizer appointment** (`self_service_organizer_appointments` — `person_id` is the subject; `auth_user_id` retained only as the linkage / idempotency fact), activates the Tenant through a distinct audited step, and creates one `events` row (`status='Draft'`, `is_active=false`, `visible_to_members=false`).
@@ -270,6 +373,13 @@ state override this subsection whenever they disagree, per the
 - **Integrated verification of the baseline:** fresh from-zero replay clean at **225 migrations** through `20260916000000` (local disposable stack); the linked `20260916000000` rollback fixture executed green on that DB (authority inheritance — explicit event grant authorizes, platform inherits, a legacy global `privilege_group='parking'` value alone does not, an admin for another Event is denied, anon is `unauthorized`; `stale_selected_map` / `stale_master_map` / `no_selected_master_map`; preview mutates nothing; apply with conflicts → `unresolved_conflicts` with every row untouched; occupied rows keep occupancy + notes + `site_number` + `id` + `attendees.assigned_site` through a display reconcile **and** an identity relink; `site_placement_history` count unchanged; missing site materializes vacant; manual row untouched; second apply is a no-op; direct-write denied; the three retargeted policies carry `has_event_task_authority`; SELECT policies intact; `record_site_placement` / `materialize_event_parking_site` present + `authenticated`-executable). Migration corpus 1459/1459; Master Maps / Parking / Check-In / `canonicalAttendeePlacement` suites 139/139; `app`+`components`+`lib` suite 2131/2135 (four pre-existing unrelated failures — Imports guarded presentation, Print Center, presentation deck ×2); `npm run build` clean; `tsc` no new errors; `eslint` 0 errors on changed files.
 - **Live post-deploy production catalog verification (read-only):** `parking_sites` — RLS enabled; the three write policies are `Event parking admins can {insert,update,delete} parking sites` → `has_event_task_authority('event.parking.manage', event_id)`; the legacy `Admins can {insert,update,delete} parking sites` write policies **absent**; `authenticated` holds **no** direct `INSERT/UPDATE/DELETE/TRUNCATE`; the three SELECT policies + `authenticated` SELECT grant intact. `sync_master_map_parking_inventory_to_event(uuid,uuid,integer,boolean)` — SECURITY DEFINER, owner `postgres`, EXECUTE `authenticated` true / `anon` false / `service_role` false / `PUBLIC` false. `record_site_placement` (7-arg) and `materialize_event_parking_site` (2-arg) — present, SECURITY DEFINER, owner `postgres`, `authenticated`-executable, bodies unchanged (`record_site_placement` still at its `20260817150000` state). `parking_sites_enforce_repair_quiescence` trigger present; the four `parking_sites` PK / uniqueness indexes present. Stage 6A (3 `event_map_settings` "Event definition admins can …" policies) and Stage 6B (2 `master_maps` + 3 `master_map_sites` "Platform admins can …" policies) intact. `copy_master_map_to_event(uuid,uuid)` — SECURITY INVOKER, owner `postgres`, `authenticated` EXECUTE false / `service_role` EXECUTE true / `anon` + `PUBLIC` false — **posture unchanged from Stage 6B**.
 - **Promotion + deployment (2026-08-30):** `main` fast-forwarded `00a5dad → 2b13feb` and pushed (no merge SHA), triggering the DigitalOcean deploy. `20260916000000` then applied to the production database via `supabase db push`; the linked ledger is **synchronized at 225 / 225** through `20260916000000` (the one `pg-delta` catalog-cache warning is the known CLI 2.108 sandbox artifact and does not affect the applied migration; the three `NOTICE ... policy "Event parking admins ..." does not exist, skipping` lines are the expected idempotent `DROP POLICY IF EXISTS` guards). **Production parking inventory was not mutated by the migration** — read-only before → after counts: `parking_sites` **702 → 702**; occupied (`assigned_attendee_id NOT NULL`) **2 → 2**; rows with `notes` **0 → 0**; rows with `master_site_id` **292 → 292**; `site_placement_history` **0 → 0**; `attendees` with `assigned_site` **29 → 29**. **No production Sync operation was invoked during deployment; no attendee placement was changed.** (These counts are deployment-verification evidence, not permanent architecture facts.) Production HTTP health green (`/`, `/admin/master-maps`, `/admin/master-maps/new`, `/admin/parking`, `/admin/events`, `/admin/checkin` → 200). **Production deployment VERIFIED** by the operator via the `/admin/dashboard` Production Status panel: Service `online`, Environment `Production`, Commit `2b13feb`, Working tree `Clean`. (Deployed SHA is not independently verifiable from the development environment — `/api/admin/system-status` is Super-Admin-bearer-gated; no unauthenticated version endpoint.)
+> The bullets that follow (through "Baseline last reconciled") record the
+> **2026-09-05 reconcile position** (baseline `87c25af`). For current state see
+> the **2026-09-09 Re-anchor reconciliation** block near the top of this
+> subsection: `main` is now at `c2a9f9a`, application behavior last
+> production-verified at `1de0e95` (Catalog P1/P2 + Registry Plan compatibility
+> repair), with `6dcbd11` and `c2a9f9a` documentation-only on top.
+
 - **Live position (branch, HEAD, `origin/main`, ahead/behind):** see the Librarian block below, or run `git status -sb`. `origin/main` = `87c25af` at this reconcile; the P-2A/P-2B and P-2C commits were made on branch `chore/epicentrax-p1d2-positive-create-wording` and fast-forwarded to `main`.
 - **Production deployed state:** **`main` `87c25af`** — P-2A/P-2B (`3b2f32a`) + P-2C (`87c25af`). **Production Status confirmed clean at `87c25af`**: service online, deployed commit `87c25af`, production working tree clean. Migrations `20260924000000` + `20260925000000` are included in those commits and are left to the repository's normal GitHub-webhook migration process; **no migration was applied manually**. `c60c43e` (Member Workspace Continuity) and Stage 6C (`2b13feb`, `20260916000000`) deliverables remain deployed and intact.
 - **Production migration-ledger position:** **not independently verified in this reconciliation.** The P-2A/P-2C migrations (`20260924000000`, `20260925000000`) are in the deployed commits and rely on the normal GitHub-webhook migration process; no migration was applied manually, and **this reconciliation did not query the production migration ledger** — Production Status (service / commit / working tree) does not by itself prove the exact ledger. The last checkpoint that stated an explicit ledger figure was the 2026-08-30 reconcile at 225 / 225 through `20260916000000`; the intervening migrations `20260917000000`–`20260923000000` and the two P-2A/P-2C migrations all sit in the repository and were carried by ordinary feature commits on the same webhook path. A precise current production ledger count requires a linked-DB check, which is out of scope for this documentation task.
@@ -283,7 +393,17 @@ state override this subsection whenever they disagree, per the
   - **`EPICENTRAX_CANONICAL_PARKING_READ_MIGRATION_PLAN.md` (Status: Proposed)** — a canonical parking *read* migration is drafted but not adopted; Stage 6C governed *writes* only.
   - A future **governed map-transition operation** for an Event whose selected map itself changes while it has occupied inventory (Site Placement Implementation Specification §6 "future separately governed map-transition operation") — Stage 6C's sync relinks `master_site_id` across published versions of the *same* selected map's lineage but does not implement a full selected-map change for an Event with occupied inventory.
 - **Superseded — do not merge or act on independently:** branch `repair/reproducible-database-history` (`6ddc10e`); any local worktree at `/private/tmp/epicentrax-replay-audit-20260830` (detached) is transient audit scratch. Both are already fully contained in `main`.
-- **Baseline last reconciled:** 2026-09-05, at `87c25af` (P-2C — reusable personal event spaces, on top of P-2A/P-2B `3b2f32a`), against Git and the authoritative facts recorded by Pap/Mel: both feature commits promoted to `origin/main` and deployed; **Production Status confirmed clean at `87c25af`** (service online, deployed commit `87c25af`, production working tree clean). Migrations `20260924000000` + `20260925000000` are in the deployed commits and rely on the repository's normal GitHub-webhook migration process; **no migration was applied manually**, and **this reconciliation did not independently query the production migration ledger**. Residual limitations: the exact production migration ledger was not verified here; and the P-2A/P-2C behavioral rollback fixtures are proof artifacts **not manually DB-executed** during implementation. Prior reconcile: 2026-08-30 at `c60c43e` (Member Workspace Continuity), ledger 225 / 225 through `20260916000000`; Stage 6C (`2b13feb`) operator-verified — both remain deployed and intact.
+- **Baseline last reconciled:** 2026-09-09 (documentation re-anchor), at
+  `1de0e95` substantive / `c2a9f9a` on `main` — see the **2026-09-09
+  Re-anchor reconciliation** block near the top of this subsection. Registry
+  Provider Catalog P1 (`9de5eee`) + P2 (`e3c7963`, migrations
+  `20261008000000` + `20261009000000` applied to production in order after a
+  verified preflight, ledger synchronized per Pap/Mel) + Registry Plan
+  compatibility repair (`1de0e95`) are LIVE; `6dcbd11` (P3 scope freeze) and
+  `c2a9f9a` (deferred offline record) are documentation-only and change no
+  runtime behavior. This documentation task did not itself query the
+  production ledger.
+  Prior reconcile: 2026-09-05, at `87c25af` (P-2C — reusable personal event spaces, on top of P-2A/P-2B `3b2f32a`), against Git and the authoritative facts recorded by Pap/Mel: both feature commits promoted to `origin/main` and deployed; **Production Status confirmed clean at `87c25af`** (service online, deployed commit `87c25af`, production working tree clean). Migrations `20260924000000` + `20260925000000` are in the deployed commits and rely on the repository's normal GitHub-webhook migration process; **no migration was applied manually**, and **this reconciliation did not independently query the production migration ledger**. Residual limitations: the exact production migration ledger was not verified here; and the P-2A/P-2C behavioral rollback fixtures are proof artifacts **not manually DB-executed** during implementation. Prior reconcile: 2026-08-30 at `c60c43e` (Member Workspace Continuity), ledger 225 / 225 through `20260916000000`; Stage 6C (`2b13feb`) operator-verified — both remain deployed and intact.
 
 <!-- EPICENTRAX_LIBRARIAN_START -->
 ## Librarian-generated repository status
