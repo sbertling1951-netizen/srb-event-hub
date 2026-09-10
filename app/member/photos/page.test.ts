@@ -76,6 +76,44 @@ test("photo authorization is scoped by event_id and photo/attendee ownership onl
   assert.equal(/is_active|lifecycle|archived/i.test(loadBody), false);
 });
 
+// P0 Event-Photo Read-Surface Repair (traffic correction): the gallery-image
+// route now requires a controlled "grid"/"full" variant label, and this page
+// must be the one place that decides which variant applies to which UI
+// surface -- never a raw width/height passed through from the browser.
+test("the grid batch requests the 'grid' variant, and the on-demand full-view loader requests the 'full' variant -- never a raw dimension", () => {
+  assert.match(PAGE_SOURCE, /createGalleryRenditionBatch\(photos, "grid"\)/);
+  assert.match(
+    PAGE_SOURCE,
+    /fetchGalleryRenditionUrl\(\s*\n?\s*photo\.id,\s*\n?\s*"full",/,
+  );
+  // No width/height/resize ever appears in a gallery-image query string.
+  assert.equal(
+    /\/api\/photos\/gallery-image\?[^`"']*\b(width|height|resize)\b/.test(
+      PAGE_SOURCE,
+    ),
+    false,
+  );
+});
+
+test("the 'full' rendition is fetched lazily, only for the photo currently open in the viewer, not for the whole gallery up front", () => {
+  const loadIdx = PAGE_SOURCE.indexOf("async function loadApprovedPhotos(eventId: string)");
+  assert.notEqual(loadIdx, -1);
+  const loadBody = PAGE_SOURCE.slice(loadIdx, PAGE_SOURCE.indexOf("\n  }\n", loadIdx));
+  // Excludes this file's own explanatory comments (which legitimately name
+  // "full" in prose) -- only an actual call-argument use would be a bug.
+  assert.equal(
+    /,\s*"full"\s*\)/.test(loadBody),
+    false,
+    "loadApprovedPhotos must never pass the full variant as a call argument",
+  );
+
+  assert.match(PAGE_SOURCE, /function ensureGalleryViewUrl\(photo: ApprovedPhoto\)/);
+  assert.match(
+    PAGE_SOURCE,
+    /useEffect\(\(\) => \{\s*\n\s*if \(selectedPhoto && !selectedPhoto\.viewUrl\)/,
+  );
+});
+
 test("Member Workspace Continuity: this identity-dependent page is under MemberRouteGuard; the page body renders only a resolved workspace", () => {
   assert.match(PAGE_SOURCE, /import MemberRouteGuard from "@\/components\/auth\/MemberRouteGuard";/);
   assert.match(PAGE_SOURCE, /function MemberPhotosPageInner\(\) \{/);

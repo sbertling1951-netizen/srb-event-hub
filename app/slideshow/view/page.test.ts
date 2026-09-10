@@ -125,23 +125,63 @@ test("no local currentIndex/auto-advance timer drives slide position", () => {
 
 test("current slide content is derived from the public session response only", () => {
   assert.match(VIEWER_SOURCE, /publicState\??\.\s*current_content_type/);
-  assert.match(VIEWER_SOURCE, /publicState\??\.\s*current_storage_path/);
   assert.match(VIEWER_SOURCE, /publicState\??\.\s*current_content_ref_id/);
 });
 
-test("ineligible current item is not rendered from a stale cached URL", () => {
-  // The signed-URL effect must be keyed on the resolved storage_path
-  // itself, so it re-runs (and clears to null) the instant a
-  // previously-eligible photo's storage_path goes null.
-  assert.match(
-    VIEWER_SOURCE,
-    /\[publicState\?\.\s*current_content_type,\s*publicState\?\.\s*current_storage_path\]/,
+// P0 Event-Photo Read-Surface Repair (20261010000000): the viewer must
+// never again read a raw storage path out of the public session response
+// and use it to construct a Supabase storage URL directly -- that surface
+// is exactly the confirmed defect. The type still names the RPC's two
+// (now always-null) path columns for shape-fidelity, but no code in this
+// file may access them as a property, and no Supabase storage call may
+// appear anywhere in this file.
+test("the viewer never reads a raw storage path from the session response, and never talks to Supabase storage directly", () => {
+  assert.equal(
+    /publicState\??\.\s*current_storage_path/.test(VIEWER_SOURCE_NO_COMMENTS),
+    false,
+    "current_storage_path must never be read as a property access -- it is the removed disclosure this repair closes",
   );
+  assert.equal(
+    /publicState\??\.\s*next_storage_path/.test(VIEWER_SOURCE_NO_COMMENTS),
+    false,
+    "next_storage_path must never be read as a property access",
+  );
+  assert.equal(/supabase\.storage/.test(VIEWER_SOURCE_NO_COMMENTS), false);
+  assert.equal(/createSignedUrl/.test(VIEWER_SOURCE_NO_COMMENTS), false);
+});
+
+test("image and caption are delivered exclusively through the governed presentation routes, keyed by session id and slot", () => {
+  assert.match(VIEWER_SOURCE, /\/api\/slideshow\/presentation-image\?session=/);
+  assert.match(VIEWER_SOURCE, /\/api\/slideshow\/presentation-caption\?session=/);
+  assert.match(VIEWER_SOURCE, /slot=current/);
+  assert.match(VIEWER_SOURCE, /slot=next/);
+  // No direct anon table read of event_photos survives anywhere.
+  assert.equal(/\.from\(\s*["']event_photos["']\s*\)/.test(VIEWER_SOURCE), false);
+});
+
+test("ineligible or not-yet-loaded current item is not rendered from a stale image", () => {
+  // currentImageLoaded resets to false the instant the resolved image src
+  // itself changes, and the visible photo (and its caption) are gated on
+  // that flag -- never on the mere presence of a content_ref_id, which
+  // says nothing about whether the underlying photo is still approved.
+  assert.match(VIEWER_SOURCE, /setCurrentImageLoaded\(false\)/);
+  assert.match(VIEWER_SOURCE, /\},\s*\[currentImageSrc\]\)/);
+  assert.match(VIEWER_SOURCE, /currentImageLoaded/);
 });
 
 test("next item is preloaded but the full Event gallery is not", () => {
-  assert.match(VIEWER_SOURCE, /next_storage_path/);
+  assert.match(VIEWER_SOURCE, /nextImageSrc/);
   assert.equal(/\.range\(0,\s*999\)/.test(VIEWER_SOURCE), false, "must not bulk-load the whole approved-photo gallery");
+});
+
+test("a browser cannot submit an arbitrary storage path, photo id, or Event id to the image/caption routes -- only the session id and a fixed slot label", () => {
+  // The only dynamic segments placed into either route's query string are
+  // sessionId, the current/next slot literal, and cache-busting values
+  // (content_ref_id, sequence_number) that the route itself is free to
+  // ignore -- never a raw photo storage path, and never an eventId.
+  assert.equal(/presentation-image\?[^"'`]*eventId/.test(VIEWER_SOURCE), false);
+  assert.equal(/presentation-image\?[^"'`]*storage_path/i.test(VIEWER_SOURCE), false);
+  assert.equal(/presentation-caption\?[^"'`]*eventId/.test(VIEWER_SOURCE), false);
 });
 
 test("fullscreen support is preserved", () => {

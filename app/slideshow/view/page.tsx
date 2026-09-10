@@ -13,13 +13,6 @@ import { supabase } from "@/lib/supabase";
 // acceptable for v1.
 const POLL_INTERVAL_MS = 1000;
 
-// Signed URLs are re-created only when the resolved storage_path
-// actually changes (see the effects below, keyed on that path) rather
-// than on every poll tick. The TTL only matters if a single slide
-// stays current for longer than a realistic live-show pause; it is not
-// a substitute for re-signing on change.
-const SIGNED_URL_TTL_SECONDS = 60 * 60 * 6;
-
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -66,12 +59,11 @@ export default function SlideshowViewPage() {
   );
   const [pollError, setPollError] = useState<string | null>(null);
 
-  const [currentUrl, setCurrentUrl] = useState<string | null>(null);
+  const [currentImageLoaded, setCurrentImageLoaded] = useState(false);
   const [currentCaption, setCurrentCaption] = useState<string | null>(null);
   const [photographerName, setPhotographerName] = useState<string | null>(
     null,
   );
-  const [nextUrl, setNextUrl] = useState<string | null>(null);
 
   const [showCursor, setShowCursor] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -196,23 +188,16 @@ export default function SlideshowViewPage() {
     };
   }, [sessionId]);
 
-  // Caption/photographer supplement. read_public_presentation_session
-  // does not carry these fields (they are not needed to determine
-  // session state or eligibility); this reuses the pre-existing
-  // anon-safe event_photos RLS policy (photo_status = 'approved') the
-  // legacy viewer already read directly -- not a new grant, and not a
-  // private Presentation table. The RPC remains the sole authority for
-  // WHICH photo is current and WHETHER it is currently eligible
-  // (current_storage_path is null when it is not); this lookup only
-  // supplements display text for a photo the RPC has already vouched
-  // for as presently approved.
+  // Caption/photographer supplement. read_public_presentation_session no
+  // longer carries these fields (or a storage path -- see below); this
+  // page now has no direct anon read of public.event_photos at all
+  // (20261010000000 removed that grant). The governed
+  // presentation-caption route re-derives the same live-session/slot
+  // eligibility the presentation-image route requires and returns only
+  // caption fields for the photo currently vouched for -- never a
+  // storage path, never any other photo.
   useEffect(() => {
-    const photoId =
-      publicState?.current_content_type === "photo"
-        ? publicState.current_content_ref_id
-        : null;
-
-    if (!photoId) {
+    if (!sessionId || publicState?.current_content_type !== "photo") {
       setCurrentCaption(null);
       setPhotographerName(null);
       return;
@@ -221,31 +206,51 @@ export default function SlideshowViewPage() {
     let cancelled = false;
 
     async function resolveCaption() {
-      const { data, error } = await supabase
-        .from("event_photos")
-        .select(
-          "member_caption, admin_caption, show_caption, photographer_name_snapshot",
-        )
-        .eq("id", photoId as string)
-        .eq("photo_status", "approved")
-        .maybeSingle();
+      try {
+        const response = await fetch(
+          `/api/slideshow/presentation-caption?session=${sessionId}&slot=current`,
+        );
 
-      if (cancelled) {
-        return;
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.ok) {
+          setCurrentCaption(null);
+          setPhotographerName(null);
+          return;
+        }
+
+        const body = await response.json();
+        const caption = body?.caption as
+          | {
+              memberCaption: string | null;
+              adminCaption: string | null;
+              showCaption: boolean;
+              photographerName: string | null;
+            }
+          | null;
+
+        if (!caption) {
+          setCurrentCaption(null);
+          setPhotographerName(null);
+          return;
+        }
+
+        setCurrentCaption(
+          caption.showCaption
+            ? caption.adminCaption?.trim() ||
+                caption.memberCaption?.trim() ||
+                null
+            : null,
+        );
+        setPhotographerName(caption.photographerName?.trim() || null);
+      } catch {
+        if (!cancelled) {
+          setCurrentCaption(null);
+          setPhotographerName(null);
+        }
       }
-
-      if (error || !data) {
-        setCurrentCaption(null);
-        setPhotographerName(null);
-        return;
-      }
-
-      setCurrentCaption(
-        data.show_caption
-          ? data.admin_caption?.trim() || data.member_caption?.trim() || null
-          : null,
-      );
-      setPhotographerName(data.photographer_name_snapshot?.trim() || null);
     }
 
     void resolveCaption();
@@ -253,68 +258,33 @@ export default function SlideshowViewPage() {
     return () => {
       cancelled = true;
     };
-  }, [publicState?.current_content_type, publicState?.current_content_ref_id]);
+  }, [sessionId, publicState?.current_content_type, publicState?.current_content_ref_id]);
 
-  // Signed URL resolution, current + next. Re-signs only when the
-  // resolved storage_path itself changes (React's dependency
-  // comparison), not on every ~1s poll tick -- and correctly clears to
-  // null the instant a previously-eligible photo's storage_path goes
-  // null (ineligible), rather than continuing to display a stale
-  // signed URL for content that is no longer approved (Stage 4 Part
-  // 11 / Stage 6 Part 12).
-  useEffect(() => {
-    const path =
-      publicState?.current_content_type === "photo"
-        ? publicState.current_storage_path
-        : null;
+  // Image delivery, current + next. Neither URL is a Supabase storage
+  // signed URL any more -- both point at this app's own governed,
+  // session/slot-scoped delivery route (20261010000000 removed the raw
+  // storage_path from read_public_presentation_session's response
+  // entirely, and the anonymous storage.objects policy that used to
+  // authorize a direct read is gone). The route re-validates liveness
+  // and re-resolves the real object on every single request, so these
+  // URLs carry no reusable, long-lived access on their own. The
+  // content_ref_id + sequence_number query values exist only to force
+  // the browser to re-fetch when the underlying slide actually changes
+  // (the route ignores their values); the route's own "Cache-Control:
+  // no-store" response header is the real cache-correctness guarantee.
+  const currentImageSrc =
+    sessionId && publicState?.current_content_type === "photo"
+      ? `/api/slideshow/presentation-image?session=${sessionId}&slot=current&cr=${publicState.current_content_ref_id ?? ""}&v=${publicState.sequence_number ?? 0}`
+      : null;
 
-    if (!path) {
-      setCurrentUrl(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    void supabase.storage
-      .from("event-photos")
-      .createSignedUrl(path, SIGNED_URL_TTL_SECONDS)
-      .then(({ data }) => {
-        if (!cancelled) {
-          setCurrentUrl(data?.signedUrl ?? null);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [publicState?.current_content_type, publicState?.current_storage_path]);
+  const nextImageSrc =
+    sessionId && publicState?.next_content_type === "photo"
+      ? `/api/slideshow/presentation-image?session=${sessionId}&slot=next&cr=${publicState.next_content_ref_id ?? ""}&v=${publicState.sequence_number ?? 0}`
+      : null;
 
   useEffect(() => {
-    const path =
-      publicState?.next_content_type === "photo"
-        ? publicState.next_storage_path
-        : null;
-
-    if (!path) {
-      setNextUrl(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    void supabase.storage
-      .from("event-photos")
-      .createSignedUrl(path, SIGNED_URL_TTL_SECONDS)
-      .then(({ data }) => {
-        if (!cancelled) {
-          setNextUrl(data?.signedUrl ?? null);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [publicState?.next_content_type, publicState?.next_storage_path]);
+    setCurrentImageLoaded(false);
+  }, [currentImageSrc]);
 
   // Display logging (record_photo_display) is deliberately not called.
   // Stage 1 found it untracked, PUBLIC-executable, unscoped, and
@@ -429,18 +399,23 @@ export default function SlideshowViewPage() {
     if (publicState.current_content_type === "blank") {
       return "";
     }
-    if (publicState.current_content_type === "photo" && !publicState.current_storage_path) {
+    // The route re-derives eligibility (live session, matching slot,
+    // approved photo) itself; a photo that is not currently eligible and a
+    // photo that has merely not finished loading are deliberately
+    // indistinguishable here, the same non-enumerating tolerance this file
+    // already applies to a not-found vs. ended session above.
+    if (publicState.current_content_type === "photo" && !currentImageLoaded) {
       return "Waiting for the next slide...";
-    }
-    if (publicState.current_content_type === "photo" && !currentUrl) {
-      return "Loading slide...";
     }
     return "";
   }
 
   const message = statusMessage();
   const showPhoto =
-    isLive && publicState?.current_content_type === "photo" && !!currentUrl;
+    isLive &&
+    publicState?.current_content_type === "photo" &&
+    !!currentImageSrc &&
+    currentImageLoaded;
 
   return (
     <div
@@ -505,7 +480,7 @@ export default function SlideshowViewPage() {
             gap: 16,
           }}
         >
-          {showPhoto ? (
+          {currentImageSrc ? (
             <div
               style={{
                 position: "relative",
@@ -516,17 +491,25 @@ export default function SlideshowViewPage() {
                 justifyContent: "center",
               }}
             >
+              {/* Always rendered once a slot has a photo, so onLoad/onError
+                  can actually fire; visibility is controlled separately so
+                  a not-yet-loaded (or currently ineligible) image never
+                  flashes a broken/partial frame. */}
               <img
-                src={currentUrl as string}
+                key={currentImageSrc}
+                src={currentImageSrc}
                 alt="Slideshow"
+                onLoad={() => setCurrentImageLoaded(true)}
+                onError={() => setCurrentImageLoaded(false)}
                 style={{
                   maxWidth: "100vw",
                   maxHeight: "98vh",
                   objectFit: "contain",
+                  display: showPhoto ? "block" : "none",
                 }}
               />
 
-              {currentCaption ? (
+              {currentCaption && showPhoto ? (
                 <div
                   style={{
                     position: "absolute",
@@ -559,6 +542,10 @@ export default function SlideshowViewPage() {
                   </>
                 </div>
               ) : null}
+
+              {!showPhoto && message ? (
+                <div style={{ fontSize: 24 }}>{message}</div>
+              ) : null}
             </div>
           ) : message ? (
             <div style={{ fontSize: 24 }}>{message}</div>
@@ -566,9 +553,11 @@ export default function SlideshowViewPage() {
         </div>
       </main>
 
-      {/* Preload only the next item, not the whole Event gallery. */}
-      {nextUrl ? (
-        <img src={nextUrl} alt="" style={{ display: "none" }} />
+      {/* Preload only the next item, not the whole Event gallery. Fetched
+          through the same governed, session/slot-scoped route as the
+          current slide -- never a storage signed URL. */}
+      {nextImageSrc ? (
+        <img key={nextImageSrc} src={nextImageSrc} alt="" style={{ display: "none" }} />
       ) : null}
     </div>
   );

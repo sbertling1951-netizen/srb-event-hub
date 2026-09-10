@@ -36,12 +36,14 @@ function MemberPhotosPageInner() {
   type ApprovedPhoto = {
     id: string;
     storage_path: string;
+    attendee_id: string | null;
     member_caption: string | null;
     admin_caption: string | null;
     photographer_name_snapshot: string | null;
     show_caption: boolean | null;
     previewUrl?: string | null;
     fullImageUrl?: string | null;
+    viewUrl?: string | null;
   };
   const [uploads, setUploads] = useState<UploadedPhoto[]>([]);
   const [approvedPhotos, setApprovedPhotos] = useState<ApprovedPhoto[]>([]);
@@ -113,6 +115,23 @@ function MemberPhotosPageInner() {
       activityType: "photos_view",
     });
   }, [attendeeId, isReady, workspaceEvent?.id]);
+
+  // Gallery renditions are local object URLs (fetched bytes, not signed
+  // storage URLs) -- revoke them on unmount so a long-lived tab does not
+  // accumulate blob memory across Event visits.
+  useEffect(() => {
+    return () => {
+      for (const photo of approvedPhotos) {
+        if (photo.previewUrl) {
+          URL.revokeObjectURL(photo.previewUrl);
+        }
+        if (photo.viewUrl) {
+          URL.revokeObjectURL(photo.viewUrl);
+        }
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function createPreviewUrlBatch<T extends { storage_path: string }>(
     photos: T[],
@@ -190,6 +209,111 @@ function MemberPhotosPageInner() {
     }
   }
 
+  // P0 Event-Photo Read-Surface Repair: the Event Gallery no longer creates
+  // a Supabase storage signed URL client-side for any photo that is not the
+  // viewer's own upload. Every approved-gallery rendition is instead fetched
+  // from this app's own governed, authenticated, size-capped delivery
+  // route -- the repaired event_photos SELECT policy (not this function) is
+  // the actual authorization boundary; a photo this account may not see
+  // never reaches this batch at all. The route, not this page, owns the
+  // actual transform dimensions for each named `variant`; this page only
+  // ever requests "grid" (eagerly, for every tile) or "full" (lazily, only
+  // for the one photo currently open in the viewer) -- never a raw width or
+  // height. The route requires the caller's own bearer token, which a bare
+  // <img src> cannot attach, so this fetches bytes directly and exposes them
+  // as a local object URL, mirroring the existing fetch-then-blob pattern
+  // already used by downloadPhoto/sharePhoto below.
+  type GalleryRenditionVariant = "grid" | "full";
+
+  async function fetchGalleryRenditionUrl(
+    photoId: string,
+    variant: GalleryRenditionVariant,
+    accessToken: string,
+  ): Promise<string | null> {
+    try {
+      const response = await fetch(
+        `/api/photos/gallery-image?photoId=${photoId}&variant=${variant}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch (err) {
+      console.error("gallery rendition fetch error:", err);
+      return null;
+    }
+  }
+
+  async function createGalleryRenditionBatch<T extends { id: string }>(
+    photos: T[],
+    variant: GalleryRenditionVariant,
+  ) {
+    const results: Array<{ photo: T; renditionUrl: string | null }> = [];
+    const concurrency = 4;
+    const queue = [...photos];
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+
+    if (!accessToken) {
+      return photos.map((photo) => ({ photo, renditionUrl: null }));
+    }
+
+    while (queue.length > 0) {
+      const batch = queue.splice(0, concurrency);
+      const batchResults = await Promise.all(
+        batch.map(async (photo) => ({
+          photo,
+          renditionUrl: await fetchGalleryRenditionUrl(
+            photo.id,
+            variant,
+            accessToken,
+          ),
+        })),
+      );
+
+      results.push(...batchResults);
+    }
+
+    return results;
+  }
+
+  // Lazily loads the larger "full" rendition for exactly the one photo the
+  // viewer currently has open -- never fetched up front for the whole
+  // gallery, so browsing the grid costs only 240px requests.
+  async function ensureGalleryViewUrl(photo: ApprovedPhoto) {
+    if (photo.viewUrl) {
+      return photo.viewUrl;
+    }
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+
+    if (!accessToken) {
+      return null;
+    }
+
+    const renditionUrl = await fetchGalleryRenditionUrl(
+      photo.id,
+      "full",
+      accessToken,
+    );
+
+    if (renditionUrl) {
+      setApprovedPhotos((prev) =>
+        prev.map((item) =>
+          item.id === photo.id ? { ...item, viewUrl: renditionUrl } : item,
+        ),
+      );
+    }
+
+    return renditionUrl;
+  }
+
   async function loadUploads(attendeeId: string) {
     const { data, error } = await supabase
       .from("event_photos")
@@ -217,7 +341,7 @@ function MemberPhotosPageInner() {
     const { data, error: approvedPhotosError } = await supabase
       .from("event_photos")
       .select(
-        "id, storage_path, member_caption, admin_caption, photographer_name_snapshot, show_caption",
+        "id, storage_path, attendee_id, member_caption, admin_caption, photographer_name_snapshot, show_caption",
       )
       .eq("event_id", eventId)
       .eq("photo_status", "approved")
@@ -231,14 +355,30 @@ function MemberPhotosPageInner() {
     }
 
     const photos = (data || []) as ApprovedPhoto[];
-    const previewResults = await createPreviewUrlBatch(photos);
+    // Grid tiles only, eagerly -- the larger "full" rendition is fetched on
+    // demand, per photo, only when the viewer actually opens one.
+    const renditionResults = await createGalleryRenditionBatch(photos, "grid");
+
+    // Best-effort cleanup: object URLs are per-browser-tab resources and are
+    // never reused across a refresh (each fetch above minted a fresh one).
+    setApprovedPhotos((prev) => {
+      for (const previous of prev) {
+        if (previous.previewUrl) {
+          URL.revokeObjectURL(previous.previewUrl);
+        }
+        if (previous.viewUrl) {
+          URL.revokeObjectURL(previous.viewUrl);
+        }
+      }
+      return prev;
+    });
 
     setApprovedPhotos(
-      previewResults
-        .filter((result) => Boolean(result.signedUrl))
-        .map(({ photo, signedUrl }) => ({
+      renditionResults
+        .filter((result) => Boolean(result.renditionUrl))
+        .map(({ photo, renditionUrl }) => ({
           ...photo,
-          previewUrl: signedUrl,
+          previewUrl: renditionUrl,
         })),
     );
   }
@@ -499,6 +639,17 @@ function MemberPhotosPageInner() {
     selectedPhotoIndex === null
       ? null
       : approvedPhotos[selectedPhotoIndex] || null;
+
+  // Fetch the larger "full" rendition only for whichever photo is actually
+  // open right now -- covers the initial click as well as Previous/Next
+  // navigation, without ever eagerly fetching "full" for the whole gallery.
+  useEffect(() => {
+    if (selectedPhoto && !selectedPhoto.viewUrl) {
+      void ensureGalleryViewUrl(selectedPhoto);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPhoto?.id]);
+
   const selectedCaption = selectedPhoto
     ? selectedPhoto.admin_caption?.trim() ||
       selectedPhoto.member_caption?.trim() ||
@@ -506,6 +657,9 @@ function MemberPhotosPageInner() {
     : "";
   const selectedPhotographer =
     selectedPhoto?.photographer_name_snapshot?.trim() || "";
+  const isOwnSelectedPhoto = Boolean(
+    selectedPhoto && attendeeId && selectedPhoto.attendee_id === attendeeId,
+  );
   const canSharePhoto =
     typeof navigator !== "undefined" && typeof navigator.share === "function";
   return (
@@ -812,7 +966,6 @@ function MemberPhotosPageInner() {
                   onClick={() => {
                     setSelectedPhotoIndex(index);
                     setViewerMessage("");
-                    void ensureFullPhotoUrl(photo);
                   }}
                   aria-label="View event photo"
                   style={{
@@ -826,7 +979,7 @@ function MemberPhotosPageInner() {
                   }}
                 >
                   <img
-                    src={photo.previewUrl || photo.fullImageUrl || ""}
+                    src={photo.previewUrl || ""}
                     alt="Event photo"
                     style={{
                       display: "block",
@@ -905,7 +1058,7 @@ function MemberPhotosPageInner() {
               </div>
 
               <img
-                src={selectedPhoto.fullImageUrl || selectedPhoto.previewUrl || ""}
+                src={selectedPhoto.viewUrl || selectedPhoto.previewUrl || ""}
                 alt={selectedCaption || "Event photo"}
                 style={{
                   display: "block",
@@ -956,22 +1109,36 @@ function MemberPhotosPageInner() {
                 >
                   Next
                 </button>
-                <button
-                  type="button"
-                  onClick={() => void downloadPhoto(selectedPhoto)}
-                  disabled={downloadingPhotoId !== null}
-                >
-                  {downloadingPhotoId === selectedPhoto.id
-                    ? "Downloading..."
-                    : "Download Photo"}
-                </button>
-                {canSharePhoto ? (
-                  <button
-                    type="button"
-                    onClick={() => void sharePhoto(selectedPhoto)}
-                  >
-                    Share Photo
-                  </button>
+                {/* P0 Event-Photo Read-Surface Repair: original-file download
+                    is limited to the photo's own contributor here (an
+                    Event administrator's original-download authority is
+                    served by the separate /admin/photos surface, unchanged
+                    by this repair). This UI gate is a courtesy reflection
+                    of that boundary, not the boundary itself -- the
+                    server-side signed-URL path this button calls
+                    (ensureFullPhotoUrl -> can_authenticated_read_event_photo_object)
+                    independently denies a non-owner regardless of what this
+                    button renders. */}
+                {isOwnSelectedPhoto ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void downloadPhoto(selectedPhoto)}
+                      disabled={downloadingPhotoId !== null}
+                    >
+                      {downloadingPhotoId === selectedPhoto.id
+                        ? "Downloading..."
+                        : "Download Photo"}
+                    </button>
+                    {canSharePhoto ? (
+                      <button
+                        type="button"
+                        onClick={() => void sharePhoto(selectedPhoto)}
+                      >
+                        Share Photo
+                      </button>
+                    ) : null}
+                  </>
                 ) : null}
               </div>
             </div>
