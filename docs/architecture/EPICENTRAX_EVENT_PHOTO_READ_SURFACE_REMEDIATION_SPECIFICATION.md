@@ -67,6 +67,11 @@ The member gallery UI must not render an enabled Download/Share-original action
 for another attendee's photo. Server-side enforcement is controlling; UI state
 is only an accurate reflection of it.
 
+For this P0, a non-contributor's full gallery view is a resized and re-encoded
+display rendition capped at **1600 pixels on its long edge**. Existing grid
+previews may remain at their current smaller display size. Neither is an
+original-download path.
+
 ### 3.3 Anonymous audience slideshow
 
 The existing audience slideshow is a legitimate anonymous presentation feature,
@@ -84,7 +89,9 @@ safe replacement rather than preserving the broad policy for compatibility.
 Choosing how to create or deliver a display rendition is an implementation
 decision. This P0 does not require a stored derivative pipeline, but it does
 require proof that a presentation delivery URL cannot be repurposed to fetch
-the original.
+the original. The initial projection rendition is capped at **2048 pixels on
+its long edge**; this is the quality boundary for the first secure slideshow
+delivery path, not a stored-media retention rule.
 
 ## 4. Private-event and authority constraints
 
