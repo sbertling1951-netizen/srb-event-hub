@@ -2,7 +2,7 @@
 
 **Purpose:** Authoritative startup context for every human or AI contributor.
 
-**Status date:** 2026-07-30
+**Status date:** 2026-09-10
 
 This brief is a navigation and operating document. It does not replace the Constitution, architecture documents, migrations, database, or source code. Those remain authoritative within their respective domains.
 
@@ -231,6 +231,39 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Re-anchor reconciliation — 2026-09-10 (P0 event-photo and presentation-read closure)
+
+- **Current substantive baseline: `e7756ab` — LIVE.**
+  `fix(security): govern event photo and presentation reads` is deployed to
+  production; Production Status reported service online and a clean working
+  tree at that commit. Its one database migration,
+  **`20261010000000_scope_event_photo_and_presentation_read_authority.sql`**,
+  was separately preflighted against the linked production project
+  `lastlzlewonsmwtolpvh`, applied as that exact verified file, and recorded in
+  the production migration ledger. The full ledger is now synchronized through
+  `20261010000000`.
+  - **What P0 closes.** Approved-photo rows and objects are no longer exposed
+    merely because a photo is approved. Ordinary photo access is governed by
+    the real Event relationship and canonical object key; private self-service
+    Draft Events are excluded from ordinary photo and presentation paths for
+    contributors, attendees, Event administrators, and Platform
+    administrators. Gallery delivery uses server-controlled 240px grid and
+    1600px full-view renditions; presentation delivery is server-controlled at
+    2048px; public presentation reads disclose no storage path. The former
+    anonymous approved-photo policies were removed.
+  - **Verification record.** Two independent source reviews, structural and
+    application regressions, and a fresh isolated local replay of the full
+    migration chain all passed. The replay executed all nine P0 rollback
+    fixture blocks and reached its explicit rollback, proving the row/RLS and
+    function-authority matrix without persisting fixture data. Production
+    post-apply metadata confirmed the expected functions, policies, grants,
+    and removals. This does **not** claim live media-byte, image-transform, or
+    HTTP-rendition testing; those were outside the database replay.
+  - **Private-event consequence.** The P0 prerequisite that blocked private
+    Event launch, gallery, and guest-media work is closed. Passport, launch,
+    invitation, guest-access, and private-event lifecycle implementation still
+    require their own Pap-approved scope; P0 did not implement them.
+
 ### Re-anchor reconciliation — 2026-09-09 (Registry Provider Catalog + deferred records)
 
 There is **no** separate tracked "EpicentraX Architecture Re-Anchor Brief"
@@ -240,7 +273,7 @@ Librarian-generated block below is machine-owned and non-authoritative. This
 reconciliation updates only those existing records — it creates no competing
 index.
 
-- **Current substantive baseline: `1de0e95`** — "fix(registry): preserve plan
+- **Prior substantive baseline: `1de0e95`** — "fix(registry): preserve plan
   access when catalog is unavailable" — on top of Registry Provider
   **Catalog P1** (`9de5eee`, "feat(catalog): add platform registry provider
   curation") and **Catalog P2** (`e3c7963`, "feat(catalog): add private
@@ -281,19 +314,14 @@ index.
     call.
 - **Documentation-only commits on top of `1de0e95` — these move NO baseline
   and change NO runtime behavior:**
-  - **P0 Event-photo read-surface remediation — accepted design; implementation
-    BLOCKED pending separate authorization.** A linked-production,
-    metadata-only verification confirmed that approved `event-photos` rows and
-    `event-photos` storage objects are presently readable outside their Event
-    boundary: anonymous object read is approved-status-only, and authenticated
-    read/download is approved-status-only. No media was read during that
-    verification, so this is not an exploitation claim; it is a confirmed
-    deployed authorization posture. A prior concern about
-    `get_event_continuity_context` was **cleared** by the same check: its
-    deployed definition requires active, member-visible, non-Draft Event rows,
-    so it excludes self-service private Drafts. Private-event launch/gallery/
-    guest-media work is blocked until the approved-photo repair lands. Source:
+  - **P0 Event-photo read-surface remediation — historical design record.**
+    The linked-production metadata-only verification that identified the
+    pre-P0 approved-photo exposure is preserved in the
     [P0 remediation specification](../architecture/EPICENTRAX_EVENT_PHOTO_READ_SURFACE_REMEDIATION_SPECIFICATION.md).
+    The repair is now LIVE as recorded in the 2026-09-10 reconciliation above.
+    The prior `get_event_continuity_context` concern remains **cleared**: its
+    deployed definition requires active, member-visible, non-Draft Event rows
+    and excludes self-service private Drafts.
   - **2026-09-09 — Private Event Passport-and-Launch lifecycle clarification
     (documentation-only; implementation remains unauthorized).** The accepted
     free-person rule is one active unpaid organizer project (planning or
@@ -347,12 +375,16 @@ index.
   row); and every authentication / authorization / RLS / tenant-isolation
   boundary. None was weakened by P1, P2, the compatibility repair, or the two
   documentation commits.
-- **Next permitted work — nothing else is authorized:**
-  1. **Read-only verification** of the legacy vendor / place / Nearby / map
+- **Next safe work — no new implementation is authorized by this record:**
+  1. The next private-event product step may be a separately authorized
+     Passport / launch / invitation / guest-access implementation scope. P0
+     closed its photo-security prerequisite; it did not authorize or deliver
+     that lifecycle work.
+  2. **Read-only verification** of the legacy vendor / place / Nearby / map
      authority boundaries named in Dou's report — deployed grants, RLS
      policies, `SECURITY DEFINER` reachability, and service-client routes.
      Any database or runtime check requires its own explicit authorization.
-  2. **No P3, offline, or asset-sharing implementation** — not a schema,
+  3. **No P3, offline, or asset-sharing implementation** — not a schema,
      migration, RPC, route, or UI — **without a new explicit Pap approval.**
 - **Librarian block staleness:** the machine-generated block below still
   reports baseline `87c25af` / `origin/main 87c25af`; it lags this
