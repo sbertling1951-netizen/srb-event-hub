@@ -281,6 +281,19 @@ index.
     call.
 - **Documentation-only commits on top of `1de0e95` — these move NO baseline
   and change NO runtime behavior:**
+  - **P0 Event-photo read-surface remediation — accepted design; implementation
+    BLOCKED pending separate authorization.** A linked-production,
+    metadata-only verification confirmed that approved `event-photos` rows and
+    `event-photos` storage objects are presently readable outside their Event
+    boundary: anonymous object read is approved-status-only, and authenticated
+    read/download is approved-status-only. No media was read during that
+    verification, so this is not an exploitation claim; it is a confirmed
+    deployed authorization posture. A prior concern about
+    `get_event_continuity_context` was **cleared** by the same check: its
+    deployed definition requires active, member-visible, non-Draft Event rows,
+    so it excludes self-service private Drafts. Private-event launch/gallery/
+    guest-media work is blocked until the approved-photo repair lands. Source:
+    [P0 remediation specification](../architecture/EPICENTRAX_EVENT_PHOTO_READ_SURFACE_REMEDIATION_SPECIFICATION.md).
   - **2026-09-09 — Private Event Passport-and-Launch lifecycle clarification
     (documentation-only; implementation remains unauthorized).** The accepted
     free-person rule is one active unpaid organizer project (planning or
