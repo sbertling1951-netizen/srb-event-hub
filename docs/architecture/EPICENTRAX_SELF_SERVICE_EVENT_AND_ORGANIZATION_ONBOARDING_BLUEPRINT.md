@@ -221,11 +221,17 @@ Those require their own authoritative model and a separate product decision.
 
 #### Accepted initial draft and launch rule
 
-An organizer may create and retain a private draft Event indefinitely without
-payment. The draft remains private and does not become usable by guests merely
-because it exists. EpicentraX asks for payment at the future explicit **Launch
-Event** decision, when the organizer chooses to publish or otherwise make the
-Event available to others.
+An organizer may create and retain **one active unpaid private draft Event**
+indefinitely without payment. The draft remains private and does not become
+usable by guests merely because it exists. EpicentraX asks for payment at the
+future explicit **Launch Event** decision, when the organizer chooses to make
+the Event available through its selected guest-access methods.
+
+Before Passport payment, beginning another personal Event is an explicit
+**Replace unfinished event** action: the organizer confirms that the current
+unpaid plan / private Draft will be actually deleted, and one governed
+server-side operation removes it before creating the replacement. A launched
+Passport-paid Event no longer consumes that one-unpaid-event capacity.
 
 No automatic draft expiry, deletion, or aging rule is introduced at this
 stage. A future retention/aging policy may be designed separately from the
@@ -239,11 +245,12 @@ upload through archival retention. It is not an organizer-level allowance and
 must not be used to distinguish product tiers or withhold any core Event
 module. The initial commercial direction is:
 
-- A **Launch Pass** is priced at $24 per Event. It includes 50 GB of Event
-  media capacity and 12 months of gallery access after the Event ends.
-- A future **Event Archive** renewal is priced at $24 per Event per year and
-  preserves up to 50 GB of retained media and the authorized guests' access
-  to it.
+- A **12-month Event Passport** is priced at $24 per Event. It begins on
+  successful Launch and includes 50 GB of Event media capacity, authorized
+  guest access, and all core Event tools for that one-year term.
+- A **Passport renewal** is priced at $24 per Event per year. It extends the
+  entitlement from its current expiration and preserves up to 50 GB of
+  retained media and the authorized guests' access to it.
 - Each future additional 100 GB capacity block is priced at $24 per Event per
   year.
 - Capacity measures the canonical original media objects once per Event;
@@ -251,17 +258,16 @@ module. The initial commercial direction is:
   Event's stated capacity.
 
 The initial model has no annual account or organization-maintenance
-subscription. A host pays the one-time Launch Pass for each Event and then
-chooses independently which completed Events, if any, receive annual archive
-renewal. A future recurring-organization offering may bundle capacity or
-archives, but it must remain optional and cannot change the all-core-features
-product promise.
+subscription. A host buys one Event Passport for each Event and chooses
+independently whether to renew that Event annually. A future
+recurring-organization offering may bundle capacity or Passport renewals, but
+it must remain optional and cannot change the all-core-features product promise.
 
 #### Accepted FCOC commercial-exemption direction
 
 FCOC is EpicentraX's existing platform-supported Tenant and is not part of
-the customer payment-required launch or archive-renewal process. FCOC Events
-must not be stopped for a Launch Pass, Event Archive renewal, or added-capacity
+the customer payment-required launch or Passport-renewal process. FCOC Events
+must not be stopped for an Event Passport, Passport renewal, or added-capacity
 purchase. This is not a special-case check for an organization code, hostname,
 or hard-coded Tenant UUID. The future commercial implementation must instead
 resolve one governed Tenant-level commercial policy/entitlement that can
@@ -287,7 +293,7 @@ existing Event media merely because capacity is exceeded.
 Media movement is a platform-owned, automated, and auditable operation. After
 the included online-access period, retained media may move through lifecycle
 rules to encrypted, tenant-isolated cold storage. Restoration on an active
-archive entitlement must be automated; it must never depend on a Super Admin,
+Passport entitlement must be automated; it must never depend on a Super Admin,
 the network administrator, or a personal storage account. The exact grace,
 non-renewal, deletion, backup, restoration-time, and provider selection rules
 remain separate decisions before implementation.
@@ -505,7 +511,7 @@ revise this private draft as often as needed.
 A draft is not a guest-facing Event. Until the organizer deliberately chooses
 **Launch Event**, it cannot issue guest invitations, provide a shareable or
 public Event experience, or accept live guest participation. Launch is the
-explicit point at which the organizer confirms the $24 Launch Pass and makes
+explicit point at which the organizer confirms the $24 Event Passport and makes
 the Event available according to its selected access setting.
 
 The initial Launch Event checklist requires only:
@@ -515,7 +521,7 @@ The initial Launch Event checklist requires only:
 - a date/time or an explicit date-to-be-announced state;
 - a location or an explicit location-to-be-announced state;
 - an Event access choice; and
-- confirmation of the Launch Pass.
+- confirmation of the Event Passport.
 
 No organizer is blocked from launching a simple Event because they have not
 configured a core capability they do not need.
@@ -527,22 +533,21 @@ remains a separate commercial decision. At launch, retained setup assets enter
 the Event's normal active media-capacity model; high-volume guest media begins
 only when the Event is live.
 
-#### Accepted Launch Pass checkout direction
+#### Accepted Event Passport checkout direction
 
 The Launch Event decision ends with a calm, explicit one-time checkout rather
 than a billing maze. Before charging, EpicentraX presents the Event name,
-selected guest-access methods, and the included Launch Pass value: all core
-Event tools, 50 GB of media capacity, and 12 months of gallery access after
-the Event ends. The amount due today is clearly shown as **$24 one-time**.
+selected guest-access methods, and the included Event Passport value: all core
+Event tools, 50 GB of media capacity, and 12 months of Event service beginning
+at Launch. The amount due today is clearly shown as **$24 for 12 months**.
 
 The organizer selects a payment method, confirms **Launch Event — $24**, and
 receives a receipt. Successful payment immediately activates the Event's
 guest-facing experience according to its selected access settings. The
-organizer account becomes the initial billing contact for any future Event
-Archive renewal, but no recurring charge or automatic archive renewal begins
-at launch.
+organizer account becomes the initial billing contact for any future Passport
+renewal, but no recurring charge or automatic renewal begins at launch.
 
-#### Accepted Launch Pass payment, cancellation, and refund direction
+#### Accepted Event Passport payment, cancellation, and refund direction
 
 EpicentraX uses a platform payment provider that keeps payment credentials
 tokenized with that provider; EpicentraX does not store a customer's raw card
@@ -560,10 +565,9 @@ Event has an individual invitation/contact path, where that notification is
 available, and presents a clear closed/cancelled message to anyone who reaches
 the Event afterward. The organizer retains authorized private access to the
 Event and may export its content under the normal access rules. The Event's
-archive clock begins on its cancellation date unless the organizer later
-provides a governed replacement date.
+Passport term continues unchanged after cancellation.
 
-The $24 Launch Pass has one self-service courtesy refund: a full refund is
+The $24 Event Passport has one self-service courtesy refund: a full refund is
 available within 24 hours of purchase only while the Event has had no
 guest-facing use—no invitation sent, no shareable/public entry enabled, no
 guest registration, and no guest contribution. On refund, EpicentraX closes
@@ -572,27 +576,28 @@ delete the organizer's setup work. This narrow rule is automated and
 auditable, prevents an Event from being used and then refunded, and avoids a
 routine Super Admin judgement call.
 
-After that 24-hour unused-event window, a Launch Pass is not refundable or
+After that 24-hour unused-event window, an Event Passport is not refundable or
 prorated merely because an organizer cancels, changes plans, or uses less than
 the included capacity. A cancelled Event may still be retained or exported
-under its included period and the normal Event Archive rules. Likewise,
-archive renewals and added-capacity blocks are explicit one-time purchases:
+under its remaining Passport term and the normal retention rules. Likewise,
+Passport renewals and added-capacity blocks are explicit one-time purchases:
 they do not auto-renew and are not prorated. A payment that fails, is pending,
 or is reversed never launches an Event; it leaves the Event safely private
 until a successful payment is confirmed. Provider disputes and legally
 required exceptions must be recorded and handled through a governed payment
 workflow rather than ad-hoc production changes.
 
-#### Accepted Event Archive renewal and grace-period direction
+#### Accepted Event Passport renewal and grace-period direction
 
-Event Archive renewal is proactive and never a surprise charge. At nine
-months after an Event ends, EpicentraX sends the organizer a friendly archive
-reminder. At eleven months, it sends a final reminder with clear choices to
-renew the Event Archive or export the content the organizer is authorized to
+Event Passport renewal is proactive and never a surprise charge. At nine
+months after successful Launch or the last renewal, EpicentraX sends the
+organizer a friendly renewal reminder. At eleven months, it sends a final
+reminder with clear choices to renew the Event Passport or export the content
+the organizer is authorized to
 retrieve.
 
-At twelve months after the Event ends, if the organizer has not renewed the
-Event Archive, guest gallery access closes. The organizer receives a
+At Passport expiration, if the organizer has not renewed, new guest entry,
+guest contributions, and guest gallery access close. The organizer receives a
 90-day grace period to renew or export before the retained media proceeds to
 the separately defined archival/deletion policy. EpicentraX must not silently
 delete retained Event media or leave guest-facing links broken without a clear
@@ -612,7 +617,7 @@ fact necessary to show that the Event archive expired and was deleted. It
 does not retain usable photo content or imply that recovery remains possible.
 Provider backup and replica expiration must follow the same published
 deletion-lifecycle commitment. An organizer receives more than the included
-gallery year plus the 90-day grace period to renew or export before deletion.
+Passport year plus the 90-day grace period to renew or export before deletion.
 
 #### Accepted guest photo contribution and account-recovery direction
 

@@ -281,6 +281,22 @@ index.
     call.
 - **Documentation-only commits on top of `1de0e95` — these move NO baseline
   and change NO runtime behavior:**
+  - **2026-09-09 — Private Event Passport-and-Launch lifecycle clarification
+    (documentation-only; implementation remains unauthorized).** The accepted
+    free-person rule is one active unpaid organizer project (planning or
+    private Draft). **Continue this event** is the normal path; beginning a
+    different unpaid Event is an explicit **Replace unfinished event** action,
+    which must transactionally remove the old unfinished plan / private Draft
+    before creating the new one. A $24 Event Passport begins at successful
+    Launch, lasts 12 months, and renews for $24 per year with no auto-charge;
+    launch activates only selected guest access and is not public publication
+    by default. Pre-guest changes are flexible; after invitation they are
+    auditable/notified material changes, and after guest participation a
+    wholesale repurpose requires cancellation plus a new Event. The existing
+    P-2C multi-event capability must be reconciled to these rules before the
+    personal lifecycle is implemented. Source:
+    [Personal Event Planning Lifecycle](../architecture/EPICENTRAX_PERSONAL_EVENT_PLANNING_LIFECYCLE.md) and
+    [Self-Service Event and Organization Onboarding Blueprint](../architecture/EPICENTRAX_SELF_SERVICE_EVENT_AND_ORGANIZATION_ONBOARDING_BLUEPRINT.md).
   - **`6dcbd11` — Catalog P3 scope freeze (deployed as docs; no runtime
     effect).** P3 (a provider-first flow, a creator-private provider
     candidate, a Platform review/promotion path, a deliberate provider-start
