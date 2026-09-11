@@ -233,10 +233,10 @@ state override this subsection whenever they disagree, per the
 
 ### Re-anchor reconciliation — 2026-09-10 (P0 event-photo and presentation-read closure)
 
-- **Current substantive baseline: `e7756ab` — LIVE.**
-  `fix(security): govern event photo and presentation reads` is deployed to
+- **Current substantive baseline: `ef76c2c` — LIVE.**
+  `feat(organizer): add atomic private event replacement` is deployed to
   production; Production Status reported service online and a clean working
-  tree at that commit. Its one database migration,
+  tree at that commit. It follows P0 `e7756ab`, whose one database migration,
   **`20261010000000_scope_event_photo_and_presentation_read_authority.sql`**,
   was separately preflighted against the linked production project
   `lastlzlewonsmwtolpvh`, applied as that exact verified file, and recorded in
@@ -271,18 +271,22 @@ state override this subsection whenever they disagree, per the
     planning for agenda, guests, vendors, venue, registry, checklist, and
     budget. The prior Project Brief narrative omitted that delivered arc;
     source and migrations are authoritative for its detail.
-  - **Approved P-2D.1 lifecycle refinement — not yet implemented.**
-    **Create new event** belongs in the organizer sidebar and remains visible
-    even while the Person has an unfinished unpaid Event. Selecting it opens a
-    choice panel: **Continue current event**; **Keep this event — purchase its
-    Passport**; or **Replace current event**. Replace must collect the new
-    Event details and, after clear irreversible confirmation, perform the old
-    eligible unfinished Event deletion and new draft creation in one governed
-    server transaction. A successful Passport payment preserves the current
-    pre-launch plan and enables creation of another Event; its 12-month active
-    period begins only when that Event launches, not while it is being planned.
-    This requires a later Passport/payment/launch state model and is outside
-    the atomic-replace slice unless separately authorized.
+  - **P-2D.1 lifecycle refinement — LIVE.** Its migration,
+    **`20261011000000_govern_self_service_private_event_replacement.sql`**,
+    was separately preflighted, applied to the linked production project, and
+    recorded in the synchronized migration ledger. **Create new event** is
+    always visible in organizer navigation. A Person with an unfinished
+    private Event can continue it or collect the replacement Event details
+    before confirming an atomic server-side replace; the old Event is never
+    browser-deleted first. The capacity outcome is caller-scoped and returns
+    only the blocking Event's minimal display data. The isolated local replay
+    proved ordinary capacity, replacement, foreign denial, idempotency,
+    forced rollback, standalone deletion, and ordinary-tenant isolation.
+  - **Approved future Passport-preservation rule — deferred.** A successful
+    Passport payment will preserve a current pre-launch plan and enable a new
+    Event; the 12-month active period begins only when that Event launches.
+    No payment control, paid pre-launch state, launch, invitation, or guest
+    access behavior was added by P-2D.1.
 
 ### Re-anchor reconciliation — 2026-09-09 (Registry Provider Catalog + deferred records)
 
@@ -396,12 +400,9 @@ index.
   boundary. None was weakened by P1, P2, the compatibility repair, or the two
   documentation commits.
 - **Next safe work — no new implementation is authorized by this record:**
-  1. The next private-event product step may be the separately authorized
-     P-2D.1 atomic **Replace current event** refinement: a sidebar entry,
-     caller-scoped structured capacity outcome, and a single server-side
-     delete-and-create transaction. Passport payment, launch, invitations,
-     guest access, and paid pre-launch preservation require their own later
-     state-model and implementation scope.
+  1. The next private-event product step may be a separately authorized
+     Passport/payment and pre-launch-preservation state-model scope, followed
+     by launch, invitations, and guest access as independently bounded work.
   2. **Read-only verification** of the legacy vendor / place / Nearby / map
      authority boundaries named in Dou's report — deployed grants, RLS
      policies, `SECURITY DEFINER` reachability, and service-client routes.
