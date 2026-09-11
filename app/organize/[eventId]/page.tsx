@@ -9,6 +9,7 @@ import {
   organizerEventValuesFromDraft,
   starterTemplateLabel,
 } from "@/components/organize/OrganizerEventFields";
+import { OrganizerPassportCard } from "@/components/organize/OrganizerPassportCard";
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import { Page } from "@/components/ui/Page";
@@ -60,6 +61,20 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
   const [deleteKey, setDeleteKey] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // The Stripe return page redirects here with this marker -- informational
+  // only, and read once on mount. It never establishes or claims payment
+  // truth by itself; the Passport card always refreshes its own status from
+  // the server.
+  const [justReturnedFromCheckout, setJustReturnedFromCheckout] = useState(false);
+  useEffect(() => {
+    if (
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("passport_return") === "1"
+    ) {
+      setJustReturnedFromCheckout(true);
+    }
+  }, []);
 
   const load = useCallback(async (requestedEventId: string) => {
     const { data } = await supabase.auth.getSession();
@@ -163,8 +178,11 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
       window.location.assign("/organize");
     } catch (error) {
       setDeleting(false);
+      const message = error instanceof Error ? error.message : "";
       setDeleteError(
-        error instanceof Error ? error.message : "We could not delete this event. Please try again.",
+        message === "checkout_cancellation_required"
+          ? "This event has an open Passport checkout. Use “Expire checkout” in the Passport section above, then try deleting again."
+          : message || "We could not delete this event. Please try again.",
       );
     }
   }
@@ -223,6 +241,11 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
           </div>
         )}
       </PageSection>
+
+      <OrganizerPassportCard
+        eventId={draft.event_id}
+        justReturnedFromCheckout={justReturnedFromCheckout}
+      />
 
       <PageSection title="Agenda" variant="card">
         <p style={{ marginTop: 0, color: "var(--color-text-muted, #475569)" }}>
