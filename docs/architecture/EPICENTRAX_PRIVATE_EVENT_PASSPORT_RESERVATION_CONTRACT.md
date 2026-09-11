@@ -16,7 +16,7 @@ payment-provider concern.
 
 ## Product rules
 
-- The initial Passport price is **$24 per Event**.
+- The initial Passport price is **USD $24.00 per Event**.
 - An unpaid unfinished private Event consumes the organizer's one-unpaid-event
   slot.
 - A checkout that is merely pending still consumes that slot. It grants no
@@ -30,6 +30,10 @@ payment-provider concern.
 - A reserved or active Passport Event is not eligible for the ordinary
   unfinished-Event Delete or Replace commands. Cancellation/refund is a later,
   governed workflow; it must not be inferred from the ordinary deletion path.
+- A live provider checkout must be cancelled or expired through a governed
+  server path before its pending Event can be deleted or replaced. If the
+  provider reports that payment completed during that request, the Event is
+  preserved rather than deleted.
 
 ## Independent entitlement model
 
@@ -68,6 +72,9 @@ receipt history, or entitlement decisions.
   and record an immutable EpicentraX receipt/audit fact before entitlement is
   granted.
 - Stripe secrets remain server-only and never enter a client bundle.
+- Only one open provider Checkout Session may exist for an Event at a time.
+  A later attempt is permitted only after the prior session is durably recorded
+  as expired or cancelled; abandoned attempt evidence is retained.
 
 Stripe's provider receipt is sufficient for the first release. Tax calculation,
 tax collection, and accounting treatment are deferred pending Pap's accountant
@@ -85,6 +92,9 @@ advice; deferral does not remove any legal obligation that may apply.
    and starts the 12-month clock.
 4. **Cancellation, refund, renewal, and expiry:** separately designed governed
    lifecycle work. No automatic renewal.
+
+The detailed, approved Checkout / webhook / cancellation design is recorded in
+[the Stripe Passport Checkout Implementation Specification](EPICENTRAX_STRIPE_PASSPORT_CHECKOUT_IMPLEMENTATION_SPECIFICATION.md).
 
 ## Explicitly out of scope
 

@@ -434,15 +434,15 @@ index.
   boundary. None was weakened by P1, P2, the compatibility repair, or the two
   documentation commits.
 - **Next safe work — no new implementation is authorized by this record:**
-  1. **Passport Stripe integration — blocked pending account provisioning and
-     separate scope.** The provider-independent entitlement foundation is LIVE.
-     Stripe Checkout remains the first-provider decision, but there is no
-     connected Stripe account, credential, checkout UI, or webhook yet. The
-     next slice is server-side Checkout creation and a signature-verified,
-     idempotent webhook that records the provider receipt/audit fact before it
-     can transition an Event to `reserved`; browser success is never payment
-     truth. See the
-     [Private Event Passport Reservation Contract](../architecture/EPICENTRAX_PRIVATE_EVENT_PASSPORT_RESERVATION_CONTRACT.md).
+  1. **Passport Stripe integration — approved design; implementation awaits
+     separate scope.** The provider-independent entitlement foundation is LIVE
+     and a Stripe sandbox exists, but no server credential, Checkout UI,
+     webhook, or payment action exists. The approved design is one USD $24.00
+     Checkout Session per Event; signature-verified, idempotent webhook
+     confirmation; immutable receipt/audit evidence; and a server-governed
+     cancellation path that preserves an Event if payment completes during a
+     Delete/Replace request. Browser success is never payment truth. See the
+     [Stripe Passport Checkout Implementation Specification](../architecture/EPICENTRAX_STRIPE_PASSPORT_CHECKOUT_IMPLEMENTATION_SPECIFICATION.md).
   2. **Read-only verification** of the legacy vendor / place / Nearby / map
      authority boundaries named in Dou's report — deployed grants, RLS
      policies, `SECURITY DEFINER` reachability, and service-client routes.
