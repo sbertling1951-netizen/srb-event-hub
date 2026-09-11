@@ -263,6 +263,26 @@ state override this subsection whenever they disagree, per the
     Event launch, gallery, and guest-media work is closed. Passport, launch,
     invitation, guest-access, and private-event lifecycle implementation still
     require their own Pap-approved scope; P0 did not implement them.
+  - **Existing private-planning foundation.** The earlier P-2D planning arc is
+    already shipped in the source baseline, including server-enforced capacity
+    of one active unfinished private Event per canonical Person, an
+    indefinitely continuable organizer workspace, and governed standalone
+    deletion of an eligible unfinished Event. It also includes private
+    planning for agenda, guests, vendors, venue, registry, checklist, and
+    budget. The prior Project Brief narrative omitted that delivered arc;
+    source and migrations are authoritative for its detail.
+  - **Approved P-2D.1 lifecycle refinement — not yet implemented.**
+    **Create new event** belongs in the organizer sidebar and remains visible
+    even while the Person has an unfinished unpaid Event. Selecting it opens a
+    choice panel: **Continue current event**; **Keep this event — purchase its
+    Passport**; or **Replace current event**. Replace must collect the new
+    Event details and, after clear irreversible confirmation, perform the old
+    eligible unfinished Event deletion and new draft creation in one governed
+    server transaction. A successful Passport payment preserves the current
+    pre-launch plan and enables creation of another Event; its 12-month active
+    period begins only when that Event launches, not while it is being planned.
+    This requires a later Passport/payment/launch state model and is outside
+    the atomic-replace slice unless separately authorized.
 
 ### Re-anchor reconciliation — 2026-09-09 (Registry Provider Catalog + deferred records)
 
@@ -376,10 +396,12 @@ index.
   boundary. None was weakened by P1, P2, the compatibility repair, or the two
   documentation commits.
 - **Next safe work — no new implementation is authorized by this record:**
-  1. The next private-event product step may be a separately authorized
-     Passport / launch / invitation / guest-access implementation scope. P0
-     closed its photo-security prerequisite; it did not authorize or deliver
-     that lifecycle work.
+  1. The next private-event product step may be the separately authorized
+     P-2D.1 atomic **Replace current event** refinement: a sidebar entry,
+     caller-scoped structured capacity outcome, and a single server-side
+     delete-and-create transaction. Passport payment, launch, invitations,
+     guest access, and paid pre-launch preservation require their own later
+     state-model and implementation scope.
   2. **Read-only verification** of the legacy vendor / place / Nearby / map
      authority boundaries named in Dou's report — deployed grants, RLS
      policies, `SECURITY DEFINER` reachability, and service-client routes.
