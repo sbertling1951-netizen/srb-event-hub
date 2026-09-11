@@ -13,7 +13,7 @@ const SOURCE = readFileSync(
   "utf8",
 );
 
-test("organizer navigation contains exactly the two approved links, in order", () => {
+test("organizer navigation contains exactly the three approved links, in order", () => {
   const sections = buildOrganizerNavSections();
   assert.equal(sections.length, 1);
 
@@ -22,9 +22,17 @@ test("organizer navigation contains exactly the two approved links, in order", (
     items.map((item) => ({ label: item.label, href: item.href })),
     [
       { label: "Your event spaces", href: "/organize" },
+      { label: "Create new event", href: "/organize" },
       { label: "Return to EpicentraX", href: "/login" },
     ],
   );
+});
+
+test("P-2D.1: Create new event is always visible -- static, no capacity gating", () => {
+  const items = buildOrganizerNavSections().flatMap((section) => section.items);
+  const createItem = items.find((item) => item.id === "create-event");
+  assert.ok(createItem);
+  assert.equal(createItem.href, "/organize");
 });
 
 test("the return link targets /login, never / (root smart-entry would bounce an admin session)", () => {

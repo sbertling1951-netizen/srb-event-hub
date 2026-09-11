@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   addOrganizerEventInputError,
@@ -12,6 +14,8 @@ import {
   organizerDraftInputError,
   type OrganizerDraftRpcClient,
   organizerEventDetailsError,
+  replaceMyUnfinishedEvent,
+  replaceOrganizerEventInputError,
   saveMyPrivateDraftDetails,
 } from "./organizerDrafts";
 
@@ -118,6 +122,86 @@ test("an uncertain prior identity is a returned outcome (not an error), and carr
     assert.equal(result.status, outcome);
     // the discriminated result exposes nothing but the status
     assert.deepEqual(Object.keys(result), ["status"]);
+  }
+});
+
+test("P-2D.1: a capacity conflict is a returned outcome (not an error), naming only the caller's own blocking Event", async () => {
+  const result = await createMyPrivateEventDraft(
+    {
+      async rpc() {
+        // Mirrors the server's actual narrowed contract exactly (Lun's
+        // review): every column beyond id/name/schedule is NULL, including
+        // organizer_person_id and the lifecycle flags -- never a populated
+        // value the adapter merely chooses not to read.
+        return {
+          data: [{
+            outcome: "active_event_exists",
+            tenant_id: null,
+            organizer_appointment_id: null,
+            organizer_person_id: null,
+            event_id: "blocking-event",
+            organization_name: null,
+            event_name: "Existing Reunion",
+            start_date: "2026-08-01",
+            end_date: "2026-08-02",
+            timezone: "America/Denver",
+            location_mode: null,
+            location: null,
+            starter_template: null,
+            status: null,
+            is_active: null,
+            visible_to_members: null,
+            created_at: null,
+          }],
+          error: null,
+        };
+      },
+    },
+    input,
+  );
+  assert.equal(result.status, "active_event_exists");
+  assert.deepEqual(
+    result.status === "active_event_exists" ? result.blockingEvent : null,
+    {
+      eventId: "blocking-event",
+      eventName: "Existing Reunion",
+      startDate: "2026-08-01",
+      endDate: "2026-08-02",
+      timezone: "America/Denver",
+    },
+  );
+  // no tenant/organization/location/template/Person-id/lifecycle-flag
+  // leakage for this outcome -- the adapter result exposes only status +
+  // blockingEvent, and blockingEvent itself carries only the 5 display
+  // fields (verified structurally below too).
+  assert.deepEqual(Object.keys(result), ["status", "blockingEvent"]);
+  assert.deepEqual(
+    result.status === "active_event_exists" ? Object.keys(result.blockingEvent) : null,
+    ["eventId", "eventName", "startDate", "endDate", "timezone"],
+  );
+});
+
+test("P-2D.1: the blocking-event mapper never reads organizer_person_id, tenant_id, organization_name, location, template, or lifecycle flags, even if a future server response regressed and sent them", () => {
+  const source = readFileSync(
+    fileURLToPath(new URL("./organizerDrafts.ts", import.meta.url)),
+    "utf8",
+  );
+  const fnStart = source.indexOf("function blockingEventFromRow");
+  assert.notEqual(fnStart, -1);
+  const fnBody = source.slice(fnStart, source.indexOf("\n}", fnStart));
+  for (const forbidden of [
+    "organizer_person_id",
+    "tenant_id",
+    "organizer_appointment_id",
+    "organization_name",
+    "location",
+    "starter_template",
+    "status",
+    "is_active",
+    "visible_to_members",
+    "created_at",
+  ]) {
+    assert.doesNotMatch(fnBody, new RegExp(`row\\.${forbidden}\\b`));
   }
 });
 
@@ -403,6 +487,118 @@ test("P-2D: deleteMyUnfinishedEvent surfaces a non-owned / not-found rejection v
   };
   await assert.rejects(
     () => deleteMyUnfinishedEvent(client, { eventId: "someone-elses", idempotencyKey: "k" }),
+    /Event not found\./,
+  );
+});
+
+test("P-2D.1: replaceMyUnfinishedEvent calls the one atomic RPC with the old Event id plus the complete new-draft contract", async () => {
+  const calls: Array<{ name: string; args?: Record<string, unknown> }> = [];
+  const client: OrganizerDraftRpcClient = {
+    async rpc(name, args) {
+      calls.push({ name, args });
+      return {
+        data: [{
+          outcome: "replaced",
+          tenant_id: "tenant-2",
+          organizer_appointment_id: "appt-2",
+          organizer_person_id: "person-1",
+          event_id: "event-2",
+          organization_name: "Autumn Dinner",
+          event_name: "Autumn Dinner",
+          start_date: "2026-10-10",
+          end_date: "2026-10-10",
+          timezone: "America/Los_Angeles",
+          location_mode: "location",
+          location: "Community Hall",
+          starter_template: "casual",
+          status: "Draft",
+          is_active: false,
+          visible_to_members: false,
+          created_at: "2026-09-10T00:00:00Z",
+          deleted_event_id: "event-1",
+          deletion_scope: "event_and_empty_workspace",
+        }],
+        error: null,
+      };
+    },
+  };
+
+  const result = await replaceMyUnfinishedEvent(client, { ...input, oldEventId: "event-1" });
+  assert.equal(result.status, "replaced");
+  assert.equal(result.status === "replaced" ? result.draft.event_id : null, "event-2");
+  assert.equal(result.status === "replaced" ? result.deletedEventId : null, "event-1");
+  assert.equal(
+    result.status === "replaced" ? result.deletionScope : null,
+    "event_and_empty_workspace",
+  );
+  assert.equal(calls[0]?.name, "replace_self_service_organizer_event");
+  assert.deepEqual(calls[0]?.args, {
+    p_old_event_id: "event-1",
+    p_organization_name: "Pap's Events",
+    p_event_name: "Autumn Dinner",
+    p_start_date: "2026-10-10",
+    p_end_date: "2026-10-10",
+    p_timezone: "America/Los_Angeles",
+    p_location_mode: "location",
+    p_location: "Community Hall",
+    p_starter_template: "casual",
+    p_idempotency_key: "c54d7fa0-d55f-43bc-a66a-419385789b87",
+  });
+});
+
+test("P-2D.1: replaceMyUnfinishedEvent requires an old Event to replace, before any RPC call", async () => {
+  assert.match(
+    replaceOrganizerEventInputError({ ...input, oldEventId: "" }) ?? "",
+    /choose the unfinished event to replace/i,
+  );
+  await assert.rejects(
+    () =>
+      replaceMyUnfinishedEvent(
+        {
+          async rpc() {
+            throw new Error("rpc should not be called with no old event id");
+          },
+        },
+        { ...input, oldEventId: "" },
+      ),
+    /choose the unfinished event to replace/i,
+  );
+});
+
+test("P-2D.1: an uncertain identity outcome from replace leaves the old Event untouched (returned outcome, not an error, no draft)", async () => {
+  for (const outcome of ["identity_confirmation_required", "identity_review_required"] as const) {
+    const result = await replaceMyUnfinishedEvent(
+      {
+        async rpc() {
+          return {
+            data: [{
+              outcome,
+              tenant_id: null, organizer_appointment_id: null, organizer_person_id: null,
+              event_id: null, organization_name: null, event_name: null,
+              deleted_event_id: null, deletion_scope: null,
+            }],
+            error: null,
+          };
+        },
+      },
+      { ...input, oldEventId: "event-1" },
+    );
+    assert.equal(result.status, outcome);
+    assert.deepEqual(Object.keys(result), ["status"]);
+  }
+});
+
+test("P-2D.1: an unauthorized/foreign/missing old Event surfaces the same non-enumerating rejection as standalone delete", async () => {
+  await assert.rejects(
+    () =>
+      replaceMyUnfinishedEvent(
+        {
+          async rpc() {
+            return { data: null, error: { message: "Event not found." } };
+          },
+        },
+        { ...input, oldEventId: "someone-elses-event" },
+      ),
     /Event not found\./,
   );
 });

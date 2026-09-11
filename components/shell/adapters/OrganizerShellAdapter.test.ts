@@ -31,7 +31,7 @@ test("the organizer adapter uses the neutral platform brand, no workspace identi
   assert.doesNotMatch(SOURCE, /buildShellBrand\(/);
 });
 
-test("the organizer adapter exposes exactly the two approved nav links and no account action", () => {
+test("the organizer adapter exposes exactly the approved static nav links and no account action", () => {
   assert.match(
     SOURCE,
     /import \{ buildOrganizerNavSections \} from "@\/components\/shell\/navigation\/organizerNav";/,

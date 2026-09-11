@@ -94,17 +94,9 @@ test("P-2D: creation maps the single Event name onto the internal organization-n
   assert.doesNotMatch(page, /Event space name|Organization name|organizationName: newSpaceForm/);
 });
 
-test("P-2D: capacity gating drives an explicit, irreversible Start-over confirmation", () => {
+test("P-2D: capacity gating is server-driven, never a client-side draft count", () => {
   assert.match(page, /getMyOrganizerCapacity\(supabase\)/);
   assert.match(page, /can_start_another_event/);
-  assert.match(page, /Start over with a new event/);
-  // the confirm step spells out that it is permanent and cannot be resumed
-  assert.match(page, /permanently deletes your current unfinished event/i);
-  assert.match(page, /cannot be undone and it cannot be\s+resumed/i);
-  assert.match(page, /deleteMyUnfinishedEvent\(supabase/);
-  // after a confirmed delete, the clean new-event form is shown
-  assert.match(page, /setStartedOver\(true\)/);
-  assert.match(page, /startedOver \? "Start your new event"/);
 });
 
 test("P-2D: a quiet subscription note appears, with no upgrade / billing / entitlement UI", () => {
@@ -115,10 +107,78 @@ test("P-2D: a quiet subscription note appears, with no upgrade / billing / entit
 
 test("P-2D: grandfathered multiple drafts are listed once, never auto-deleted, with no extra creation controls", () => {
   assert.match(page, /grandfatheredExtra = drafts\.length > 1/);
-  // when there are extra drafts, the create form and the start-over control are both withheld
-  assert.match(page, /showCreateForm = startedOver \|\| \(!loading && drafts\.length === 0\)/);
+  // when there are extra drafts, neither the create form nor the conflict/replace controls are shown
+  assert.match(page, /showConflictChoice = !grandfatheredExtra && !!blockingEvent/);
+  assert.match(page, /showCreateForm = !showConflictChoice && !grandfatheredExtra/);
   assert.match(page, /grandfatheredExtra \? \(/);
   assert.doesNotMatch(page, /drafts\.forEach[\s\S]*delete|auto.?delete/i);
+});
+
+// ---- P-2D.1: atomic Replace current event (no browser-orchestrated delete-then-create) ----
+
+test("P-2D.1: the old browser-orchestrated Start-over (delete-then-create) path is gone", () => {
+  assert.doesNotMatch(page, /Start over with a new event/);
+  assert.doesNotMatch(page, /deleteMyUnfinishedEvent/);
+  assert.doesNotMatch(page, /confirmingStartOver|setStartedOver|startedOver/);
+});
+
+test("P-2D.1: a blocked organizer sees Continue current event and Replace current event, naming only her own blocking Event", () => {
+  assert.match(page, />Continue current event</);
+  assert.match(page, />Replace current event</);
+  assert.match(page, /blockingEvent\.eventName/);
+  assert.match(page, /blockingEvent\.eventId/);
+});
+
+test("P-2D.1: Replace collects the new Event's details before any irreversible confirmation is shown", () => {
+  // three distinct steps: choose, collect, confirm
+  assert.match(page, /replaceStep === "idle"/);
+  assert.match(page, /replaceStep === "collecting"/);
+  assert.match(page, /<OrganizerEventFields values=\{replaceForm\} onChange=\{setReplaceForm\}/);
+  // the collecting step's own Continue button only advances to confirmation --
+  // it must not itself call the replacement RPC
+  const collectingIdx = page.indexOf('replaceStep === "collecting"');
+  const confirmingIdx = page.indexOf("Alert tone=\"danger\"", collectingIdx);
+  const collectingBlock = page.slice(collectingIdx, confirmingIdx);
+  assert.doesNotMatch(collectingBlock, /replaceMyUnfinishedEvent/);
+});
+
+test("P-2D.1: the confirmation step names both the deleted and created Event and is irreversible", () => {
+  const confirmIdx = page.lastIndexOf("This permanently deletes");
+  assert.notEqual(confirmIdx, -1);
+  const confirmBlock = page.slice(confirmIdx, confirmIdx + 500);
+  assert.match(confirmBlock, /blockingEvent\.eventName/);
+  assert.match(confirmBlock, /replaceForm\.eventName/);
+  assert.match(page, /cannot be undone and it cannot be\s+resumed/i);
+});
+
+test("P-2D.1: only the final confirmation calls the one atomic replacement RPC, never on page load or during collection", () => {
+  assert.match(page, /replaceMyUnfinishedEvent\(supabase/);
+  // exactly one call site
+  assert.equal((page.match(/replaceMyUnfinishedEvent\(/g) ?? []).length, 1);
+  assert.match(page, /onClick=\{\(\) => void confirmReplace\(blockingEvent\)\}/);
+});
+
+test("P-2D.1: a replacement error keeps the organizer on the confirmation step with her typed new-event details intact", () => {
+  const fnIdx = page.indexOf("async function confirmReplace");
+  assert.notEqual(fnIdx, -1);
+  const fnEnd = page.indexOf("\n  }\n", fnIdx);
+  const catchIdx = page.indexOf("} catch (error) {", fnIdx);
+  assert.ok(catchIdx !== -1 && catchIdx < fnEnd);
+  const catchBlock = page.slice(catchIdx, fnEnd);
+  assert.doesNotMatch(catchBlock, /setReplaceStep\(|setReplaceForm\(/);
+  assert.match(catchBlock, /setReplaceError\(/);
+});
+
+test("P-2D.1: an uncertain identity outcome from replace touches neither the old nor a new Event", () => {
+  const fnIdx = page.indexOf("async function confirmReplace");
+  const fnBody = page.slice(fnIdx, page.indexOf("\n  }\n", fnIdx));
+  assert.match(fnBody, /identity_confirmation_required.*identity_review_required|identity_review_required.*identity_confirmation_required/s);
+  assert.match(fnBody, /setIdentityNotice/);
+});
+
+test("P-2D.1: a stale-capacity race on ordinary create degrades to the same Continue/Replace choice, never a raw error", () => {
+  assert.match(page, /result\.status === "active_event_exists"/);
+  assert.match(page, /setRaceBlockingEvent\(result\.blockingEvent\)/);
 });
 
 test("P-2D: the draft workspace has an explicit Delete unfinished event action that returns to /organize", () => {

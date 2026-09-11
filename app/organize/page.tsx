@@ -16,18 +16,21 @@ import { PageSection } from "@/components/ui/PageSection";
 import {
   createMyPrivateEventDraft,
   type CreateOrganizerDraftResult,
-  deleteMyUnfinishedEvent,
   getMyOrganizerCapacity,
   listMyPrivateEventDrafts,
+  type OrganizerBlockingEvent,
   type OrganizerCapacity,
   type OrganizerDraft,
   organizerDraftInputError,
+  replaceMyUnfinishedEvent,
 } from "@/lib/organizerDrafts";
 import { supabase } from "@/lib/supabase";
 
 type AccessState = "checking" | "signed_out" | "unverified" | "ready";
 
 type EventForm = OrganizerEventFormValues;
+
+type ReplaceStep = "idle" | "collecting" | "confirming";
 
 function newIdempotencyKey() {
   return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -37,11 +40,29 @@ function newIdempotencyKey() {
 
 const emptyEventForm = emptyOrganizerEventForm;
 
-function formatSchedule(draft: OrganizerDraft) {
-  if (!draft.start_date || draft.start_date === draft.end_date) {
-    return `${draft.end_date} · ${draft.timezone}`;
+function formatSchedule(schedule: { start_date: string | null; end_date: string; timezone: string }) {
+  if (!schedule.start_date || schedule.start_date === schedule.end_date) {
+    return `${schedule.end_date} · ${schedule.timezone}`;
   }
-  return `${draft.start_date} to ${draft.end_date} · ${draft.timezone}`;
+  return `${schedule.start_date} to ${schedule.end_date} · ${schedule.timezone}`;
+}
+
+function formatBlockingSchedule(blockingEvent: OrganizerBlockingEvent) {
+  return formatSchedule({
+    start_date: blockingEvent.startDate,
+    end_date: blockingEvent.endDate,
+    timezone: blockingEvent.timezone,
+  });
+}
+
+function blockingEventFromDraft(draft: OrganizerDraft): OrganizerBlockingEvent {
+  return {
+    eventId: draft.event_id,
+    eventName: draft.event_name,
+    startDate: draft.start_date,
+    endDate: draft.end_date,
+    timezone: draft.timezone,
+  };
 }
 
 const SUBSCRIPTION_NOTE =
@@ -56,8 +77,8 @@ export default function OrganizePage() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // The create action routes uncertain identity outcomes to the existing
-  // /member/activate flow, so one page-level notice is enough.
+  // The create/replace actions route uncertain identity outcomes to the
+  // existing /member/activate flow, so one page-level notice is enough.
   const [identityNotice, setIdentityNotice] = useState<"confirm" | "review" | null>(null);
 
   const [form, setForm] = useState<EventForm>(emptyEventForm());
@@ -65,13 +86,23 @@ export default function OrganizePage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  // "Start over" -- permanently delete the current unfinished event, then show
-  // a clean new-event form.
-  const [confirmingStartOver, setConfirmingStartOver] = useState(false);
-  const [deleteKey, setDeleteKey] = useState("");
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [startedOver, setStartedOver] = useState(false);
+  // P-2D.1: a capacity conflict discovered mid-submit (the loaded capacity was
+  // stale) is handled exactly like the ordinary at-capacity case below --
+  // this never happens from stale local state alone, since the server is
+  // always the authority, but it must still degrade to the same safe choice
+  // instead of a raw error.
+  const [raceBlockingEvent, setRaceBlockingEvent] = useState<OrganizerBlockingEvent | null>(null);
+
+  // P-2D.1: Replace current event -- collect the new Event's details FIRST,
+  // then one explicit irreversible confirmation, then the one atomic
+  // replacement RPC. The old Event is never touched until that RPC succeeds,
+  // so it is never lost merely because the browser fails, closes, or the new
+  // form was invalid.
+  const [replaceStep, setReplaceStep] = useState<ReplaceStep>("idle");
+  const [replaceForm, setReplaceForm] = useState<EventForm>(emptyEventForm());
+  const [replaceKey, setReplaceKey] = useState("");
+  const [replaceError, setReplaceError] = useState<string | null>(null);
+  const [replacing, setReplacing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -122,6 +153,16 @@ export default function OrganizePage() {
     [form, createKey],
   );
 
+  const replaceFormError = useMemo(
+    () =>
+      organizerDraftInputError({
+        ...replaceForm,
+        organizationName: replaceForm.eventName,
+        idempotencyKey: replaceKey,
+      }),
+    [replaceForm, replaceKey],
+  );
+
   function applyIdentityOutcome(result: CreateOrganizerDraftResult): boolean {
     if (
       result.status === "identity_confirmation_required" ||
@@ -151,6 +192,11 @@ export default function OrganizePage() {
         idempotencyKey: createKey,
       });
       setCreateKey(newIdempotencyKey());
+      if (result.status === "active_event_exists") {
+        setRaceBlockingEvent(result.blockingEvent);
+        void load();
+        return;
+      }
       if (applyIdentityOutcome(result)) {
         return;
       }
@@ -166,37 +212,58 @@ export default function OrganizePage() {
     }
   }
 
-  function openStartOver() {
-    setConfirmingStartOver(true);
-    setDeleteKey(newIdempotencyKey());
-    setDeleteError(null);
+  function openReplaceFlow() {
+    setReplaceForm(emptyEventForm());
+    setReplaceError(null);
+    setReplaceKey(newIdempotencyKey());
+    setReplaceStep("collecting");
   }
 
-  async function confirmStartOver() {
-    const target = drafts[0];
-    if (!target || deleting) {
+  function submitReplaceDetails(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (replaceFormError) {
+      setReplaceError(replaceFormError);
       return;
     }
-    setDeleting(true);
-    setDeleteError(null);
+    setReplaceError(null);
+    setReplaceStep("confirming");
+  }
+
+  function cancelReplace() {
+    setReplaceStep("idle");
+    setReplaceError(null);
+  }
+
+  async function confirmReplace(blockingEvent: OrganizerBlockingEvent) {
+    if (replacing) {
+      return;
+    }
+    setReplacing(true);
+    setReplaceError(null);
+    setIdentityNotice(null);
     try {
-      await deleteMyUnfinishedEvent(supabase, {
-        eventId: target.event_id,
-        idempotencyKey: deleteKey,
+      const result = await replaceMyUnfinishedEvent(supabase, {
+        ...replaceForm,
+        organizationName: replaceForm.eventName,
+        oldEventId: blockingEvent.eventId,
+        idempotencyKey: replaceKey,
       });
-      setDrafts([]);
-      setCapacity(null);
-      setConfirmingStartOver(false);
-      setForm(emptyEventForm());
-      setCreateKey(newIdempotencyKey());
-      setStartedOver(true);
-      void load();
+      setReplaceKey(newIdempotencyKey());
+      if (result.status === "identity_confirmation_required" || result.status === "identity_review_required") {
+        setIdentityNotice(result.status === "identity_confirmation_required" ? "confirm" : "review");
+        setReplaceStep("idle");
+        return;
+      }
+      window.location.assign(`/organize/${encodeURIComponent(result.draft.event_id)}`);
     } catch (error) {
-      setDeleteError(
-        error instanceof Error ? error.message : "We could not delete that event. Please try again.",
+      // The replacement RPC is one transaction: an error here means the old
+      // Event was never touched. Stay on the confirmation step (keeping the
+      // typed new-event details) so the organizer can simply retry.
+      setReplaceError(
+        error instanceof Error ? error.message : "We could not replace your event. Please try again.",
       );
     } finally {
-      setDeleting(false);
+      setReplacing(false);
     }
   }
 
@@ -227,9 +294,15 @@ export default function OrganizePage() {
   }
 
   const secureRequestUnavailable = accessState === "ready" && !createKey;
+  const secureReplaceRequestUnavailable = accessState === "ready" && !replaceKey;
   const atCapacity = capacity ? !capacity.can_start_another_event : drafts.length > 0;
   const grandfatheredExtra = drafts.length > 1;
-  const showCreateForm = startedOver || (!loading && drafts.length === 0);
+  // The caller's own blocking Event: either discovered from the loaded list,
+  // or (a stale-capacity race) returned directly by a create attempt.
+  const blockingEvent: OrganizerBlockingEvent | null =
+    raceBlockingEvent ?? (atCapacity && !grandfatheredExtra && drafts[0] ? blockingEventFromDraft(drafts[0]) : null);
+  const showConflictChoice = !grandfatheredExtra && !!blockingEvent;
+  const showCreateForm = !showConflictChoice && !grandfatheredExtra && !loading && drafts.length === 0;
 
   const identityNoticeBlock =
     identityNotice === "confirm" ? (
@@ -266,7 +339,7 @@ export default function OrganizePage() {
         <Alert tone="danger" action={<AppButton onClick={() => void load()}>Try again</AppButton>}>{loadError}</Alert>
       ) : null}
 
-      {!loading && !startedOver && drafts.length > 0 ? (
+      {!loading && drafts.length > 0 ? (
         <PageSection title="Your events" variant="section">
           <ul style={{ display: "grid", gap: 10, listStyle: "none", margin: 0, padding: 0 }}>
             {drafts.map((draft) => (
@@ -284,49 +357,72 @@ export default function OrganizePage() {
                 {SUBSCRIPTION_NOTE} You can keep planning any of the events above.
               </Alert>
             </div>
-          ) : atCapacity ? (
-            <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
-              <p style={{ margin: 0, color: "var(--color-text-muted, #475569)" }}>{SUBSCRIPTION_NOTE}</p>
-              {confirmingStartOver ? (
-                <Alert tone="danger">
-                  <p style={{ marginTop: 0 }}>
-                    <strong>This permanently deletes your current unfinished event.</strong> Its private
-                    draft and workspace are removed for good — this cannot be undone and it cannot be
-                    resumed. Then you can start a new event.
-                  </p>
-                  {deleteError ? <p style={{ color: "#991b1b", fontWeight: 600 }}>{deleteError}</p> : null}
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <AppButton
-                      variant="danger"
-                      loading={deleting}
-                      disabled={secureRequestUnavailable || !deleteKey}
-                      onClick={() => void confirmStartOver()}
-                    >
-                      Permanently delete and start over
-                    </AppButton>
-                    <AppButton onClick={() => setConfirmingStartOver(false)} disabled={deleting}>
-                      Keep my current event
-                    </AppButton>
-                  </div>
-                </Alert>
-              ) : (
-                <div>
-                  <AppButton onClick={openStartOver}>Start over with a new event</AppButton>
-                </div>
-              )}
-            </div>
           ) : null}
         </PageSection>
       ) : null}
 
+      {showConflictChoice && blockingEvent ? (
+        <PageSection title="Create new event" variant="card">
+          <p style={{ marginTop: 0, color: "var(--color-text-muted, #475569)" }}>{SUBSCRIPTION_NOTE}</p>
+
+          {replaceStep === "idle" ? (
+            <div style={{ display: "grid", gap: 10 }}>
+              <p style={{ margin: 0 }}>
+                You already have one unfinished event, <strong>{blockingEvent.eventName}</strong> (
+                {formatBlockingSchedule(blockingEvent)}).
+              </p>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <Link href={`/organize/${encodeURIComponent(blockingEvent.eventId)}`}>
+                  <AppButton variant="primary">Continue current event</AppButton>
+                </Link>
+                <AppButton onClick={openReplaceFlow}>Replace current event</AppButton>
+              </div>
+            </div>
+          ) : replaceStep === "collecting" ? (
+            <form onSubmit={submitReplaceDetails} style={{ display: "grid", gap: 14 }}>
+              <p style={{ margin: 0 }}>
+                Enter the details for your new event. Nothing is deleted yet.
+              </p>
+              <OrganizerEventFields values={replaceForm} onChange={setReplaceForm} />
+              {replaceError ? <Alert tone="danger">{replaceError}</Alert> : null}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <AppButton type="submit" variant="primary" disabled={secureReplaceRequestUnavailable}>
+                  Continue
+                </AppButton>
+                <AppButton onClick={cancelReplace}>Cancel</AppButton>
+              </div>
+            </form>
+          ) : (
+            <Alert tone="danger">
+              <p style={{ marginTop: 0 }}>
+                <strong>
+                  This permanently deletes &ldquo;{blockingEvent.eventName}&rdquo;
+                </strong>{" "}
+                and creates &ldquo;{replaceForm.eventName}&rdquo; instead. The old event&apos;s private
+                draft and workspace are removed for good — this cannot be undone and it cannot be
+                resumed.
+              </p>
+              {replaceError ? <p style={{ color: "#991b1b", fontWeight: 600 }}>{replaceError}</p> : null}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <AppButton
+                  variant="danger"
+                  loading={replacing}
+                  disabled={secureReplaceRequestUnavailable}
+                  onClick={() => void confirmReplace(blockingEvent)}
+                >
+                  Replace event
+                </AppButton>
+                <AppButton onClick={() => setReplaceStep("collecting")} disabled={replacing}>
+                  Back
+                </AppButton>
+              </div>
+            </Alert>
+          )}
+        </PageSection>
+      ) : null}
+
       {showCreateForm ? (
-        <PageSection
-          title={startedOver ? "Start your new event" : "Create your event"}
-          variant="card"
-        >
-          {startedOver ? (
-            <Alert tone="success">Your previous unfinished event was permanently deleted. Nothing was kept.</Alert>
-          ) : null}
+        <PageSection title="Create your event" variant="card">
           <p style={{ marginTop: 0, color: "var(--color-text-muted, #475569)" }}>{SUBSCRIPTION_NOTE}</p>
           <form onSubmit={createEvent} style={{ display: "grid", gap: 14 }}>
             <OrganizerEventFields values={form} onChange={setForm} />

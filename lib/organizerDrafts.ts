@@ -61,6 +61,14 @@ export type AddOrganizerEventInput = OrganizerEventInput & {
   organizationTenantId: string;
 };
 
+/**
+ * P-2D.1: the new-draft details for an atomic replace, plus the caller's
+ * existing unfinished Event being replaced.
+ */
+export type ReplaceOrganizerEventInput = CreateOrganizerDraftInput & {
+  oldEventId: string;
+};
+
 type RpcResult = {
   data: unknown;
   error: { message: string } | null;
@@ -144,6 +152,15 @@ export function addOrganizerEventInputError(
   return organizerEventInputError(input);
 }
 
+export function replaceOrganizerEventInputError(
+  input: ReplaceOrganizerEventInput,
+): string | null {
+  if (!input.oldEventId) {
+    return "Choose the unfinished event to replace.";
+  }
+  return organizerDraftInputError(input);
+}
+
 function oneDraft(data: unknown): OrganizerDraft {
   const row = Array.isArray(data) ? data[0] : data;
   if (!row || typeof row !== "object") {
@@ -153,24 +170,52 @@ function oneDraft(data: unknown): OrganizerDraft {
 }
 
 /**
+ * P-2D.1: the caller's OWN unfinished Event that is blocking a new one --
+ * only the minimal display facts needed to offer Continue or Replace, never
+ * another Person's data.
+ */
+export type OrganizerBlockingEvent = {
+  eventId: string;
+  eventName: string;
+  startDate: string | null;
+  endDate: string;
+  timezone: string;
+};
+
+function blockingEventFromRow(row: Record<string, unknown>): OrganizerBlockingEvent {
+  return {
+    eventId: String(row.event_id ?? ""),
+    eventName: String(row.event_name ?? ""),
+    startDate: (row.start_date as string | null | undefined) ?? null,
+    endDate: String(row.end_date ?? ""),
+    timezone: String(row.timezone ?? ""),
+  };
+}
+
+/**
  * P-2B: the governed command resolves the organizer's canonical Person before
  * creating anything. When that resolution is uncertain it returns an explicit
  * `outcome` discriminator (not an error) -- the server has still written its
  * durable resolution-audit row, and nothing else has been created. The browser
  * routes the organizer through the existing identity-claim verification first.
+ *
+ * P-2D.1: a capacity conflict is likewise an expected returned outcome, never
+ * an exception -- `blockingEvent` identifies only the caller's own unfinished
+ * Event so the UI can offer "Continue current event" / "Replace current event".
  */
 export type CreateOrganizerDraftResult =
   | { status: "created"; draft: OrganizerDraft }
   | { status: "identity_confirmation_required" }
-  | { status: "identity_review_required" };
+  | { status: "identity_review_required" }
+  | { status: "active_event_exists"; blockingEvent: OrganizerBlockingEvent };
 
 function interpretCreateResult(
   data: unknown,
   error: { message: string } | null,
 ): CreateOrganizerDraftResult {
   // Hard errors (bad input, idempotency conflict, unauthorized, unknown event
-  // space) are still real errors. The expected uncertain identity outcomes are
-  // returned rows, NOT errors.
+  // space) are still real errors. The expected uncertain identity outcomes and
+  // the capacity conflict are returned rows, NOT errors.
   if (error) {
     throw new Error(error.message);
   }
@@ -186,6 +231,12 @@ function interpretCreateResult(
   }
   if (outcome === "identity_review_required") {
     return { status: "identity_review_required" };
+  }
+  if (outcome === "active_event_exists") {
+    return {
+      status: "active_event_exists",
+      blockingEvent: blockingEventFromRow(row as Record<string, unknown>),
+    };
   }
   return { status: "created", draft: oneDraft(data) };
 }
@@ -370,6 +421,77 @@ export async function deleteMyUnfinishedEvent(
     deletedEventId: value.deleted_event_id ?? input.eventId,
     deletionScope: scope,
     deletedWorkspace: scope === "event_and_empty_workspace",
+  };
+}
+
+/**
+ * P-2D.1: the one atomic replacement command. It deletes the caller's own
+ * eligible unfinished private Event and creates the new draft in a single
+ * governed server transaction -- never two separate browser round trips, so
+ * the old Event is never lost merely because the browser fails or closes
+ * between a delete and a later create. Identity-uncertain outcomes leave the
+ * old Event completely untouched, exactly like an ordinary create.
+ */
+export type ReplaceOrganizerEventResult =
+  | {
+      status: "replaced";
+      draft: OrganizerDraft;
+      deletedEventId: string;
+      deletionScope: "event_only" | "event_and_empty_workspace";
+    }
+  | { status: "identity_confirmation_required" }
+  | { status: "identity_review_required" };
+
+export async function replaceMyUnfinishedEvent(
+  client: OrganizerDraftRpcClient,
+  input: ReplaceOrganizerEventInput,
+): Promise<ReplaceOrganizerEventResult> {
+  const inputError = replaceOrganizerEventInputError(input);
+  if (inputError) {
+    throw new Error(inputError);
+  }
+
+  const { data, error } = await client.rpc("replace_self_service_organizer_event", {
+    p_old_event_id: input.oldEventId,
+    p_organization_name: input.organizationName.trim(),
+    p_event_name: input.eventName.trim(),
+    p_start_date: input.startDate || null,
+    p_end_date: input.endDate,
+    p_timezone: input.timezone,
+    p_location_mode: input.locationMode,
+    p_location: input.location.trim() || null,
+    p_starter_template: input.starterTemplate,
+    p_idempotency_key: input.idempotencyKey,
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  const outcome =
+    row && typeof row === "object" && "outcome" in row
+      ? (row as { outcome?: unknown }).outcome
+      : undefined;
+
+  if (outcome === "identity_confirmation_required") {
+    return { status: "identity_confirmation_required" };
+  }
+  if (outcome === "identity_review_required") {
+    return { status: "identity_review_required" };
+  }
+
+  if (!row || typeof row !== "object") {
+    throw new Error("EpicentraX did not confirm the replacement.");
+  }
+  const value = row as { deleted_event_id?: string; deletion_scope?: string };
+  return {
+    status: "replaced",
+    draft: oneDraft(data),
+    deletedEventId: value.deleted_event_id ?? input.oldEventId,
+    deletionScope:
+      value.deletion_scope === "event_and_empty_workspace"
+        ? "event_and_empty_workspace"
+        : "event_only",
   };
 }
 
