@@ -2,7 +2,7 @@
 
 **Purpose:** Authoritative startup context for every human or AI contributor.
 
-**Status date:** 2026-09-10
+**Status date:** 2026-09-11
 
 This brief is a navigation and operating document. It does not replace the Constitution, architecture documents, migrations, database, or source code. Those remain authoritative within their respective domains.
 
@@ -231,6 +231,35 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Re-anchor reconciliation — 2026-09-11 (Passport payment-attempt authority)
+
+- **Current substantive baseline: `daa8293` — LIVE.**
+  `feat(passport): govern Stripe payment attempts` is promoted to `main`;
+  Production Status reported service online and a clean working tree at that
+  commit. Its migration,
+  **`20261013000000_govern_self_service_event_passport_payment_attempts.sql`**,
+  passed a fresh isolated full-chain replay whose fixture reached its explicit
+  rollback, then passed a separate linked-production preflight and controlled
+  apply to project `lastlzlewonsmwtolpvh`. The production migration ledger is
+  synchronized through `20261013000000`.
+  - **What is now live.** The empty, fully RLS-protected authority foundation
+    adds one-open Stripe payment-attempt records and immutable, provider-event
+    idempotent receipt/audit records. Browser roles cannot read or mutate either
+    record. Service-only commands can later bind a provider session, record a
+    terminal provider state, and confirm a verified payment; no browser role
+    can reserve a Passport. Open/preparing attempts block ordinary Event Delete
+    and Replace. Expired/cancelled attempt evidence remains after the old Event
+    is removed, using a plain audit Event reference rather than an Event FK.
+  - **What is deliberately not live.** No Stripe SDK, secret, Checkout Session,
+    webhook route, payment request, receipt write, provider event, or browser
+    Passport control exists. The Stripe sandbox exists, but no application
+    credential has been provisioned and no provider has been contacted.
+  - **Next Passport slice.** A separately authorized server-route and organizer
+    UI scope may use the already-live authority commands to create sandbox
+    Checkout Sessions, verify raw-body webhook signatures, and give owners a
+    governed Resume/Cancel Checkout experience. It must complete sandbox
+    end-to-end proof before any live credential or real-money approval.
+
 ### Re-anchor reconciliation — 2026-09-11 (Passport entitlement foundation)
 
 - **Current substantive baseline: `0bd4e8a` — LIVE.**
@@ -434,14 +463,15 @@ index.
   boundary. None was weakened by P1, P2, the compatibility repair, or the two
   documentation commits.
 - **Next safe work — no new implementation is authorized by this record:**
-  1. **Passport Stripe integration — approved design; implementation awaits
-     separate scope.** The provider-independent entitlement foundation is LIVE
-     and a Stripe sandbox exists, but no server credential, Checkout UI,
-     webhook, or payment action exists. The approved design is one USD $24.00
-     Checkout Session per Event; signature-verified, idempotent webhook
-     confirmation; immutable receipt/audit evidence; and a server-governed
-     cancellation path that preserves an Event if payment completes during a
-     Delete/Replace request. Browser success is never payment truth. See the
+  1. **Passport Stripe server integration — awaits separate scope.** The
+     provider-independent entitlement and payment-attempt/receipt authority
+     foundations are LIVE, and a Stripe sandbox exists. No application
+     credential, Checkout UI, webhook route, provider event, or payment action
+     exists. The approved design remains one USD $24.00 Checkout Session per
+     Event; signature-verified, idempotent webhook confirmation; immutable
+     receipt/audit evidence; and a server-governed cancellation path that
+     preserves an Event if payment completes during a Delete/Replace request.
+     Browser success is never payment truth. See the
      [Stripe Passport Checkout Implementation Specification](../architecture/EPICENTRAX_STRIPE_PASSPORT_CHECKOUT_IMPLEMENTATION_SPECIFICATION.md).
   2. **Read-only verification** of the legacy vendor / place / Nearby / map
      authority boundaries named in Dou's report — deployed grants, RLS
@@ -533,11 +563,11 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-11T07:52:23-07:00`
+**Generated at:** `2026-09-11T11:40:31-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `0bd4e8a feat(passport): add private event entitlement foundation`
-**Commit date:** `2026-09-11T07:33:16-07:00`
-**origin/main:** `0bd4e8a`
+**Commit:** `daa8293 feat(passport): govern Stripe payment attempts`
+**Commit date:** `2026-09-11T11:22:09-07:00`
+**origin/main:** `daa8293`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
@@ -613,18 +643,19 @@ _Git status above was captured before this script wrote this section; writing th
 - `EPICENTRAX_SITE_ASSIGNMENT_GOVERNANCE_ARCHITECTURE.md`
 - `EPICENTRAX_SITE_PLACEMENT_IMPLEMENTATION_SPECIFICATION.md`
 - `EPICENTRAX_STALE_MASTER_MAP_IDENTITY_CORRECTION_ARCHITECTURE.md`
+- `EPICENTRAX_STRIPE_PASSPORT_CHECKOUT_IMPLEMENTATION_SPECIFICATION.md`
 - `epicentrax-user-flow-and-native-interaction.md`
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `251`
-- Latest migration: `20261012000000_create_self_service_event_passport_entitlement_foundation.sql`
+- Total migration files: `252`
+- Latest migration: `20261013000000_govern_self_service_event_passport_payment_attempts.sql`
 - Latest five:
-  - `20261008000000_govern_registry_provider_catalog_foundation.sql`
   - `20261009000000_govern_registry_plan_catalog_selection.sql`
   - `20261010000000_scope_event_photo_and_presentation_read_authority.sql`
   - `20261011000000_govern_self_service_private_event_replacement.sql`
   - `20261012000000_create_self_service_event_passport_entitlement_foundation.sql`
+  - `20261013000000_govern_self_service_event_passport_payment_attempts.sql`
 
 ### Identity-audit inventory
 - SQL files: `14`
