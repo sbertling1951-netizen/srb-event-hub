@@ -400,9 +400,15 @@ index.
   boundary. None was weakened by P1, P2, the compatibility repair, or the two
   documentation commits.
 - **Next safe work — no new implementation is authorized by this record:**
-  1. The next private-event product step may be a separately authorized
-     Passport/payment and pre-launch-preservation state-model scope, followed
-     by launch, invitations, and guest access as independently bounded work.
+  1. **Passport reservation — accepted contract, implementation deferred.**
+     Stripe Checkout is the first provider. A pending checkout still counts as
+     unpaid; confirmed payment reserves the pre-launch Event and frees the
+     organizer to create another; the 12-month clock begins only at launch;
+     no automatic renewal; and paid Event cancellation/refund is governed,
+     never ordinary Delete. See the
+     [Private Event Passport Reservation Contract](../architecture/EPICENTRAX_PRIVATE_EVENT_PASSPORT_RESERVATION_CONTRACT.md).
+     The next implementation slice is provider-independent entitlement state,
+     capacity, and Delete/Replace eligibility only—no external payment call.
   2. **Read-only verification** of the legacy vendor / place / Nearby / map
      authority boundaries named in Dou's report — deployed grants, RLS
      policies, `SECURITY DEFINER` reachability, and service-client routes.
