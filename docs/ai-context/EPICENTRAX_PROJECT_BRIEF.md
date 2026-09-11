@@ -231,6 +231,39 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Re-anchor reconciliation — 2026-09-11 (Passport entitlement foundation)
+
+- **Current substantive baseline: `0bd4e8a` — LIVE.**
+  `feat(passport): add private event entitlement foundation` is promoted to
+  `main`; Production Status reported service online and a clean working tree at
+  that commit. Its migration,
+  **`20261012000000_create_self_service_event_passport_entitlement_foundation.sql`**,
+  was independently replayed in a fresh isolated local Supabase stack, where
+  every fixture assertion passed and the fixture reached its explicit rollback.
+  It was then separately preflighted and applied as the verified file to linked
+  production project `lastlzlewonsmwtolpvh`. The production migration ledger is
+  synchronized through `20261012000000`.
+  - **What is now live.** `self_service_event_passports` is an empty,
+    RLS-protected entitlement record with exactly `payment_pending`,
+    `reserved`, `active`, and `expired` states. It is the sole Passport truth;
+    no Passport state is inferred from Event status, visibility, activity, or
+    lifecycle fields. A pending Passport remains ordinarily deletable and
+    replaceable; a reserved, active, or expired Passport preserves its Event
+    from ordinary Delete and Replace. Capacity and create commands count no
+    Passport record and `payment_pending` as the one unpaid Event, while the
+    preserved states free that slot.
+  - **What is deliberately not live.** The table contains zero rows and has no
+    browser policy, browser table grant, or browser writer. There is no Stripe
+    account connection, Checkout control, payment request, webhook, receipt,
+    provider identifier, launch transition, refund, renewal, invitation, or
+    guest-access behavior. A redirect or client signal cannot mark an Event
+    paid.
+  - **Next Passport slice.** Stripe Checkout creation and a
+    signature-verified, idempotent server webhook require Pap to establish the
+    Stripe account and a separately approved provider-integration scope. That
+    future work must keep Stripe behind the contract's narrow adapter and may
+    transition to `reserved` only after verified provider confirmation.
+
 ### Re-anchor reconciliation — 2026-09-10 (P0 event-photo and presentation-read closure)
 
 - **Current substantive baseline: `ef76c2c` — LIVE.**
@@ -260,9 +293,10 @@ state override this subsection whenever they disagree, per the
     and removals. This does **not** claim live media-byte, image-transform, or
     HTTP-rendition testing; those were outside the database replay.
   - **Private-event consequence.** The P0 prerequisite that blocked private
-    Event launch, gallery, and guest-media work is closed. Passport, launch,
-    invitation, guest-access, and private-event lifecycle implementation still
-    require their own Pap-approved scope; P0 did not implement them.
+    Event launch, gallery, and guest-media work is closed. The later Passport
+    entitlement foundation is now LIVE as recorded in the 2026-09-11
+    reconciliation above; checkout, launch, invitation, and guest-access work
+    still require their own Pap-approved scopes.
   - **Existing private-planning foundation.** The earlier P-2D planning arc is
     already shipped in the source baseline, including server-enforced capacity
     of one active unfinished private Event per canonical Person, an
@@ -282,11 +316,11 @@ state override this subsection whenever they disagree, per the
     only the blocking Event's minimal display data. The isolated local replay
     proved ordinary capacity, replacement, foreign denial, idempotency,
     forced rollback, standalone deletion, and ordinary-tenant isolation.
-  - **Approved future Passport-preservation rule — deferred.** A successful
-    Passport payment will preserve a current pre-launch plan and enable a new
-    Event; the 12-month active period begins only when that Event launches.
-    No payment control, paid pre-launch state, launch, invitation, or guest
-    access behavior was added by P-2D.1.
+  - **Passport relationship.** P-2D.1 itself added no payment control, launch,
+    invitation, or guest access. Its governed Delete/Replace command is now
+    consumed by the later Passport entitlement foundation, which preserves
+    reserved, active, and expired Passport Events while allowing a pending
+    checkout to be abandoned safely.
 
 ### Re-anchor reconciliation — 2026-09-09 (Registry Provider Catalog + deferred records)
 
@@ -400,15 +434,15 @@ index.
   boundary. None was weakened by P1, P2, the compatibility repair, or the two
   documentation commits.
 - **Next safe work — no new implementation is authorized by this record:**
-  1. **Passport reservation — accepted contract, implementation deferred.**
-     Stripe Checkout is the first provider. A pending checkout still counts as
-     unpaid; confirmed payment reserves the pre-launch Event and frees the
-     organizer to create another; the 12-month clock begins only at launch;
-     no automatic renewal; and paid Event cancellation/refund is governed,
-     never ordinary Delete. See the
+  1. **Passport Stripe integration — blocked pending account provisioning and
+     separate scope.** The provider-independent entitlement foundation is LIVE.
+     Stripe Checkout remains the first-provider decision, but there is no
+     connected Stripe account, credential, checkout UI, or webhook yet. The
+     next slice is server-side Checkout creation and a signature-verified,
+     idempotent webhook that records the provider receipt/audit fact before it
+     can transition an Event to `reserved`; browser success is never payment
+     truth. See the
      [Private Event Passport Reservation Contract](../architecture/EPICENTRAX_PRIVATE_EVENT_PASSPORT_RESERVATION_CONTRACT.md).
-     The next implementation slice is provider-independent entitlement state,
-     capacity, and Delete/Replace eligibility only—no external payment call.
   2. **Read-only verification** of the legacy vendor / place / Nearby / map
      authority boundaries named in Dou's report — deployed grants, RLS
      policies, `SECURITY DEFINER` reachability, and service-client routes.
@@ -499,11 +533,11 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-05T20:28:01-07:00`
+**Generated at:** `2026-09-11T07:52:23-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `87c25af feat(onboarding): support reusable personal event spaces`
-**Commit date:** `2026-09-05T20:15:53-07:00`
-**origin/main:** `87c25af`
+**Commit:** `0bd4e8a feat(passport): add private event entitlement foundation`
+**Commit date:** `2026-09-11T07:33:16-07:00`
+**origin/main:** `0bd4e8a`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
@@ -549,6 +583,7 @@ _Git status above was captured before this script wrote this section; writing th
 - `EPICENTRAX_CENTRAL_UI_STANDARD_BLUEPRINT.md`
 - `EPICENTRAX_DOMAIN_MODEL_AMENDMENT_PROPOSAL_EVENT_LIFECYCLE_AND_ENTITLEMENT.md`
 - `EPICENTRAX_DOMAIN_MODEL.md`
+- `EPICENTRAX_EVENT_PHOTO_READ_SURFACE_REMEDIATION_SPECIFICATION.md`
 - `EPICENTRAX_EXPERIENCE_ARCHITECTURE.md`
 - `EPICENTRAX_EXPERIENCE_INTELLIGENCE_ARCHITECTURE.md`
 - `EPICENTRAX_GOVERNED_IMPORT_STAGING_ARCHITECTURE.md`
@@ -557,11 +592,24 @@ _Git status above was captured before this script wrote this section; writing th
 - `EPICENTRAX_INTELLIGENCE_COLLECTOR_ARCHITECTURE.md`
 - `EPICENTRAX_MEMBER_ASSIGNMENT_READ_BOUNDARY_ARCHITECTURE.md`
 - `EPICENTRAX_NEARBY_KNOWLEDGE_AND_TENANT_CURATION_ARCHITECTURE.md`
+- `EPICENTRAX_OFFLINE_OPERATIONS_AND_SYNCHRONIZATION_ARCHITECTURE.md`
 - `EPICENTRAX_PARKING_REPAIR_PARTIAL_RECOVERY_ADDENDUM.md`
+- `EPICENTRAX_PERSONAL_EVENT_PLANNING_LIFECYCLE.md`
+- `EPICENTRAX_PRIVATE_BUDGET_PLAN_CONTRACT.md`
+- `EPICENTRAX_PRIVATE_EVENT_PASSPORT_RESERVATION_CONTRACT.md`
+- `EPICENTRAX_PRIVATE_PLANNING_CHECKLIST_CONTRACT.md`
+- `EPICENTRAX_PRIVATE_REGISTRY_PLAN_CONTRACT.md`
+- `EPICENTRAX_PRIVATE_VENDOR_PLAN_CONTRACT.md`
+- `EPICENTRAX_PRIVATE_VENUE_PLAN_CONTRACT.md`
+- `EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P1_IMPLEMENTATION_SPECIFICATION.md`
+- `EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P2_IMPLEMENTATION_SPECIFICATION.md`
+- `EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md`
 - `EPICENTRAX_RENDERER_NEUTRAL_MAPPING_ARCHITECTURE.md`
 - `EPICENTRAX_SELF_SERVICE_EVENT_AND_ORGANIZATION_ONBOARDING_BLUEPRINT.md`
 - `EPICENTRAX_SELF_SERVICE_ONBOARDING_P2A_IMPLEMENTATION_SPECIFICATION.md`
 - `EPICENTRAX_SHARED_EXPERIENCE_CONTEXT_ARCHITECTURE.md`
+- `EPICENTRAX_SHARED_PLANNING_CATALOG_CONTRACT.md`
+- `EPICENTRAX_SHARED_REGISTRY_PROVIDER_CATALOG_CONTRACT.md`
 - `EPICENTRAX_SITE_ASSIGNMENT_GOVERNANCE_ARCHITECTURE.md`
 - `EPICENTRAX_SITE_PLACEMENT_IMPLEMENTATION_SPECIFICATION.md`
 - `EPICENTRAX_STALE_MASTER_MAP_IDENTITY_CORRECTION_ARCHITECTURE.md`
@@ -569,14 +617,14 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `234`
-- Latest migration: `20260925000000_self_service_organizer_event_space_reuse.sql`
+- Total migration files: `251`
+- Latest migration: `20261012000000_create_self_service_event_passport_entitlement_foundation.sql`
 - Latest five:
-  - `20260921000000_allow_multiple_additional_household_members.sql`
-  - `20260922000000_drop_leftover_household_blanket_role_unique_index.sql`
-  - `20260923000000_restrict_tenant_post_event_edit_window.sql`
-  - `20260924000000_create_self_service_organizer_draft_foundation.sql`
-  - `20260925000000_self_service_organizer_event_space_reuse.sql`
+  - `20261008000000_govern_registry_provider_catalog_foundation.sql`
+  - `20261009000000_govern_registry_plan_catalog_selection.sql`
+  - `20261010000000_scope_event_photo_and_presentation_read_authority.sql`
+  - `20261011000000_govern_self_service_private_event_replacement.sql`
+  - `20261012000000_create_self_service_event_passport_entitlement_foundation.sql`
 
 ### Identity-audit inventory
 - SQL files: `14`
