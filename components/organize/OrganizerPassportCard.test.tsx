@@ -42,6 +42,43 @@ test("justReturnedFromCheckout shows the informational confirming banner, which 
   assert.doesNotMatch(html, /Passport (active|reserved|purchased)/i);
 });
 
+// ---- Confirmed state (structural -- confirmed is reached only after the
+// async fetchStatus resolves, which renderToStaticMarkup does not run) ----
+
+test("the confirmed status maps to a distinct success state, never the no_open_attempt purchase branch", () => {
+  const bodyStart = SOURCE.indexOf("async function fetchStatus");
+  const bodyEnd = SOURCE.indexOf("\n}", bodyStart);
+  const body = SOURCE.slice(bodyStart, bodyEnd);
+  assert.match(
+    body,
+    /if \(body\.status === "confirmed"\) \{\s*\n\s*return \{ state: "confirmed" \};/,
+  );
+});
+
+test("the confirmed render shows a plain success message and never the purchase button", () => {
+  const renderStart = SOURCE.indexOf("status.state === \"confirmed\" ? (");
+  assert.notEqual(renderStart, -1, "expected a distinct confirmed render branch");
+  const renderEnd = SOURCE.indexOf(") : status.state === \"no_open_attempt\"", renderStart);
+  const block = SOURCE.slice(renderStart, renderEnd);
+  assert.match(block, /Passport confirmed/);
+  assert.match(block, /preserved/i);
+  assert.doesNotMatch(block, /Purchase Passport/);
+});
+
+test("the confirmed render appears before the no_open_attempt purchase-button branch, so a confirmed Passport can never fall through to it", () => {
+  const confirmedIdx = SOURCE.indexOf('status.state === "confirmed"');
+  const noOpenAttemptIdx = SOURCE.indexOf('status.state === "no_open_attempt"');
+  assert.ok(confirmedIdx !== -1 && noOpenAttemptIdx !== -1);
+  assert.ok(confirmedIdx < noOpenAttemptIdx);
+});
+
+test("the return-from-Checkout confirming banner is suppressed once the status read reports confirmed -- it never lingers alongside the success state", () => {
+  assert.match(
+    CODE_ONLY,
+    /\{justReturnedFromCheckout && status\.state !== "confirmed" \? \(/,
+  );
+});
+
 // ---- Authority / redirect discipline (structural) ----
 
 test("every request carries the Supabase session's own bearer token -- never a client-constructed credential", () => {

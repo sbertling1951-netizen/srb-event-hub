@@ -158,6 +158,96 @@ test("GET returns only a safe status and, for an open session, its hosted URL --
   assert.match(body, /jsonNoStore\(\{ status: "open_attempt", state: "open", url: session\.url \}\)/);
 });
 
+test("GET invokes the confirmation reader for exactly the 'no_open_attempt' outcome, checked strictly and BEFORE the fail-closed fallback", () => {
+  const start = SOURCE.indexOf("export async function GET(");
+  const end = SOURCE.indexOf("\nexport async function DELETE(");
+  const body = SOURCE.slice(start, end);
+
+  const noOpenIdx = body.indexOf('if (outcome === "no_open_attempt")');
+  const fallbackIdx = body.indexOf('if (outcome !== "open_attempt" || !attemptId)');
+  assert.notEqual(noOpenIdx, -1, "expected a dedicated exact-outcome no_open_attempt branch");
+  assert.notEqual(fallbackIdx, -1, "expected a separate fail-closed fallback branch");
+  assert.ok(noOpenIdx < fallbackIdx, "the exact no_open_attempt branch must be checked before the fallback");
+
+  const noOpenBlock = body.slice(noOpenIdx, fallbackIdx);
+  assert.match(noOpenBlock, /get_my_self_service_event_passport_confirmation/);
+  assert.match(noOpenBlock, /jsonNoStore\(\{ status: "confirmed" \}\)/);
+  assert.match(noOpenBlock, /jsonNoStore\(\{ status: "no_open_attempt" \}\)/);
+
+  // the confirmation reader is called exactly once in this handler, and
+  // that one call site is the block just proven above.
+  const confirmationCalls = [
+    ...body.matchAll(/get_my_self_service_event_passport_confirmation/g),
+  ];
+  assert.equal(confirmationCalls.length, 1, "the confirmation reader must be called from exactly one place in GET");
+});
+
+test("GET does NOT invoke the confirmation reader for an unexpected/unrecognized outcome -- it fails closed to the existing safe no_open_attempt status instead", () => {
+  const start = SOURCE.indexOf("export async function GET(");
+  const end = SOURCE.indexOf("\nexport async function DELETE(");
+  const body = SOURCE.slice(start, end);
+
+  const fallbackIdx = body.indexOf('if (outcome !== "open_attempt" || !attemptId)');
+  const openHandlingIdx = body.indexOf('if (state !== "open")', fallbackIdx);
+  assert.notEqual(fallbackIdx, -1);
+  assert.notEqual(openHandlingIdx, -1);
+
+  const fallbackBlock = body.slice(fallbackIdx, openHandlingIdx);
+  // outcome !== "open_attempt" covers any outcome other than the two the
+  // handler recognizes (e.g. a future/unexpected value) -- this branch must
+  // never reach the confirmation reader.
+  assert.doesNotMatch(
+    fallbackBlock,
+    /get_my_self_service_event_passport_confirmation/,
+    "an unexpected outcome must never invoke the confirmation reader",
+  );
+  assert.match(fallbackBlock, /jsonNoStore\(\{ status: "no_open_attempt" \}\)/);
+});
+
+test("GET does NOT invoke the confirmation reader for a malformed 'open_attempt' result with no attempt id -- it fails closed the same as any other unrecognized result", () => {
+  const start = SOURCE.indexOf("export async function GET(");
+  const end = SOURCE.indexOf("\nexport async function DELETE(");
+  const body = SOURCE.slice(start, end);
+
+  // outcome === "open_attempt" with a falsy attemptId is caught by the SAME
+  // `|| !attemptId` fallback guard as any unexpected outcome -- there is no
+  // separate branch for it, so proving the guard's shape proves this case
+  // directly rather than by inference from the "unexpected outcome" test.
+  assert.match(body, /if \(outcome !== "open_attempt" \|\| !attemptId\) \{/);
+  const fallbackIdx = body.indexOf('if (outcome !== "open_attempt" || !attemptId)');
+  const openHandlingIdx = body.indexOf('if (state !== "open")', fallbackIdx);
+  const fallbackBlock = body.slice(fallbackIdx, openHandlingIdx);
+  assert.doesNotMatch(fallbackBlock, /get_my_self_service_event_passport_confirmation/);
+});
+
+test("GET's open_attempt handling (preparing, open without a fetchable URL, and open with a URL) is unaffected by the confirmation-reader addition", () => {
+  const start = SOURCE.indexOf("export async function GET(");
+  const end = SOURCE.indexOf("\nexport async function DELETE(");
+  const body = SOURCE.slice(start, end);
+  assert.match(body, /jsonNoStore\(\{ status: "open_attempt", state: "preparing" \}\)/);
+  assert.match(body, /jsonNoStore\(\{ status: "open_attempt", state: "open" \}\)/);
+  assert.match(body, /jsonNoStore\(\{ status: "open_attempt", state: "open", url: session\.url \}\)/);
+});
+
+test("GET's confirmation lookup never leaks a provider session id, receipt data, or any identifier beyond the outcome discriminator", () => {
+  const start = SOURCE.indexOf("export async function GET(");
+  const end = SOURCE.indexOf("\nexport async function DELETE(");
+  const body = SOURCE.slice(start, end);
+  const confirmationIdx = body.indexOf("get_my_self_service_event_passport_confirmation");
+  const confirmationBlock = body.slice(confirmationIdx, confirmationIdx + 500);
+  assert.doesNotMatch(confirmationBlock, /provider_session_id|attempt_id|receipt|paid_at/);
+});
+
+test("GET's confirmation lookup maps 'Event not found.' to a 404, matching the primary reader's own denial shape", () => {
+  const start = SOURCE.indexOf("export async function GET(");
+  const end = SOURCE.indexOf("\nexport async function DELETE(");
+  const body = SOURCE.slice(start, end);
+  assert.match(
+    body,
+    /if \(confirmationError\) \{\s*\n\s*if \(confirmationError\.message === "Event not found\."\) \{\s*\n\s*return jsonNoStore\(\{ error: "event_not_found" \}, 404\);/,
+  );
+});
+
 test("GET foreign/ineligible Event denial maps 'Event not found.' to a 404 without echoing the raw message", () => {
   const start = SOURCE.indexOf("export async function GET(");
   const end = SOURCE.indexOf("\nexport async function DELETE(");

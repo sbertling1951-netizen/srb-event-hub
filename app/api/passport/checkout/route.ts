@@ -312,7 +312,39 @@ export async function GET(request: Request) {
     state: string | null;
   };
 
+  if (outcome === "no_open_attempt") {
+    // No open/preparing attempt -- but that alone does not distinguish
+    // "never started a checkout" from "already paid; Passport confirmed"
+    // (get_my_self_service_event_passport_checkout_attempt deliberately
+    // reports the SAME 'no_open_attempt' outcome for both). The narrowly
+    // scoped confirmation reader answers exactly that remaining question --
+    // invoked ONLY for this exact, well-formed outcome, never as a catch-all
+    // for anything else this reader could return.
+    const { data: confirmationData, error: confirmationError } = await auth.supabase.rpc(
+      "get_my_self_service_event_passport_confirmation",
+      { p_event_id: eventId },
+    );
+
+    if (confirmationError) {
+      if (confirmationError.message === "Event not found.") {
+        return jsonNoStore({ error: "event_not_found" }, 404);
+      }
+      return jsonNoStore({ error: "checkout_failed" }, 400);
+    }
+
+    const confirmationRow = Array.isArray(confirmationData) ? confirmationData[0] : confirmationData;
+
+    if ((confirmationRow as { outcome?: string } | null)?.outcome === "confirmed") {
+      return jsonNoStore({ status: "confirmed" });
+    }
+
+    return jsonNoStore({ status: "no_open_attempt" });
+  }
+
   if (outcome !== "open_attempt" || !attemptId) {
+    // Any other outcome -- including a malformed 'open_attempt' with no
+    // attempt id -- fails closed to the same safe status this route always
+    // returned for it, WITHOUT ever invoking the confirmation reader.
     return jsonNoStore({ status: "no_open_attempt" });
   }
 

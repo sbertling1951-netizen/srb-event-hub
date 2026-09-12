@@ -20,7 +20,8 @@ type CheckoutStatus =
   | { state: "error" }
   | { state: "no_open_attempt" }
   | { state: "preparing" }
-  | { state: "open"; url?: string };
+  | { state: "open"; url?: string }
+  | { state: "confirmed" };
 
 async function authorizedFetch(path: string, init: RequestInit = {}) {
   const { data } = await supabase.auth.getSession();
@@ -52,6 +53,10 @@ async function fetchStatus(eventId: string): Promise<CheckoutStatus> {
 
   if (!body || typeof body !== "object") {
     return { state: "error" };
+  }
+
+  if (body.status === "confirmed") {
+    return { state: "confirmed" };
   }
 
   if (body.status === "no_open_attempt") {
@@ -166,7 +171,7 @@ export function OrganizerPassportCard({
         unlaunched.
       </p>
 
-      {justReturnedFromCheckout ? (
+      {justReturnedFromCheckout && status.state !== "confirmed" ? (
         <Alert tone="info">
           Payment received; confirming your Passport. This can take a
           moment — refresh if it does not update.
@@ -180,6 +185,11 @@ export function OrganizerPassportCard({
       ) : status.state === "error" ? (
         <Alert tone="danger" action={<AppButton onClick={() => void refresh()}>Try again</AppButton>}>
           We could not load Passport status.
+        </Alert>
+      ) : status.state === "confirmed" ? (
+        <Alert tone="success">
+          Passport confirmed. This Event is preserved, and you may begin
+          another private Event.
         </Alert>
       ) : status.state === "no_open_attempt" ? (
         <AppButton variant="primary" loading={purchasing} onClick={() => void beginOrResumeCheckout()}>
