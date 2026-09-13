@@ -231,40 +231,44 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Re-anchor reconciliation — 2026-09-13 (Passport Checkout and refund authority)
+### Re-anchor reconciliation — 2026-09-13 (Passport refund confirmation and controlled visibility)
 
-- **Current substantive baseline: `aa333ea` — LIVE.** The Passport Checkout,
-  confirmation-read, refund-domain, and Super-Admin refund-request slices are
-  promoted to `main`. Production Status reported the service online at
-  `aa333ea` with a clean working tree. The linked-production migration ledger
-  was read directly on 2026-09-13 and is synchronized through
-  **`20261017000000_govern_self_service_event_passport_refund_request_authority.sql`**.
-- **What is now live.** The owner-scoped Checkout-status readers expose only
-  the minimum open-attempt and confirmed-Passport signals needed by the
-  organizer flow; the server-only reader remains limited to the Checkout and
-  webhook route. The refund domain adds the `refunded` Passport state and
-  immutable refund evidence, while preserving the original payment evidence
-  after an eligible Event is later deleted. A Platform Administrator can create
-  one idempotent, pre-provider refund request only for a reserved, pre-launch
-  Passport and its single verified payment receipt; direct table access remains
-  denied.
-- **Verified sandbox/runtime evidence — 2026-09-13.** A linked-production
-  read-only check found the test Passport's payment attempt `confirmed`, its
-  immutable receipt/audit row present, and its Passport `reserved` (paid at
-  2026-09-11 23:36:20 UTC). The verified test Event then received one
-  Super-Admin-attributed refund request; replaying its idempotency key returned
-  that same request. A follow-up read found exactly one `requested` refund
-  record, zero refund-audit rows, and the Passport still `reserved`. No Stripe
-  refund, money movement, or Passport transition occurred.
-- **What this evidence does not establish.** It does not independently prove
-  the signature-validation trace for the completed payment, cancellation or
-  expiry behavior, provider refund, or receipt delivery. Refund requests do
-  not contact Stripe, change Passport state, or write refund evidence.
-- **Next safe step.** The proposed
-  [Stripe Passport Refund Confirmation Implementation Specification](../architecture/EPICENTRAX_STRIPE_PASSPORT_REFUND_CONFIRMATION_IMPLEMENTATION_SPECIFICATION.md)
-  defines the still-unimplemented provider-refund confirmation path. It
-  requires Pap acceptance, a separate implementation and migration, and
-  sandbox proof before any live credential or real-money action.
+- **Current substantive baseline: `186d01f` — LIVE.** Production Status
+  reported the service online and its working tree clean at `186d01f`.
+  The authoritative checkout and `origin/main` both resolve to
+  `186d01f1b926370f3cd92fe4ca3afeff6b5c27be`, with no ahead/behind drift.
+- **What shipped after the prior `aa333ea` checkpoint.** `7fffd99`
+  completes the governed Stripe *test-mode* refund path: the server validates
+  the exact original payment facts, creates an idempotent provider refund, and
+  the signed webhook is the sole path that records immutable refund evidence
+  and transitions a Passport from `reserved` to `refunded`. `186d01f` adds a
+  Super-Admin refund control with an explicit confirmation step; the browser
+  sends only an Event id to prepare an opaque request and then that request id
+  to execute it. The browser never supplies money, currency, provider, receipt,
+  or Passport-state facts. The existing server authority checks remain the
+  decision boundary.
+- **Production migration position — verified read-only.** The linked ledger
+  matches the repository through
+  **`20261018000000_govern_self_service_event_passport_refund_confirmation.sql`**.
+  **`20261019000000_govern_self_service_event_passport_refund_visibility.sql`**
+  is present in the promoted source but is not applied or ledger-recorded; its
+  target function is absent from the linked database. It is a pending,
+  separately controlled migration gate, not an implicit deployment action.
+- **Safe behavior while the gate remains pending.** The checkout-status route
+  treats an eligibility-reader error as `refundEligible: false`. The Refund
+  control therefore remains hidden; the existing request and confirmation
+  authority boundaries are unchanged. This migration adds only the narrow,
+  authenticated, owner-scoped visibility reader—no table, RLS policy, seed
+  data, provider call, or state mutation.
+- **Known reconciliation discrepancy.** The `20261018000000` and
+  `20261019000000` migration identifiers are future-dated relative to this
+  checkpoint's calendar date, although their source files were committed on
+  2026-09-13. Their identifier convention must be explicitly confirmed before
+  the pending `20261019000000` migration is reconsidered for production.
+- **Next safe step.** No production migration is authorized by this record.
+  Pap may separately authorize a read-only provenance check of the migration
+  versioning convention and, only if that resolves cleanly, a fresh controlled
+  preflight and explicit apply decision for `20261019000000`.
 
 ### Re-anchor reconciliation — 2026-09-11 (Passport payment-attempt authority)
 
@@ -598,16 +602,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-13T09:14:13-07:00`
+**Generated at:** `2026-09-13T16:12:31-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `e4ea05f docs(context): reconcile Passport checkout and refund baseline`
-**Commit date:** `2026-09-13T08:53:05-07:00`
-**origin/main:** `e4ea05f`
+**Commit:** `186d01f feat(passport): add governed refund control`
+**Commit date:** `2026-09-13T12:14:58-07:00`
+**origin/main:** `186d01f`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
-**Untracked:** `1`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
@@ -684,14 +688,14 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `256`
-- Latest migration: `20261017000000_govern_self_service_event_passport_refund_request_authority.sql`
+- Total migration files: `258`
+- Latest migration: `20261019000000_govern_self_service_event_passport_refund_visibility.sql`
 - Latest five:
-  - `20261013000000_govern_self_service_event_passport_payment_attempts.sql`
-  - `20261014000000_govern_self_service_event_passport_checkout_access.sql`
   - `20261015000000_govern_self_service_event_passport_confirmation_read_access.sql`
   - `20261016000000_govern_self_service_event_passport_refund_foundation.sql`
   - `20261017000000_govern_self_service_event_passport_refund_request_authority.sql`
+  - `20261018000000_govern_self_service_event_passport_refund_confirmation.sql`
+  - `20261019000000_govern_self_service_event_passport_refund_visibility.sql`
 
 ### Identity-audit inventory
 - SQL files: `14`
