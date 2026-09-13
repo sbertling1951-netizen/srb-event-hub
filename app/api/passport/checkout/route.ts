@@ -335,7 +335,23 @@ export async function GET(request: Request) {
     const confirmationRow = Array.isArray(confirmationData) ? confirmationData[0] : confirmationData;
 
     if ((confirmationRow as { outcome?: string } | null)?.outcome === "confirmed") {
-      return jsonNoStore({ status: "confirmed" });
+      // A strict boolean UI-visibility hint only -- never itself an
+      // authorization decision, and never allowed to block reporting the
+      // confirmed status itself. Any RPC error (including a caller who is
+      // not a Platform Administrator at all, which this reader itself
+      // never raises for) fails closed to false, exactly as the reader's
+      // own contract requires for every non-reserved/non-admin case.
+      const { data: eligibilityData, error: eligibilityError } = await auth.supabase.rpc(
+        "get_my_self_service_event_passport_refund_eligibility",
+        { p_event_id: eventId },
+      );
+
+      const eligibilityRow = Array.isArray(eligibilityData) ? eligibilityData[0] : eligibilityData;
+      const refundEligible =
+        !eligibilityError &&
+        (eligibilityRow as { eligible?: boolean } | null)?.eligible === true;
+
+      return jsonNoStore({ status: "confirmed", refundEligible });
     }
 
     return jsonNoStore({ status: "no_open_attempt" });

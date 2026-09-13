@@ -171,7 +171,7 @@ test("GET invokes the confirmation reader for exactly the 'no_open_attempt' outc
 
   const noOpenBlock = body.slice(noOpenIdx, fallbackIdx);
   assert.match(noOpenBlock, /get_my_self_service_event_passport_confirmation/);
-  assert.match(noOpenBlock, /jsonNoStore\(\{ status: "confirmed" \}\)/);
+  assert.match(noOpenBlock, /jsonNoStore\(\{ status: "confirmed", refundEligible \}\)/);
   assert.match(noOpenBlock, /jsonNoStore\(\{ status: "no_open_attempt" \}\)/);
 
   // the confirmation reader is called exactly once in this handler, and
@@ -180,6 +180,39 @@ test("GET invokes the confirmation reader for exactly the 'no_open_attempt' outc
     ...body.matchAll(/get_my_self_service_event_passport_confirmation/g),
   ];
   assert.equal(confirmationCalls.length, 1, "the confirmation reader must be called from exactly one place in GET");
+});
+
+test("GET invokes the refund-eligibility reader only once confirmed is already established, and fails closed to false on any error -- never blocking the confirmed status itself", () => {
+  const start = SOURCE.indexOf("export async function GET(");
+  const end = SOURCE.indexOf("\nexport async function DELETE(");
+  const body = SOURCE.slice(start, end);
+
+  const confirmedIdx = body.indexOf('outcome === "confirmed"');
+  const eligibilityIdx = body.indexOf("get_my_self_service_event_passport_refund_eligibility");
+  assert.notEqual(confirmedIdx, -1);
+  assert.notEqual(eligibilityIdx, -1);
+  assert.ok(confirmedIdx < eligibilityIdx, "the eligibility reader must only be reached after confirmed is already established");
+
+  const eligibilityCalls = [
+    ...body.matchAll(/get_my_self_service_event_passport_refund_eligibility/g),
+  ];
+  assert.equal(eligibilityCalls.length, 1, "the eligibility reader must be called from exactly one place in GET");
+
+  const returnIdx = body.indexOf('return jsonNoStore({ status: "confirmed", refundEligible });', eligibilityIdx);
+  const block = body.slice(eligibilityIdx, returnIdx);
+  assert.match(block, /!eligibilityError/);
+  assert.match(block, /\?\.eligible === true/);
+});
+
+test("the confirmed response never leaks a Passport state, receipt, provider id, or Stripe identifier alongside refundEligible", () => {
+  const start = SOURCE.indexOf("export async function GET(");
+  const end = SOURCE.indexOf("\nexport async function DELETE(");
+  const body = SOURCE.slice(start, end);
+  const confirmedIdx = body.indexOf('outcome === "confirmed"');
+  const returnIdx = body.indexOf('return jsonNoStore({ status: "confirmed", refundEligible });');
+  assert.notEqual(returnIdx, -1);
+  const block = body.slice(confirmedIdx, returnIdx + 60);
+  assert.doesNotMatch(block, /provider_session_id|priceId|secretKey|webhookSecret|receipt_audit_id|passport_state/i);
 });
 
 test("GET does NOT invoke the confirmation reader for an unexpected/unrecognized outcome -- it fails closed to the existing safe no_open_attempt status instead", () => {

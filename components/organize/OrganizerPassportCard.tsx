@@ -13,7 +13,22 @@ import { supabase } from "@/lib/supabase";
  * never claims payment succeeded on its own -- every state shown here comes
  * from the server's own safe status, and a hosted checkout redirect always
  * goes to the exact URL the server returned, never a client-constructed one.
+ *
+ * The Super-Admin refund control below follows the same discipline: its
+ * visibility is driven ENTIRELY by the server-derived `refundEligible`
+ * boolean the existing GET /api/passport/checkout status read now carries
+ * alongside `confirmed` -- itself sourced from the governed, owner-scoped
+ * get_my_self_service_event_passport_refund_eligibility reader
+ * (20261019000000), which is eligible=true only for a genuine Platform
+ * Administrator against a Passport that is EXACTLY 'reserved'. No client
+ * table/RPC read of any kind decides this. Platform Administrator authority
+ * is independently re-asserted server-side again, inside
+ * prepare_self_service_event_passport_refund_request and
+ * assert_self_service_event_passport_refund_request_authority, every time --
+ * this flag is a visibility hint only, never a substitute for either.
  */
+
+type RefundStage = "idle" | "confirming" | "working" | "requested";
 
 type CheckoutStatus =
   | { state: "loading" }
@@ -21,7 +36,7 @@ type CheckoutStatus =
   | { state: "no_open_attempt" }
   | { state: "preparing" }
   | { state: "open"; url?: string }
-  | { state: "confirmed" };
+  | { state: "confirmed"; refundEligible: boolean };
 
 async function authorizedFetch(path: string, init: RequestInit = {}) {
   const { data } = await supabase.auth.getSession();
@@ -56,7 +71,7 @@ async function fetchStatus(eventId: string): Promise<CheckoutStatus> {
   }
 
   if (body.status === "confirmed") {
-    return { state: "confirmed" };
+    return { state: "confirmed", refundEligible: body.refundEligible === true };
   }
 
   if (body.status === "no_open_attempt") {
@@ -84,6 +99,8 @@ export function OrganizerPassportCard({
   const [actionError, setActionError] = useState<string | null>(null);
   const [purchasing, setPurchasing] = useState(false);
   const [expiring, setExpiring] = useState(false);
+  const [refundStage, setRefundStage] = useState<RefundStage>("idle");
+  const [refundError, setRefundError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setStatus({ state: "loading" });
@@ -163,6 +180,71 @@ export function OrganizerPassportCard({
     }
   }
 
+  async function requestPassportRefund() {
+    if (refundStage === "working") {
+      return;
+    }
+    setRefundStage("working");
+    setRefundError(null);
+    try {
+      // Step 1: create or idempotently recover the opaque refund-request
+      // identity through the existing governed request authority. Retrying
+      // this whole flow after any ambiguous outcome below re-runs this same
+      // step, which always recovers the SAME request id for this Event's
+      // one original receipt -- never a second, competing request.
+      const prepareResponse = await authorizedFetch(
+        "/api/admin/passport/refunds/prepare",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventId }),
+        },
+      );
+      const prepareBody = await prepareResponse.json().catch(() => null);
+      const requestId =
+        prepareBody && typeof prepareBody === "object"
+          ? (prepareBody as { requestId?: unknown }).requestId
+          : undefined;
+
+      if (!prepareResponse.ok || typeof requestId !== "string") {
+        setRefundError("We could not start this refund. Please try again.");
+        setRefundStage("confirming");
+        return;
+      }
+
+      // Step 2: invoke the existing authenticated refund-execution route
+      // with only that opaque request id -- never an amount, Stripe
+      // identifier, or Passport state.
+      const executeResponse = await authorizedFetch(
+        "/api/admin/passport/refunds",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ requestId }),
+        },
+      );
+      const executeBody = await executeResponse.json().catch(() => null);
+      const executeStatus =
+        executeBody && typeof executeBody === "object"
+          ? (executeBody as { status?: unknown }).status
+          : undefined;
+
+      if (!executeResponse.ok || executeStatus !== "refund_pending") {
+        setRefundError("We could not start this refund. Please try again.");
+        setRefundStage("confirming");
+        return;
+      }
+
+      // The route accepting the request is not the same as the refund
+      // completing -- only the signed webhook and its governed confirmation
+      // command may ever write refund evidence or change Passport state.
+      setRefundStage("requested");
+    } catch {
+      setRefundError("We could not start this refund. Please try again.");
+      setRefundStage("confirming");
+    }
+  }
+
   return (
     <PageSection title="Passport" variant="card">
       <p style={{ marginTop: 0, color: "var(--color-text-muted, #475569)" }}>
@@ -187,10 +269,52 @@ export function OrganizerPassportCard({
           We could not load Passport status.
         </Alert>
       ) : status.state === "confirmed" ? (
-        <Alert tone="success">
-          Passport confirmed. This Event is preserved, and you may begin
-          another private Event.
-        </Alert>
+        <div style={{ display: "grid", gap: 10 }}>
+          <Alert tone="success">
+            Passport confirmed. This Event is preserved, and you may begin
+            another private Event.
+          </Alert>
+          {status.refundEligible ? (
+            refundStage === "requested" ? (
+              <Alert tone="info">
+                Refund requested; awaiting confirmation.
+              </Alert>
+            ) : refundStage === "confirming" || refundStage === "working" ? (
+              <div style={{ display: "grid", gap: 10 }}>
+                {refundError ? <Alert tone="danger">{refundError}</Alert> : null}
+                <Alert tone="warning">
+                  This requests the one-time full $24 Passport refund. The
+                  Event returns to the ordinary unpaid Delete/Replace cycle
+                  only after the refund is confirmed.
+                </Alert>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <AppButton
+                    variant="danger"
+                    loading={refundStage === "working"}
+                    onClick={() => void requestPassportRefund()}
+                  >
+                    Confirm Passport refund
+                  </AppButton>
+                  <AppButton
+                    disabled={refundStage === "working"}
+                    onClick={() => {
+                      setRefundStage("idle");
+                      setRefundError(null);
+                    }}
+                  >
+                    Cancel
+                  </AppButton>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <AppButton variant="danger" onClick={() => setRefundStage("confirming")}>
+                  Refund Passport (Super Admin)
+                </AppButton>
+              </div>
+            )
+          ) : null}
+        </div>
       ) : status.state === "no_open_attempt" ? (
         <AppButton variant="primary" loading={purchasing} onClick={() => void beginOrResumeCheckout()}>
           Purchase Passport — $24

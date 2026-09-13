@@ -51,7 +51,7 @@ test("the confirmed status maps to a distinct success state, never the no_open_a
   const body = SOURCE.slice(bodyStart, bodyEnd);
   assert.match(
     body,
-    /if \(body\.status === "confirmed"\) \{\s*\n\s*return \{ state: "confirmed" \};/,
+    /if \(body\.status === "confirmed"\) \{\s*\n\s*return \{ state: "confirmed", refundEligible: body\.refundEligible === true \};/,
   );
 });
 
@@ -118,6 +118,84 @@ test("the card never renders a provider session id, receipt, secret, or Price id
   assert.doesNotMatch(CODE_ONLY, /provider_session_id|secretKey|webhookSecret|priceId|receipt/i);
 });
 
-test("no subscription, renewal, launch, refund, invoice, payment link, or Stripe Tax control appears in this component", () => {
-  assert.doesNotMatch(CODE_ONLY, /subscri|renew|\blaunch\b|refund|invoice|payment.?link|\btax\b/i);
+test("no subscription, renewal, launch, invoice, payment link, or Stripe Tax control appears in this component", () => {
+  assert.doesNotMatch(CODE_ONLY, /subscri|renew|\blaunch\b|invoice|payment.?link|\btax\b/i);
+});
+
+// ---- Super-Admin refund control (structural) ----
+
+test("the refund control is gated by the server-derived status.refundEligible flag only -- no client table/RPC read, admin-access helper, or hardcoded role decides this", () => {
+  assert.doesNotMatch(SOURCE, /getCurrentAdminAccess|isSuperAdmin|admin_users/);
+  const confirmedStart = SOURCE.indexOf('status.state === "confirmed" ? (');
+  const confirmedEnd = SOURCE.indexOf(') : status.state === "no_open_attempt"', confirmedStart);
+  const block = SOURCE.slice(confirmedStart, confirmedEnd);
+  assert.match(block, /\{status\.refundEligible \? \(/);
+});
+
+test("the refund control appears only inside the confirmed/reserved branch, never inside no_open_attempt, preparing, open, loading, or error branches", () => {
+  const confirmedStart = SOURCE.indexOf('status.state === "confirmed" ? (');
+  const confirmedEnd = SOURCE.indexOf(') : status.state === "no_open_attempt"', confirmedStart);
+  const beforeConfirmed = SOURCE.slice(0, confirmedStart);
+  const afterConfirmed = SOURCE.slice(confirmedEnd);
+  assert.doesNotMatch(beforeConfirmed, /\{status\.refundEligible \?/);
+  assert.doesNotMatch(afterConfirmed, /\{status\.refundEligible \?/);
+});
+
+test("refundEligible is carried ONLY on the confirmed status variant, sourced strictly from the server's own response field -- never inferred or defaulted to true", () => {
+  assert.match(SOURCE, /\{ state: "confirmed"; refundEligible: boolean \}/);
+  assert.match(SOURCE, /return \{ state: "confirmed", refundEligible: body\.refundEligible === true \};/);
+});
+
+test("the Refund control requires BOTH confirmed status AND server-derived eligibility -- confirmed alone is never sufficient", () => {
+  const confirmedStart = SOURCE.indexOf('status.state === "confirmed" ? (');
+  const confirmedEnd = SOURCE.indexOf(') : status.state === "no_open_attempt"', confirmedStart);
+  const block = SOURCE.slice(confirmedStart, confirmedEnd);
+  // The success alert (shown for every confirmed Passport, admin or not)
+  // must appear BEFORE, and unconditionally on, the refundEligible check --
+  // proving eligibility is an ADDITIONAL gate layered on top of confirmed,
+  // never a replacement for it.
+  const successIdx = block.indexOf("Passport confirmed.");
+  const eligibleIdx = block.indexOf("status.refundEligible ?");
+  assert.ok(successIdx !== -1 && eligibleIdx !== -1 && successIdx < eligibleIdx);
+});
+
+test("the refund action requires an explicit confirmation step before anything is requested", () => {
+  const start = SOURCE.indexOf("async function requestPassportRefund");
+  assert.notEqual(start, -1);
+  assert.match(SOURCE, /onClick=\{\(\) => setRefundStage\("confirming"\)\}/);
+  assert.match(SOURCE, /Confirm Passport refund/);
+  assert.match(SOURCE, /one-time full \$24 Passport refund/);
+  assert.match(SOURCE, /unpaid Delete\/Replace cycle\s+only after the refund is confirmed/);
+});
+
+test("requestPassportRefund prepares an opaque request id, then executes with only that id -- never an amount, currency, or Stripe identifier", () => {
+  const start = CODE_ONLY.indexOf("async function requestPassportRefund");
+  const end = CODE_ONLY.indexOf("\n  return (", start);
+  const body = CODE_ONLY.slice(start, end);
+  assert.match(body, /authorizedFetch\(\s*\n\s*"\/api\/admin\/passport\/refunds\/prepare"/);
+  assert.match(body, /authorizedFetch\(\s*\n\s*"\/api\/admin\/passport\/refunds"/);
+  assert.match(body, /body: JSON\.stringify\(\{ eventId \}\)/);
+  assert.match(body, /body: JSON\.stringify\(\{ requestId \}\)/);
+  assert.doesNotMatch(body, /amount|currency|paymentIntent|priceId/i);
+});
+
+test("requestPassportRefund never claims the refund succeeded -- only an accepted-request state is shown", () => {
+  const start = SOURCE.indexOf("async function requestPassportRefund");
+  const end = SOURCE.indexOf("\n  return (", start);
+  const body = SOURCE.slice(start, end);
+  assert.match(body, /executeStatus !== "refund_pending"/);
+  assert.doesNotMatch(body, /refunded|refund succeeded|refund complete/i);
+});
+
+test("a pending refund request guards against duplicate clicks", () => {
+  const start = SOURCE.indexOf("async function requestPassportRefund");
+  const body = SOURCE.slice(start, start + 200);
+  assert.match(body, /if \(refundStage === "working"\) \{\s*\n\s*return;/);
+});
+
+test("the accepted-request state is a plain informational message, never claiming refunded or confirmed", () => {
+  const idx = SOURCE.indexOf('refundStage === "requested"');
+  const block = SOURCE.slice(idx, idx + 200);
+  assert.match(block, /Refund requested; awaiting confirmation/);
+  assert.doesNotMatch(block, /refunded|confirmed/i);
 });
