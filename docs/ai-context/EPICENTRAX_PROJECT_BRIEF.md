@@ -231,6 +231,34 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Re-anchor reconciliation — 2026-09-13 (Passport Checkout and refund authority)
+
+- **Current substantive baseline: `aa333ea` — LIVE.** The Passport Checkout,
+  confirmation-read, refund-domain, and Super-Admin refund-request slices are
+  promoted to `main`. Production Status reported the service online at
+  `aa333ea` with a clean working tree. The linked-production migration ledger
+  was read directly on 2026-09-13 and is synchronized through
+  **`20261017000000_govern_self_service_event_passport_refund_request_authority.sql`**.
+- **What is now live.** The owner-scoped Checkout-status readers expose only
+  the minimum open-attempt and confirmed-Passport signals needed by the
+  organizer flow; the server-only reader remains limited to the Checkout and
+  webhook route. The refund domain adds the `refunded` Passport state and
+  immutable refund evidence, while preserving the original payment evidence
+  after an eligible Event is later deleted. A Platform Administrator can create
+  one idempotent, pre-provider refund request only for a reserved, pre-launch
+  Passport and its single verified payment receipt; direct table access remains
+  denied.
+- **What this evidence does not establish.** It does not prove a completed
+  sandbox Checkout, signature-verified webhook, provider refund, or receipt
+  delivery. Refund requests do not contact Stripe, change Passport state, or
+  write refund evidence; provider confirmation and any refund UI remain
+  separately governed work.
+- **Next safe step.** Before any further Passport scope, perform the bounded
+  sandbox end-to-end verification of Checkout creation, verified webhook
+  confirmation, and the governed refund-request boundary. Any provider refund
+  confirmation, UI, receipt display, live credential, or real-money action
+  requires separate approval and evidence.
+
 ### Re-anchor reconciliation — 2026-09-11 (Passport payment-attempt authority)
 
 - **Current substantive baseline: `daa8293` — LIVE.**
@@ -563,11 +591,11 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-11T11:40:31-07:00`
+**Generated at:** `2026-09-13T08:51:32-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `daa8293 feat(passport): govern Stripe payment attempts`
-**Commit date:** `2026-09-11T11:22:09-07:00`
-**origin/main:** `daa8293`
+**Commit:** `aa333ea feat(passport): add super-admin refund authority`
+**Commit date:** `2026-09-11T21:53:46-07:00`
+**origin/main:** `aa333ea`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
@@ -648,14 +676,14 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `252`
-- Latest migration: `20261013000000_govern_self_service_event_passport_payment_attempts.sql`
+- Total migration files: `256`
+- Latest migration: `20261017000000_govern_self_service_event_passport_refund_request_authority.sql`
 - Latest five:
-  - `20261009000000_govern_registry_plan_catalog_selection.sql`
-  - `20261010000000_scope_event_photo_and_presentation_read_authority.sql`
-  - `20261011000000_govern_self_service_private_event_replacement.sql`
-  - `20261012000000_create_self_service_event_passport_entitlement_foundation.sql`
   - `20261013000000_govern_self_service_event_passport_payment_attempts.sql`
+  - `20261014000000_govern_self_service_event_passport_checkout_access.sql`
+  - `20261015000000_govern_self_service_event_passport_confirmation_read_access.sql`
+  - `20261016000000_govern_self_service_event_passport_refund_foundation.sql`
+  - `20261017000000_govern_self_service_event_passport_refund_request_authority.sql`
 
 ### Identity-audit inventory
 - SQL files: `14`
