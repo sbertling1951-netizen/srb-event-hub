@@ -62,6 +62,13 @@ export type PassportStripeClient = {
       secret: string,
     ) => Stripe.Event;
   };
+  refunds: {
+    create: (
+      params: Stripe.RefundCreateParams,
+      options?: Stripe.RequestOptions,
+    ) => Promise<Stripe.Refund>;
+    retrieve: (id: string) => Promise<Stripe.Refund>;
+  };
 };
 
 export function createStripePassportClient(
@@ -235,4 +242,36 @@ export function passportSessionLookupAttemptId(
   }
 
   return clientReferenceId;
+}
+
+export function isStripeTestMode(config: StripePassportConfig): boolean {
+  return config.secretKey.startsWith("sk_test_");
+}
+
+export async function createPassportRefund(
+  client: PassportStripeClient,
+  params: { paymentIntentId: string; requestId: string },
+): Promise<Stripe.Refund> {
+  return client.refunds.create(
+    {
+      payment_intent: params.paymentIntentId,
+      reason: "requested_by_customer",
+      metadata: { epicentrax_passport_refund_request_id: params.requestId },
+    },
+    { idempotencyKey: `epicentrax-passport-refund:${params.requestId}` },
+  );
+}
+
+export function isVerifiedPassportRefund(
+  refund: Stripe.Refund,
+  params: { requestId: string; paymentIntentId: string },
+): boolean {
+  const paymentIntent = typeof refund.payment_intent === "string"
+    ? refund.payment_intent
+    : refund.payment_intent?.id;
+  return refund.status === "succeeded"
+    && refund.amount === PASSPORT_AMOUNT_MINOR_UNITS
+    && refund.currency.toLowerCase() === PASSPORT_CURRENCY
+    && paymentIntent === params.paymentIntentId
+    && refund.metadata?.epicentrax_passport_refund_request_id === params.requestId;
 }

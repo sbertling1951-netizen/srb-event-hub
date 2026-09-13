@@ -4,6 +4,7 @@ import {
   createStripePassportClient,
   getStripePassportConfig,
   isPassportSessionBoundToAttempt,
+  isVerifiedPassportRefund,
   passportSessionLookupAttemptId,
   retrievePassportCheckoutSession,
   verifyPassportCheckoutSessionFacts,
@@ -53,6 +54,32 @@ export async function POST(request: Request) {
   } catch (signatureError) {
     console.error("Passport webhook signature verification failed.", signatureError);
     return noStore({ error: "invalid_signature" }, 400);
+  }
+
+  if (event.type === "refund.created" || event.type === "refund.updated" || event.type === "refund.failed") {
+    const admin = getSupabaseAdminClient();
+    if (!admin) return noStore({ error: "internal_error" }, 500);
+    try {
+      const refund = await stripe.refunds.retrieve(event.data.object.id);
+      const requestId = refund.metadata?.epicentrax_passport_refund_request_id;
+      if (!requestId || event.type === "refund.failed") return noStore({ received: true });
+      const { data } = await admin.rpc("get_self_service_event_passport_refund_context_for_server", { p_request_id: requestId });
+      const context = Array.isArray(data) ? data[0] : data;
+      if (!context || context.state !== "requested") return noStore({ received: true });
+      const session = await retrievePassportCheckoutSession(stripe, context.provider_session_id);
+      const paymentIntent = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
+      if (!paymentIntent || !isVerifiedPassportRefund(refund, { requestId, paymentIntentId: paymentIntent })) return noStore({ received: true });
+      const { error } = await admin.rpc("confirm_self_service_event_passport_refund", {
+        p_request_id: requestId,
+        p_provider_refund_id: refund.id,
+        p_provider_event_id: event.id,
+      });
+      if (error) return noStore({ error: "refund_confirmation_failed" }, 500);
+      return noStore({ received: true });
+    } catch (refundError) {
+      console.error("Passport refund webhook handling failed.", refundError);
+      return noStore({ error: "refund_confirmation_failed" }, 502);
+    }
   }
 
   // Only the two Checkout event types this release needs. Every other valid,

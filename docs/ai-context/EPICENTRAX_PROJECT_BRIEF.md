@@ -248,16 +248,23 @@ state override this subsection whenever they disagree, per the
   one idempotent, pre-provider refund request only for a reserved, pre-launch
   Passport and its single verified payment receipt; direct table access remains
   denied.
-- **What this evidence does not establish.** It does not prove a completed
-  sandbox Checkout, signature-verified webhook, provider refund, or receipt
-  delivery. Refund requests do not contact Stripe, change Passport state, or
-  write refund evidence; provider confirmation and any refund UI remain
-  separately governed work.
-- **Next safe step.** Before any further Passport scope, perform the bounded
-  sandbox end-to-end verification of Checkout creation, verified webhook
-  confirmation, and the governed refund-request boundary. Any provider refund
-  confirmation, UI, receipt display, live credential, or real-money action
-  requires separate approval and evidence.
+- **Verified sandbox/runtime evidence — 2026-09-13.** A linked-production
+  read-only check found the test Passport's payment attempt `confirmed`, its
+  immutable receipt/audit row present, and its Passport `reserved` (paid at
+  2026-09-11 23:36:20 UTC). The verified test Event then received one
+  Super-Admin-attributed refund request; replaying its idempotency key returned
+  that same request. A follow-up read found exactly one `requested` refund
+  record, zero refund-audit rows, and the Passport still `reserved`. No Stripe
+  refund, money movement, or Passport transition occurred.
+- **What this evidence does not establish.** It does not independently prove
+  the signature-validation trace for the completed payment, cancellation or
+  expiry behavior, provider refund, or receipt delivery. Refund requests do
+  not contact Stripe, change Passport state, or write refund evidence.
+- **Next safe step.** The proposed
+  [Stripe Passport Refund Confirmation Implementation Specification](../architecture/EPICENTRAX_STRIPE_PASSPORT_REFUND_CONFIRMATION_IMPLEMENTATION_SPECIFICATION.md)
+  defines the still-unimplemented provider-refund confirmation path. It
+  requires Pap acceptance, a separate implementation and migration, and
+  sandbox proof before any live credential or real-money action.
 
 ### Re-anchor reconciliation — 2026-09-11 (Passport payment-attempt authority)
 
@@ -591,16 +598,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-13T08:51:32-07:00`
+**Generated at:** `2026-09-13T09:14:13-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `aa333ea feat(passport): add super-admin refund authority`
-**Commit date:** `2026-09-11T21:53:46-07:00`
-**origin/main:** `aa333ea`
+**Commit:** `e4ea05f docs(context): reconcile Passport checkout and refund baseline`
+**Commit date:** `2026-09-13T08:53:05-07:00`
+**origin/main:** `e4ea05f`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `1`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
@@ -672,6 +679,7 @@ _Git status above was captured before this script wrote this section; writing th
 - `EPICENTRAX_SITE_PLACEMENT_IMPLEMENTATION_SPECIFICATION.md`
 - `EPICENTRAX_STALE_MASTER_MAP_IDENTITY_CORRECTION_ARCHITECTURE.md`
 - `EPICENTRAX_STRIPE_PASSPORT_CHECKOUT_IMPLEMENTATION_SPECIFICATION.md`
+- `EPICENTRAX_STRIPE_PASSPORT_REFUND_CONFIRMATION_IMPLEMENTATION_SPECIFICATION.md`
 - `epicentrax-user-flow-and-native-interaction.md`
 - `README.md`
 
