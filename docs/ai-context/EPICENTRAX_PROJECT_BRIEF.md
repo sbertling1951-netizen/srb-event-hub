@@ -233,10 +233,13 @@ state override this subsection whenever they disagree, per the
 
 ### Re-anchor reconciliation — 2026-09-13 (Passport refund completion, refunded state, and Super-Admin review)
 
-- **Current substantive baseline: `e83a42b` — LIVE.** Production Status
-  reported the service online and its working tree clean at `e83a42b`.
-  The authoritative checkout and `origin/main` resolved to
-  `e83a42ba7e45fff9b493eb4d743d6e75913c9df5` when this record was updated.
+- **Current substantive baseline: `b488c17` — LIVE.** Production Status
+  reported the service online and its working tree clean at `b488c17`.
+- **Pending-refund indicator.** The canonical Super-Admin sidebar now shows a
+  small red superscript count beside Passport Refunds when governed review
+  reports one or more pending approvals. It is absent at zero, is not shown
+  to non-Super-Admins, and derives only from the existing Platform-Administrator
+  review reader; it adds no table access, polling source, or refund writer.
 - **What is now live.** The governed Stripe *test-mode* refund path validates
   original payment facts server-side and relies on the signed webhook as the
   sole completion writer. `1af8eee` accepts Stripe Sandbox's real legacy
@@ -617,11 +620,11 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-13T20:39:50-07:00`
+**Generated at:** `2026-09-14T08:54:26-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `e83a42b feat(passport): add refund review and refunded state`
-**Commit date:** `2026-09-13T20:27:51-07:00`
-**origin/main:** `e83a42b`
+**Commit:** `b488c17 feat(admin): show pending Passport refund count`
+**Commit date:** `2026-09-14T08:51:37-07:00`
+**origin/main:** `b488c17`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
