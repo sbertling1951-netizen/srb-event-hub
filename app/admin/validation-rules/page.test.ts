@@ -62,3 +62,18 @@ test("validation-rule CRUD and rule-evaluation behavior is unchanged", () => {
     assert.ok(PAGE_SOURCE.includes(needle), `Validation Rules must retain ${needle}`);
   }
 });
+
+
+test("the search and rule editor use canonical Field controls while preserving their controlled values", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /import\s*\{\s*Checkbox,\s*Field,\s*Input,\s*Select,\s*Textarea,?\s*\}\s*from "@\/components\/ui\/Field";/s,
+  );
+  for (const label of ["Search Rules", "Field", "Rule Type", "Rule Value", "Severity", "Priority", "Scope", "Message"]) {
+    assert.match(PAGE_SOURCE, new RegExp(`<Field label="${label}">`));
+  }
+  assert.match(PAGE_SOURCE, /<Input[\s\S]*?value=\{search\}[\s\S]*?setSearch\(e\.target\.value\)/);
+  assert.match(PAGE_SOURCE, /<Select[\s\S]*?value=\{form\.field_name\}[\s\S]*?updateForm\("field_name", e\.target\.value\)/);
+  assert.match(PAGE_SOURCE, /<Textarea[\s\S]*?value=\{form\.message\}[\s\S]*?updateForm\("message", e\.target\.value\)/);
+  assert.match(PAGE_SOURCE, /<Checkbox[\s\S]*?checked=\{form\.is_active\}[\s\S]*?label="Rule is active"/);
+});

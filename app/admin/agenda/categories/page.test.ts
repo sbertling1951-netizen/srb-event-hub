@@ -54,3 +54,17 @@ test("page access is gated by AdminRouteGuard and the canonical Platform capabil
 test("mutation controls are hidden from non-Platform-admins", () => {
   assert.match(PAGE_SOURCE, /isSuperAdmin\s*&&/);
 });
+
+test("the category dialog uses the canonical Field controls without changing its controlled state", () => {
+  assert.match(PAGE_SOURCE, /import \{ Checkbox, Field, Input \} from "@\/components\/ui\/Field";/);
+  const dialog = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("{showDialog && ("),
+    PAGE_SOURCE.indexOf("</div>\n      )}", PAGE_SOURCE.indexOf("{showDialog && (")),
+  );
+  assert.match(dialog, /<Field label="Category Name" required>/);
+  assert.match(dialog, /<Input[\s\S]*?value=\{formName\}[\s\S]*?setFormName\(e\.target\.value\)/);
+  assert.match(dialog, /<Field label="Color" help=\{formColor\}>/);
+  assert.match(dialog, /<Input[\s\S]*?type="color"[\s\S]*?value=\{formColor\}[\s\S]*?setFormColor\(e\.target\.value\)/);
+  assert.match(dialog, /<Checkbox[\s\S]*?checked=\{formActive\}[\s\S]*?label="Active"/);
+  assert.match(dialog, /<Checkbox[\s\S]*?checked=\{formDefault\}[\s\S]*?label="Default Category"/);
+});

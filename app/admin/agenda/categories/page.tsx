@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { Checkbox, Field, Input } from "@/components/ui/Field";
 import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
@@ -295,50 +296,44 @@ function AgendaCategoriesPageInner() {
           >
             <h2 style={{ marginTop: 0, color: "#334155" }}>{editingCategoryId ? "Edit Category" : "New Category"}</h2>
             <div style={{ marginBottom: 12 }}>
-              <label>
-                Category Name<br />
-                <input
-                  type="text"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  style={{ width: "100%" }}
-                />
-              </label>
+              <Field label="Category Name" required>
+                {(props) => (
+                  <Input
+                    {...props}
+                    type="text"
+                    value={formName}
+                    onChange={(e) => setFormName(e.target.value)}
+                  />
+                )}
+              </Field>
             </div>
             <div style={{ marginBottom: 12 }}>
-              <label>
-                Color<br />
-                <input
-                  type="color"
-                  value={formColor}
-                  onChange={(e) => setFormColor(e.target.value)}
-                  style={{ width: "100%", height: 30, padding: 0, border: "none" }}
-                />
-                <div style={{ marginTop: 4, fontSize: 12, color: "#666" }}>
-                  {formColor}
-                </div>
-              </label>
+              <Field label="Color" help={formColor}>
+                {(props) => (
+                  <Input
+                    {...props}
+                    type="color"
+                    value={formColor}
+                    onChange={(e) => setFormColor(e.target.value)}
+                    style={{ width: "100%", height: 30, minHeight: 30, padding: 0, border: "none" }}
+                  />
+                )}
+              </Field>
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={formActive}
-                  onChange={(e) => setFormActive(e.target.checked)}
-                />{" "}
-                Active
-              </label>
+              <Checkbox
+                checked={formActive}
+                onChange={(e) => setFormActive(e.target.checked)}
+                label="Active"
+              />
             </div>
             <div style={{ marginBottom: 12 }}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={formDefault}
-                  onChange={(e) => setFormDefault(e.target.checked)}
-                />{" "}
-                Default Category
-              </label>
+              <Checkbox
+                checked={formDefault}
+                onChange={(e) => setFormDefault(e.target.checked)}
+                label="Default Category"
+              />
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button

@@ -11,6 +11,7 @@ import {
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import PageNavigation from "@/components/layout/PageNavigation";
+import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -447,15 +448,16 @@ function AdminValidationRulesPageInner() {
               alignItems: "end",
             }}
           >
-            <div>
-              <label style={labelStyle}>Search Rules</label>
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search field, type, message..."
-                style={inputStyle}
-              />
-            </div>
+            <Field label="Search Rules">
+              {(props) => (
+                <Input
+                  {...props}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search field, type, message..."
+                />
+              )}
+            </Field>
             <button
               type="button"
               onClick={startNewRule}
@@ -477,100 +479,109 @@ function AdminValidationRulesPageInner() {
               gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
             }}
           >
-            <div>
-              <label style={labelStyle}>Field</label>
-              <select
-                value={form.field_name}
-                onChange={(e) => updateForm("field_name", e.target.value)}
-                style={inputStyle}
-              >
-                <option value="membership_number">Membership Number</option>
-                <option value="email">Email</option>
-                <option value="pilot_first">Pilot First Name</option>
-                <option value="pilot_last">Pilot Last Name</option>
-                <option value="copilot_first">Co-Pilot First Name</option>
-                <option value="copilot_last">Co-Pilot Last Name</option>
-                <option value="city">City</option>
-                <option value="state">State</option>
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>Rule Type</label>
-              <select
-                value={form.rule_type}
-                onChange={(e) => updateForm("rule_type", e.target.value)}
-                style={inputStyle}
-              >
-                <option value="required">Required</option>
-                <option value="starts_with">Starts With</option>
-                <option value="starts_with_any">Starts With Any</option>
-                <option value="contains">Contains</option>
-                <option value="min_length">Minimum Length</option>
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>Rule Value</label>
-              <input
-                value={form.rule_value}
-                onChange={(e) => updateForm("rule_value", e.target.value)}
-                style={inputStyle}
-                placeholder={
-                  form.rule_type === "required"
-                    ? "Not used for required"
-                    : "Enter value"
-                }
-                disabled={form.rule_type === "required"}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Severity</label>
-              <select
-                value={form.severity}
-                onChange={(e) =>
-                  updateForm("severity", e.target.value as ValidationSeverity)
-                }
-                style={inputStyle}
-              >
-                <option value="error">Error</option>
-                <option value="warning">Warning</option>
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>Priority</label>
-              <input
-                value={form.priority}
-                onChange={(e) => updateForm("priority", e.target.value)}
-                style={inputStyle}
-                placeholder="Lower runs first"
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Scope</label>
-              <select
-                value={form.applies_to_event_id}
-                onChange={(e) =>
-                  updateForm("applies_to_event_id", e.target.value)
-                }
-                style={inputStyle}
-              >
-                <option value="">All Events</option>
-                {events.map((event) => (
-                  <option key={event.id} value={event.id}>
-                    {formatEventLabel(event)}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <Field label="Field">
+              {(props) => (
+                <Select
+                  {...props}
+                  value={form.field_name}
+                  onChange={(e) => updateForm("field_name", e.target.value)}
+                >
+                  <option value="membership_number">Membership Number</option>
+                  <option value="email">Email</option>
+                  <option value="pilot_first">Pilot First Name</option>
+                  <option value="pilot_last">Pilot Last Name</option>
+                  <option value="copilot_first">Co-Pilot First Name</option>
+                  <option value="copilot_last">Co-Pilot Last Name</option>
+                  <option value="city">City</option>
+                  <option value="state">State</option>
+                </Select>
+              )}
+            </Field>
+            <Field label="Rule Type">
+              {(props) => (
+                <Select
+                  {...props}
+                  value={form.rule_type}
+                  onChange={(e) => updateForm("rule_type", e.target.value)}
+                >
+                  <option value="required">Required</option>
+                  <option value="starts_with">Starts With</option>
+                  <option value="starts_with_any">Starts With Any</option>
+                  <option value="contains">Contains</option>
+                  <option value="min_length">Minimum Length</option>
+                </Select>
+              )}
+            </Field>
+            <Field label="Rule Value">
+              {(props) => (
+                <Input
+                  {...props}
+                  value={form.rule_value}
+                  onChange={(e) => updateForm("rule_value", e.target.value)}
+                  placeholder={
+                    form.rule_type === "required"
+                      ? "Not used for required"
+                      : "Enter value"
+                  }
+                  disabled={form.rule_type === "required"}
+                />
+              )}
+            </Field>
+            <Field label="Severity">
+              {(props) => (
+                <Select
+                  {...props}
+                  value={form.severity}
+                  onChange={(e) =>
+                    updateForm("severity", e.target.value as ValidationSeverity)
+                  }
+                >
+                  <option value="error">Error</option>
+                  <option value="warning">Warning</option>
+                </Select>
+              )}
+            </Field>
+            <Field label="Priority">
+              {(props) => (
+                <Input
+                  {...props}
+                  value={form.priority}
+                  onChange={(e) => updateForm("priority", e.target.value)}
+                  placeholder="Lower runs first"
+                />
+              )}
+            </Field>
+            <Field label="Scope">
+              {(props) => (
+                <Select
+                  {...props}
+                  value={form.applies_to_event_id}
+                  onChange={(e) =>
+                    updateForm("applies_to_event_id", e.target.value)
+                  }
+                >
+                  <option value="">All Events</option>
+                  {events.map((event) => (
+                    <option key={event.id} value={event.id}>
+                      {formatEventLabel(event)}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
           </div>
           <div style={{ marginTop: 14 }}>
-            <label style={labelStyle}>Message</label>
-            <textarea
-              value={form.message}
-              onChange={(e) => updateForm("message", e.target.value)}
-              style={textareaStyle}
-              rows={3}
-              placeholder="Message shown in Data Review"
-            />
+            <Field label="Message">
+              {(props) => (
+                <Textarea
+                  {...props}
+                  value={form.message}
+                  onChange={(e) => updateForm("message", e.target.value)}
+                  rows={3}
+                  placeholder="Message shown in Data Review"
+                />
+              )}
+            </Field>
           </div>
           <div
             style={{
@@ -581,14 +592,11 @@ function AdminValidationRulesPageInner() {
               alignItems: "center",
             }}
           >
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={form.is_active}
-                onChange={(e) => updateForm("is_active", e.target.checked)}
-              />
-              Rule is active
-            </label>
+            <Checkbox
+              checked={form.is_active}
+              onChange={(e) => updateForm("is_active", e.target.checked)}
+              label="Rule is active"
+            />
           </div>
           <div
             style={{
@@ -722,26 +730,6 @@ function AdminValidationRulesPageContent() {
   );
 }
 
-const labelStyle: CSSProperties = {
-  display: "block",
-  marginBottom: 6,
-  fontWeight: 600,
-};
-const inputStyle: CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
-};
-const textareaStyle: CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
-  resize: "vertical",
-};
 const primaryButtonStyle: CSSProperties = {
   padding: "10px 14px",
   borderRadius: 10,
