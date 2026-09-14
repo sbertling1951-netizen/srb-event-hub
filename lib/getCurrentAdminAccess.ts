@@ -212,7 +212,30 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
         cached.cacheSchemaVersion === ADMIN_ACCESS_CACHE_SCHEMA_VERSION &&
         cached.adminUser?.user_id === user.id
       ) {
-        return cached;
+        // Permission metadata can remain cached, but effective Event reach
+        // cannot: Tenant and Platform authority resolves dynamically through
+        // public.events RLS. Re-read only those IDs so a newly created Event
+        // appears on the next Admin refresh without waiting for the cache TTL.
+        const refreshedEventResult = await withTimeout(
+          supabase.from("events").select("id"),
+          "Admin Event authority refresh",
+        );
+
+        if (refreshedEventResult.error) {
+          throw refreshedEventResult.error;
+        }
+
+        const eventIds = unique(
+          (refreshedEventResult.data || []).map((row) => row.id),
+        );
+        const refreshed = {
+          ...cached,
+          eventIds,
+          event_ids: eventIds,
+        };
+
+        saveAdminAccessCache(refreshed);
+        return refreshed;
       }
 
       clearAdminAccessCache();

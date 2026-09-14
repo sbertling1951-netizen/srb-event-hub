@@ -23,6 +23,7 @@ import {
 } from "@/lib/eventCoordinates";
 import { createEventForTenant } from "@/lib/eventProvisioning";
 import { geocodeLocation } from "@/lib/geocodeLocation";
+import { useAdmin } from "@/lib/adminContext";
 
 type EventFormState = {
   tenantId: string;
@@ -85,6 +86,7 @@ export default function NewEventPage() {
 
 function NewEventPageInner() {
   const router = useRouter();
+  const { refresh } = useAdmin();
   const [tenants, setTenants] = useState<MyTenantAdminAccessRow[]>([]);
   const [loadingTenants, setLoadingTenants] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -186,6 +188,11 @@ function NewEventPageInner() {
         start_date: created.start_date,
         end_date: created.end_date,
       });
+
+      // Event authority is resolved live from public.events RLS. Refresh the
+      // browser snapshot before handing the creator to Event Admin so the
+      // newly created Event is immediately available there.
+      await refresh();
 
       if (coordinatePlan.notice) {
         setCoordinateNotice(coordinatePlan.notice);

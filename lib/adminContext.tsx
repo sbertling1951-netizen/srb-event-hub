@@ -43,13 +43,10 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         ? await checkAdminTenantAuthority()
         : null;
 
-      setAdmin((prev) => {
-        if (prev?.adminUser?.id === result?.adminUser?.id) {
-          return prev;
-        }
-
-        return result;
-      });
+      // A refreshed result can carry a newly authorized Event while the
+      // administrator identity itself is unchanged. Keep that live RLS
+      // result rather than retaining the prior Event-ID snapshot.
+      setAdmin(result);
       setTenantAuthority(resolvedTenantAuthority);
     } catch (err) {
       console.error("loadAdmin error:", err);

@@ -105,6 +105,17 @@ test("success uses the authoritative returned Event for shared context and navig
   assert.match(SOURCE, /router\.push\("\/admin\/events"\)/);
 });
 
+test("successful creation refreshes the current Admin authority snapshot before Event Admin opens", () => {
+  const submit = SOURCE.slice(
+    SOURCE.indexOf("async function handleSubmit"),
+    SOURCE.indexOf("return (", SOURCE.indexOf("async function handleSubmit")),
+  );
+
+  assert.match(SOURCE, /import \{ useAdmin \} from "@\/lib\/adminContext"/);
+  assert.match(SOURCE, /const \{ refresh \} = useAdmin\(\)/);
+  assert.match(submit, /setCurrentAdminEvent\([\s\S]*?await refresh\(\);[\s\S]*?router\.push\("\/admin\/events"\)/);
+});
+
 test("zero-Event callers can cancel or use shell back navigation without entering the Event-task route", () => {
   assert.match(
     SOURCE,

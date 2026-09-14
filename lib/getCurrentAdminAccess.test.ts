@@ -66,6 +66,18 @@ test("effective Event IDs are fetched through public.events SELECT and never der
   assert.match(SOURCE, /event_ids: eventIds,/);
 });
 
+test("a valid cached Admin snapshot refreshes effective Event IDs through current RLS", () => {
+  const cachedBranch = SOURCE.slice(
+    SOURCE.indexOf("if (\n        cached"),
+    SOURCE.indexOf("clearAdminAccessCache();", SOURCE.indexOf("if (\n        cached")),
+  );
+
+  assert.match(cachedBranch, /supabase\.from\("events"\)\.select\("id"\)/);
+  assert.match(cachedBranch, /const refreshed = \{[\s\S]*?eventIds,[\s\S]*?event_ids: eventIds/);
+  assert.match(cachedBranch, /saveAdminAccessCache\(refreshed\)/);
+  assert.match(cachedBranch, /return refreshed/);
+});
+
 test("the cache schema version rejects pre-T0 direct-assignment-only cache entries", () => {
   assert.match(SOURCE, /const ADMIN_ACCESS_CACHE_SCHEMA_VERSION = 2;/);
   assert.match(
