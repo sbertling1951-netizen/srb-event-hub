@@ -233,8 +233,8 @@ state override this subsection whenever they disagree, per the
 
 ### Re-anchor reconciliation — 2026-09-13 (Passport refund completion, refunded state, and Super-Admin review)
 
-- **Current substantive baseline: `cff558c` — LIVE.** Production Status
-  reported the service online and its working tree clean at `cff558c`.
+- **Current substantive baseline: `fe8428d` — LIVE.** Production Status
+  reported the service online and its working tree clean at `fe8428d`.
 - **Pending-refund indicator.** The canonical Super-Admin sidebar now shows a
   small red superscript count beside Passport Refunds when governed review
   reports one or more pending approvals. It is absent at zero, is not shown
@@ -246,6 +246,11 @@ state override this subsection whenever they disagree, per the
   while applying the standard responsive spacing and narrow-screen stacking;
   it is the first small content-system consolidation and does not change the
   canonical shell, route ownership, authority, or data behavior.
+- **App-wide UI foundation, Phase 1 continued.** Agenda Categories and
+  Validation Rules now use the existing accessible Field controls for their
+  prior hand-written labels and inputs. Controlled values, callbacks, options,
+  validation behavior, route guards, and governed RPCs remain unchanged; the
+  update standardizes control spacing and label/help associations only.
 - **What is now live.** The governed Stripe *test-mode* refund path validates
   original payment facts server-side and relies on the signed webhook as the
   sole completion writer. `1af8eee` accepts Stripe Sandbox's real legacy
@@ -626,11 +631,11 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-14T10:39:36-07:00`
+**Generated at:** `2026-09-14T12:04:14-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `cff558c refactor(ui): standardize admin form actions`
-**Commit date:** `2026-09-14T10:34:23-07:00`
-**origin/main:** `cff558c`
+**Commit:** `fe8428d refactor(ui): standardize admin form controls`
+**Commit date:** `2026-09-14T11:53:53-07:00`
+**origin/main:** `fe8428d`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
