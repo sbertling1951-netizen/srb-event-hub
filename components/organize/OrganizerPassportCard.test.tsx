@@ -75,7 +75,7 @@ test("the confirmed render appears before the no_open_attempt purchase-button br
 test("the return-from-Checkout confirming banner is suppressed once the status read reports confirmed -- it never lingers alongside the success state", () => {
   assert.match(
     CODE_ONLY,
-    /\{justReturnedFromCheckout && status\.state !== "confirmed" \? \(/,
+    /\{justReturnedFromCheckout && status\.state !== "confirmed" && status\.state !== "refunded" \? \(/,
   );
 });
 
@@ -198,4 +198,58 @@ test("the accepted-request state is a plain informational message, never claimin
   const block = SOURCE.slice(idx, idx + 200);
   assert.match(block, /Refund requested; awaiting confirmation/);
   assert.doesNotMatch(block, /refunded|confirmed/i);
+});
+
+// ---- Refunded state (structural -- reached only after the async
+// fetchStatus resolves, which renderToStaticMarkup does not run) ----
+
+test("the refunded status maps to a distinct, minimal state -- no refundEligible or other field carried", () => {
+  const bodyStart = SOURCE.indexOf("async function fetchStatus");
+  const bodyEnd = SOURCE.indexOf("\n}", bodyStart);
+  const body = SOURCE.slice(bodyStart, bodyEnd);
+  assert.match(
+    body,
+    /if \(body\.status === "refunded"\) \{\s*\n\s*return \{ state: "refunded" \};/,
+  );
+});
+
+test("the refunded status is checked before no_open_attempt, so a refunded Passport can never fall through to the purchase branch", () => {
+  const refundedFetchIdx = SOURCE.indexOf('body.status === "refunded"');
+  const noOpenFetchIdx = SOURCE.indexOf('body.status === "no_open_attempt"');
+  assert.ok(refundedFetchIdx !== -1 && noOpenFetchIdx !== -1 && refundedFetchIdx < noOpenFetchIdx);
+
+  const refundedRenderIdx = SOURCE.indexOf('status.state === "refunded" ? (');
+  const noOpenRenderIdx = SOURCE.indexOf('status.state === "no_open_attempt" ? (');
+  assert.ok(refundedRenderIdx !== -1 && noOpenRenderIdx !== -1 && refundedRenderIdx < noOpenRenderIdx);
+});
+
+test("the refunded render shows a neutral message about the refund and the ordinary unpaid Delete/Replace state -- no purchase, resume, expire, or refund control", () => {
+  const renderStart = SOURCE.indexOf('status.state === "refunded" ? (');
+  assert.notEqual(renderStart, -1, "expected a distinct refunded render branch");
+  const renderEnd = SOURCE.indexOf(') : status.state === "no_open_attempt"', renderStart);
+  const block = SOURCE.slice(renderStart, renderEnd);
+  assert.match(block, /refunded/i);
+  assert.match(block, /unpaid Delete\/Replace/i);
+  assert.doesNotMatch(block, /Purchase Passport/);
+  assert.doesNotMatch(block, /Resume checkout/);
+  assert.doesNotMatch(block, /Expire checkout/);
+  assert.doesNotMatch(block, /Refund Passport|Confirm Passport refund/);
+  assert.doesNotMatch(block, /AppButton/);
+});
+
+test("the return-from-Checkout confirming banner is ALSO suppressed once the status read reports refunded -- it never lingers alongside a completed refund", () => {
+  assert.match(
+    CODE_ONLY,
+    /\{justReturnedFromCheckout && status\.state !== "confirmed" && status\.state !== "refunded" \? \(/,
+  );
+});
+
+test("the refunded render carries no Passport row, refund request, refund-audit id, provider id, or Stripe identifier", () => {
+  const renderStart = SOURCE.indexOf('status.state === "refunded" ? (');
+  const renderEnd = SOURCE.indexOf(') : status.state === "no_open_attempt"', renderStart);
+  const block = SOURCE.slice(renderStart, renderEnd);
+  assert.doesNotMatch(
+    block,
+    /provider_session_id|provider_refund_id|provider_event_id|priceId|secretKey|webhookSecret|receipt_audit_id|request_id|amount_minor_units/i,
+  );
 });

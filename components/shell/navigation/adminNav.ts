@@ -39,6 +39,11 @@ export function buildAdminNavSections(
       label: "Registry Provider Catalog",
       href: "/admin/registry-providers",
     },
+    admin?.isSuperAdmin && {
+      id: "passport-refunds",
+      label: "Passport Refunds",
+      href: "/admin/passport-refunds",
+    },
     hasPermission(admin, "can_manage_admins") && { id: "permissions", label: "Permissions", href: "/admin/permissions" },
   ].filter(Boolean) as ShellNavItem[];
 

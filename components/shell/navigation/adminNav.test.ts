@@ -66,6 +66,19 @@ test("only a Super Admin sees the canonical Tenant Administration navigation ite
   assert.equal(findItem(buildAdminNavSections(null), "tenants"), null);
 });
 
+test("only a Super Admin sees the Passport Refunds review entry", () => {
+  const superAdmin = buildAdmin({ isSuperAdmin: true });
+  const tenantAdmin = buildAdmin({ permissionMap: { can_manage_admins: true } });
+
+  const found = findItem(buildAdminNavSections(superAdmin), "passport-refunds");
+  assert.ok(found);
+  assert.equal(found.item.label, "Passport Refunds");
+  assert.equal(found.item.href, "/admin/passport-refunds");
+  assert.equal(found.section.id, "admin");
+  assert.equal(findItem(buildAdminNavSections(tenantAdmin), "passport-refunds"), null);
+  assert.equal(findItem(buildAdminNavSections(null), "passport-refunds"), null);
+});
+
 test("canonical Tenant authority exposes Add Event without any working-Event access", () => {
   const zeroEventTenantAdmin = buildAdmin({
     eventAccessRows: [],

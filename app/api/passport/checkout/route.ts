@@ -333,8 +333,17 @@ export async function GET(request: Request) {
     }
 
     const confirmationRow = Array.isArray(confirmationData) ? confirmationData[0] : confirmationData;
+    const confirmationOutcome = (confirmationRow as { outcome?: string } | null)?.outcome;
 
-    if ((confirmationRow as { outcome?: string } | null)?.outcome === "confirmed") {
+    if (confirmationOutcome === "refunded") {
+      // A confirmed refund returns the Event to its ordinary unpaid
+      // Delete/Replace cycle -- refund eligibility is exclusive to the
+      // confirmed/reserved path and is never consulted here, and no further
+      // Passport checkout is offered from this terminal state.
+      return jsonNoStore({ status: "refunded" });
+    }
+
+    if (confirmationOutcome === "confirmed") {
       // A strict boolean UI-visibility hint only -- never itself an
       // authorization decision, and never allowed to block reporting the
       // confirmed status itself. Any RPC error (including a caller who is

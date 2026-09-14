@@ -36,7 +36,8 @@ type CheckoutStatus =
   | { state: "no_open_attempt" }
   | { state: "preparing" }
   | { state: "open"; url?: string }
-  | { state: "confirmed"; refundEligible: boolean };
+  | { state: "confirmed"; refundEligible: boolean }
+  | { state: "refunded" };
 
 async function authorizedFetch(path: string, init: RequestInit = {}) {
   const { data } = await supabase.auth.getSession();
@@ -72,6 +73,10 @@ async function fetchStatus(eventId: string): Promise<CheckoutStatus> {
 
   if (body.status === "confirmed") {
     return { state: "confirmed", refundEligible: body.refundEligible === true };
+  }
+
+  if (body.status === "refunded") {
+    return { state: "refunded" };
   }
 
   if (body.status === "no_open_attempt") {
@@ -253,7 +258,7 @@ export function OrganizerPassportCard({
         unlaunched.
       </p>
 
-      {justReturnedFromCheckout && status.state !== "confirmed" ? (
+      {justReturnedFromCheckout && status.state !== "confirmed" && status.state !== "refunded" ? (
         <Alert tone="info">
           Payment received; confirming your Passport. This can take a
           moment — refresh if it does not update.
@@ -315,6 +320,11 @@ export function OrganizerPassportCard({
             )
           ) : null}
         </div>
+      ) : status.state === "refunded" ? (
+        <Alert tone="info">
+          This Passport was refunded. This Event is back in its ordinary
+          unpaid Delete/Replace state.
+        </Alert>
       ) : status.state === "no_open_attempt" ? (
         <AppButton variant="primary" loading={purchasing} onClick={() => void beginOrResumeCheckout()}>
           Purchase Passport — $24

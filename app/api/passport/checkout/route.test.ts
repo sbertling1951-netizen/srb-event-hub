@@ -182,12 +182,53 @@ test("GET invokes the confirmation reader for exactly the 'no_open_attempt' outc
   assert.equal(confirmationCalls.length, 1, "the confirmation reader must be called from exactly one place in GET");
 });
 
+test("GET maps the confirmation reader's 'refunded' outcome to a minimal { status: 'refunded' } response, checked before the 'confirmed' branch", () => {
+  const start = SOURCE.indexOf("export async function GET(");
+  const end = SOURCE.indexOf("\nexport async function DELETE(");
+  const body = SOURCE.slice(start, end);
+
+  const refundedIdx = body.indexOf('confirmationOutcome === "refunded"');
+  const confirmedIdx = body.indexOf('confirmationOutcome === "confirmed"');
+  assert.notEqual(refundedIdx, -1, "expected a dedicated refunded-outcome branch");
+  assert.notEqual(confirmedIdx, -1);
+  assert.ok(refundedIdx < confirmedIdx, "the refunded branch must be checked before the confirmed branch");
+
+  const refundedBlock = body.slice(refundedIdx, confirmedIdx);
+  assert.match(refundedBlock, /return jsonNoStore\(\{ status: "refunded" \}\);/);
+});
+
+test("GET never invokes the refund-eligibility reader for the refunded outcome -- eligibility stays exclusive to the confirmed/reserved path", () => {
+  const start = SOURCE.indexOf("export async function GET(");
+  const end = SOURCE.indexOf("\nexport async function DELETE(");
+  const body = SOURCE.slice(start, end);
+
+  const refundedIdx = body.indexOf('confirmationOutcome === "refunded"');
+  const returnIdx = body.indexOf('return jsonNoStore({ status: "refunded" });', refundedIdx);
+  assert.notEqual(returnIdx, -1);
+  const refundedBlock = body.slice(refundedIdx, returnIdx + 60);
+  assert.doesNotMatch(refundedBlock, /get_my_self_service_event_passport_refund_eligibility/);
+});
+
+test("the refunded response never leaks a Passport state, receipt, refund request, refund-audit id, provider id, or Stripe identifier", () => {
+  const start = SOURCE.indexOf("export async function GET(");
+  const end = SOURCE.indexOf("\nexport async function DELETE(");
+  const body = SOURCE.slice(start, end);
+  const refundedIdx = body.indexOf('confirmationOutcome === "refunded"');
+  const returnIdx = body.indexOf('return jsonNoStore({ status: "refunded" });', refundedIdx);
+  assert.notEqual(returnIdx, -1);
+  const block = body.slice(refundedIdx, returnIdx + 60);
+  assert.doesNotMatch(
+    block,
+    /provider_session_id|provider_refund_id|provider_event_id|priceId|secretKey|webhookSecret|receipt_audit_id|request_id|amount_minor_units/i,
+  );
+});
+
 test("GET invokes the refund-eligibility reader only once confirmed is already established, and fails closed to false on any error -- never blocking the confirmed status itself", () => {
   const start = SOURCE.indexOf("export async function GET(");
   const end = SOURCE.indexOf("\nexport async function DELETE(");
   const body = SOURCE.slice(start, end);
 
-  const confirmedIdx = body.indexOf('outcome === "confirmed"');
+  const confirmedIdx = body.indexOf('confirmationOutcome === "confirmed"');
   const eligibilityIdx = body.indexOf("get_my_self_service_event_passport_refund_eligibility");
   assert.notEqual(confirmedIdx, -1);
   assert.notEqual(eligibilityIdx, -1);
@@ -208,7 +249,7 @@ test("the confirmed response never leaks a Passport state, receipt, provider id,
   const start = SOURCE.indexOf("export async function GET(");
   const end = SOURCE.indexOf("\nexport async function DELETE(");
   const body = SOURCE.slice(start, end);
-  const confirmedIdx = body.indexOf('outcome === "confirmed"');
+  const confirmedIdx = body.indexOf('confirmationOutcome === "confirmed"');
   const returnIdx = body.indexOf('return jsonNoStore({ status: "confirmed", refundEligible });');
   assert.notEqual(returnIdx, -1);
   const block = body.slice(confirmedIdx, returnIdx + 60);
