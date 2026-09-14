@@ -56,13 +56,25 @@ export async function POST(request: Request) {
     return noStore({ error: "invalid_signature" }, 400);
   }
 
-  if (event.type === "refund.created" || event.type === "refund.updated" || event.type === "refund.failed") {
+  if (
+    event.type === "refund.created" ||
+    event.type === "refund.updated" ||
+    event.type === "refund.failed" ||
+    // Stripe Sandbox has been observed emitting the legacy
+    // charge.refund.updated event instead of refund.updated for the same
+    // refund lifecycle. Stripe's event catalog has no charge.refund.created
+    // or charge.refund.failed counterpart -- charge.refund.updated is the
+    // only legacy name, and it carries the same Refund object id, so it is
+    // handled through the exact same verified-refund path below.
+    event.type === "charge.refund.updated"
+  ) {
+    const isFailedRefundEvent = event.type === "refund.failed";
     const admin = getSupabaseAdminClient();
     if (!admin) return noStore({ error: "internal_error" }, 500);
     try {
       const refund = await stripe.refunds.retrieve(event.data.object.id);
       const requestId = refund.metadata?.epicentrax_passport_refund_request_id;
-      if (!requestId || event.type === "refund.failed") return noStore({ received: true });
+      if (!requestId || isFailedRefundEvent) return noStore({ received: true });
       const { data } = await admin.rpc("get_self_service_event_passport_refund_context_for_server", { p_request_id: requestId });
       const context = Array.isArray(data) ? data[0] : data;
       if (!context || context.state !== "requested") return noStore({ received: true });

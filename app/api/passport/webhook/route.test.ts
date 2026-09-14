@@ -157,3 +157,42 @@ test("no secret or Price id is ever logged", () => {
 test("the webhook grants no browser authority -- it never calls resolveAuthenticatedRequest or reads an Authorization bearer", () => {
   assert.doesNotMatch(CODE_ONLY, /resolveAuthenticatedRequest|Authorization|Bearer/);
 });
+
+test("the legacy charge.refund.updated event is routed through the exact same guard as refund.created/refund.updated/refund.failed", () => {
+  const guardIdx = SOURCE.indexOf('event.type === "refund.created"');
+  assert.notEqual(guardIdx, -1);
+  const guardBlock = SOURCE.slice(guardIdx, SOURCE.indexOf(") {", guardIdx));
+  assert.match(guardBlock, /event\.type === "refund\.created"/);
+  assert.match(guardBlock, /event\.type === "refund\.updated"/);
+  assert.match(guardBlock, /event\.type === "refund\.failed"/);
+  assert.match(guardBlock, /event\.type === "charge\.refund\.updated"/);
+  // Stripe's event catalog has no charge.refund.created or
+  // charge.refund.failed counterpart to refund.created/refund.failed --
+  // only charge.refund.updated exists as a legacy name.
+  assert.doesNotMatch(CODE_ONLY, /charge\.refund\.created|charge\.refund\.failed/);
+});
+
+test("charge.refund.updated is treated as an update, not a failure -- only refund.failed (not charge.refund.updated) suppresses confirmation via isFailedRefundEvent", () => {
+  assert.match(SOURCE, /const isFailedRefundEvent = event\.type === "refund\.failed";/);
+  assert.doesNotMatch(CODE_ONLY, /isFailedRefundEvent = event\.type === "refund\.failed" \|\|/);
+});
+
+test("both refund.updated and charge.refund.updated reach the identical retrieve/verify/confirm path -- there is no second, separate branch for the legacy name", () => {
+  const guardIdx = SOURCE.indexOf('event.type === "refund.created"');
+  const blockStart = SOURCE.indexOf(") {", guardIdx);
+  const nextTopLevelCommentIdx = SOURCE.indexOf("// Only the two Checkout event types");
+  const refundBlock = SOURCE.slice(blockStart, nextTopLevelCommentIdx);
+  // Exactly one retrieve, one confirmation RPC, and one closing brace for
+  // the whole refund family -- proving refund.updated and
+  // charge.refund.updated are not given separate handling.
+  const retrieveMatches = refundBlock.match(/stripe\.refunds\.retrieve\(/g) || [];
+  const confirmMatches = refundBlock.match(/confirm_self_service_event_passport_refund/g) || [];
+  assert.equal(retrieveMatches.length, 1);
+  assert.equal(confirmMatches.length, 1);
+});
+
+test("an unrelated charge event (e.g. charge.succeeded) is not treated as a refund event and falls through to the ordinary unhandled-event acknowledgement", () => {
+  const guardIdx = SOURCE.indexOf('event.type === "refund.created"');
+  const guardBlock = SOURCE.slice(guardIdx, SOURCE.indexOf(") {", guardIdx));
+  assert.doesNotMatch(guardBlock, /charge\.succeeded|charge\.updated|charge\.captured|charge\.refunded"/);
+});
