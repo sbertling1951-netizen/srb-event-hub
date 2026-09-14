@@ -231,10 +231,10 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Re-anchor reconciliation — 2026-09-13 (Passport refund completion, refunded state, and Super-Admin review)
+### Re-anchor reconciliation — 2026-09-14 (Passport refund completion, refunded state, and Super-Admin review)
 
-- **Current substantive baseline: `1ac19d1` — LIVE.** Production Status
-  reported the service online and its working tree clean at `1ac19d1`.
+- **Current substantive baseline: `b20169d` — LIVE.** Production Status
+  reported the service online and its working tree clean at `b20169d`.
 - **Pending-refund indicator.** The canonical Super-Admin sidebar now shows a
   small red superscript count beside Passport Refunds when governed review
   reports one or more pending approvals. It is absent at zero, is not shown
@@ -255,6 +255,14 @@ state override this subsection whenever they disagree, per the
   and Canada selector that stores IANA timezone identifiers. It replaces an
   error-prone free-text field while preserving the existing authoritative
   timezone validation and governed Event-creation path.
+- **Event Admin current-authority refresh.** Effective Event reach is now
+  re-read through the existing `public.events` RLS boundary when a valid
+  browser Admin snapshot is reused. This preserves cached permission metadata
+  while ensuring a newly created Event immediately appears after refresh for
+  every currently authorized Platform or Tenant Administrator; the successful
+  Add Event handoff refreshes that snapshot before opening Event Admin. No
+  Event assignment, authority rule, lifecycle state, or database policy was
+  added or changed.
 - **What is now live.** The governed Stripe *test-mode* refund path validates
   original payment facts server-side and relies on the signed webhook as the
   sole completion writer. `1af8eee` accepts Stripe Sandbox's real legacy
@@ -635,11 +643,11 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-14T14:25:18-07:00`
+**Generated at:** `2026-09-14T14:57:51-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `1ac19d1 fix(events): add U.S. and Canada timezone selector`
-**Commit date:** `2026-09-14T14:21:33-07:00`
-**origin/main:** `1ac19d1`
+**Commit:** `b20169d fix(admin): refresh Event access after creation`
+**Commit date:** `2026-09-14T14:52:51-07:00`
+**origin/main:** `b20169d`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
