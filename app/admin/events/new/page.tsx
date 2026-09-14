@@ -48,6 +48,27 @@ const EMPTY_FORM: EventFormState = {
   lng: "",
 };
 
+const US_TIMEZONES = [
+  { value: "America/New_York", label: "Eastern — New York" },
+  { value: "America/Chicago", label: "Central — Chicago" },
+  { value: "America/Denver", label: "Mountain — Denver" },
+  { value: "America/Phoenix", label: "Mountain (no daylight saving) — Phoenix" },
+  { value: "America/Los_Angeles", label: "Pacific — Los Angeles" },
+  { value: "America/Anchorage", label: "Alaska — Anchorage" },
+  { value: "Pacific/Honolulu", label: "Hawaii — Honolulu" },
+];
+
+const CANADA_TIMEZONES = [
+  { value: "America/Toronto", label: "Eastern — Toronto" },
+  { value: "America/Winnipeg", label: "Central — Winnipeg" },
+  { value: "America/Regina", label: "Central (no daylight saving) — Regina" },
+  { value: "America/Edmonton", label: "Mountain — Edmonton" },
+  { value: "America/Vancouver", label: "Pacific — Vancouver" },
+  { value: "America/Whitehorse", label: "Yukon — Whitehorse" },
+  { value: "America/Halifax", label: "Atlantic — Halifax" },
+  { value: "America/St_Johns", label: "Newfoundland — St. John's" },
+];
+
 export default function NewEventPage() {
   return (
     <AdminRouteGuard requiredTenantAuthority>
@@ -304,19 +325,34 @@ function NewEventPageInner() {
               <Field
                 label="Event Timezone"
                 required
-                help="Use an IANA name such as America/Chicago."
+                help="Choose the timezone where the Event takes place."
               >
                 {(controlProps) => (
-                  <Input
+                  <Select
                     {...controlProps}
                     value={form.timezone}
                     onChange={(event) =>
                       updateField("timezone", event.target.value)
                     }
                     disabled={saving}
-                    placeholder="America/Chicago"
                     required
-                  />
+                  >
+                    <option value="">Select a timezone</option>
+                    <optgroup label="United States">
+                      {US_TIMEZONES.map((timezone) => (
+                        <option key={timezone.value} value={timezone.value}>
+                          {timezone.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Canada">
+                      {CANADA_TIMEZONES.map((timezone) => (
+                        <option key={timezone.value} value={timezone.value}>
+                          {timezone.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </Select>
                 )}
               </Field>
 

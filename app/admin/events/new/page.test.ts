@@ -75,6 +75,22 @@ test("the form exposes the accepted contract and no lifecycle/system controls", 
   assert.doesNotMatch(SOURCE, /registration_close|refund_deadline|self_edit_close|notes/);
 });
 
+test("Event Timezone is a grouped U.S./Canada selector that submits IANA values", () => {
+  const start = SOURCE.indexOf('label="Event Timezone"');
+  const block = SOURCE.slice(start, SOURCE.indexOf("</Field>", start));
+
+  assert.match(block, /<Select/);
+  assert.match(block, /<optgroup label="United States">/);
+  assert.match(block, /<optgroup label="Canada">/);
+  assert.match(block, /US_TIMEZONES\.map/);
+  assert.match(block, /CANADA_TIMEZONES\.map/);
+  assert.match(SOURCE, /value: "America\/New_York"/);
+  assert.match(SOURCE, /value: "America\/Toronto"/);
+  assert.match(SOURCE, /value: "Pacific\/Honolulu"/);
+  assert.match(block, /updateField\("timezone", event\.target\.value\)/);
+  assert.doesNotMatch(block, /placeholder="America\/Chicago"/);
+});
+
 test("input or authoritative errors preserve the controlled form and surface in Alert", () => {
   const start = SOURCE.indexOf("async function handleSubmit");
   const submit = SOURCE.slice(start, SOURCE.indexOf("return (", start));
