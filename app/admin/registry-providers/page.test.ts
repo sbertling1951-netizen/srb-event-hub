@@ -22,6 +22,12 @@ test("the workspace is guarded by exact Platform authority and uses the canonica
   );
 });
 
+test("every provider action row uses the shared FormActions layout primitive", () => {
+  assert.match(SOURCE, /import \{ FormActions \} from "@\/components\/ui\/FormActions";/);
+  assert.equal((SOURCE.match(/<FormActions>/g) || []).length, 3);
+  assert.equal(/display: "flex", gap: 10, flexWrap: "wrap"/.test(SOURCE), false);
+});
+
 test("the page uses ONLY the dedicated Catalog P1 adapter -- no direct RPC call, no other planning/catalog adapter import", () => {
   assert.match(SOURCE, /from "@\/lib\/registryProviderCatalogAdmin"/);
   assert.doesNotMatch(CODE, /\.rpc\(|supabase\.rpc/);

@@ -36,3 +36,9 @@ test("no direct arbitrary-uid authority RPC is introduced -- the page never call
   assert.equal(/has_vendor_catalog_admin_authority/.test(source), false);
   assert.equal(/has_my_vendor_catalog_admin_authority/.test(source), false);
 });
+
+test("the invite actions use the shared FormActions layout primitive", () => {
+  assert.match(source, /import \{ FormActions \} from "@\/components\/ui\/FormActions";/);
+  assert.match(source, /<FormActions>[\s\S]*?Send Invitation[\s\S]*?Resend Invitation[\s\S]*?Refresh[\s\S]*?<\/FormActions>/);
+  assert.equal(/display: "flex", gap: 8, flexWrap: "wrap"/.test(source), false);
+});

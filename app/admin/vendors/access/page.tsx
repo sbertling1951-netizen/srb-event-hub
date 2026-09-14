@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { FormActions } from "@/components/ui/FormActions";
 import { supabase } from "@/lib/supabase";
 
 type VendorRow = {
@@ -309,11 +310,11 @@ function AdminVendorAccessInner() {
           </select>
         </label>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <FormActions>
           <button type="button" className="app-button app-button-primary" disabled={busy} onClick={() => void sendInvite("invite")}>Send Invitation</button>
           <button type="button" className="app-button" disabled={busy} onClick={() => void sendInvite("resend")}>Resend Invitation</button>
           <button type="button" className="app-button app-button-muted" disabled={busy} onClick={() => void load()}>Refresh</button>
-        </div>
+        </FormActions>
       </div>
 
       <div

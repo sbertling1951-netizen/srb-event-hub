@@ -8,6 +8,7 @@ import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, Input, Textarea } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { Page } from "@/components/ui/Page";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -227,14 +228,14 @@ function RegistryProviderCatalogWorkspace() {
                     <form onSubmit={(event) => void submitEdit(event, row)} style={{ display: "grid", gap: 12 }}>
                       {editError ? <Alert tone="danger">{editError}</Alert> : null}
                       <AssetFields values={editForm} onChange={setEditForm} />
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <FormActions>
                         <AppButton type="submit" variant="primary" loading={savingId === row.id}>
                           Save changes
                         </AppButton>
                         <AppButton type="button" onClick={cancelEdit} disabled={savingId === row.id}>
                           Cancel
                         </AppButton>
-                      </div>
+                      </FormActions>
                     </form>
                   ) : (
                     <>
@@ -246,7 +247,7 @@ function RegistryProviderCatalogWorkspace() {
                       </div>
                       <p style={{ margin: 0 }}>{row.short_description}</p>
                       <WebsiteText value={row.public_website} />
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <FormActions>
                         <AppButton onClick={() => startEdit(row)}>Edit</AppButton>
                         <AppButton
                           variant={row.is_active ? "danger" : "primary"}
@@ -255,7 +256,7 @@ function RegistryProviderCatalogWorkspace() {
                         >
                           {row.is_active ? "Deactivate" : "Activate"}
                         </AppButton>
-                      </div>
+                      </FormActions>
                     </>
                   )}
                 </li>
@@ -270,7 +271,7 @@ function RegistryProviderCatalogWorkspace() {
           <form onSubmit={submitAdd} style={{ display: "grid", gap: 12 }}>
             {addError ? <Alert tone="danger">{addError}</Alert> : null}
             <AssetFields values={addForm} onChange={setAddForm} />
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <FormActions>
               <AppButton type="submit" variant="primary" loading={adding}>
                 Add provider
               </AppButton>
@@ -285,7 +286,7 @@ function RegistryProviderCatalogWorkspace() {
               >
                 Cancel
               </AppButton>
-            </div>
+            </FormActions>
           </form>
         ) : (
           <AppButton onClick={() => setAddOpen(true)}>Add a registry provider</AppButton>
