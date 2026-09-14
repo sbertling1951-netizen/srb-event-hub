@@ -233,13 +233,19 @@ state override this subsection whenever they disagree, per the
 
 ### Re-anchor reconciliation — 2026-09-13 (Passport refund completion, refunded state, and Super-Admin review)
 
-- **Current substantive baseline: `b488c17` — LIVE.** Production Status
-  reported the service online and its working tree clean at `b488c17`.
+- **Current substantive baseline: `cff558c` — LIVE.** Production Status
+  reported the service online and its working tree clean at `cff558c`.
 - **Pending-refund indicator.** The canonical Super-Admin sidebar now shows a
   small red superscript count beside Passport Refunds when governed review
   reports one or more pending approvals. It is absent at zero, is not shown
   to non-Super-Admins, and derives only from the existing Platform-Administrator
   review reader; it adds no table access, polling source, or refund writer.
+- **App-wide UI foundation, Phase 1.** The Registry Provider Catalog and
+  Vendor Access pages now use the established `FormActions` primitive for
+  their existing action rows. This keeps action order and behavior intact
+  while applying the standard responsive spacing and narrow-screen stacking;
+  it is the first small content-system consolidation and does not change the
+  canonical shell, route ownership, authority, or data behavior.
 - **What is now live.** The governed Stripe *test-mode* refund path validates
   original payment facts server-side and relies on the signed webhook as the
   sole completion writer. `1af8eee` accepts Stripe Sandbox's real legacy
@@ -620,11 +626,11 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-14T08:54:26-07:00`
+**Generated at:** `2026-09-14T10:39:36-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `b488c17 feat(admin): show pending Passport refund count`
-**Commit date:** `2026-09-14T08:51:37-07:00`
-**origin/main:** `b488c17`
+**Commit:** `cff558c refactor(ui): standardize admin form actions`
+**Commit date:** `2026-09-14T10:34:23-07:00`
+**origin/main:** `cff558c`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
