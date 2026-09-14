@@ -79,6 +79,20 @@ test("only a Super Admin sees the Passport Refunds review entry", () => {
   assert.equal(findItem(buildAdminNavSections(null), "passport-refunds"), null);
 });
 
+test("Passport Refunds shows a pending-approval count only for a Super Admin and only when nonzero", () => {
+  const superAdmin = buildAdmin({ isSuperAdmin: true });
+
+  assert.equal(
+    findItem(buildAdminNavSections(superAdmin, null, 0), "passport-refunds")?.item.badgeCount,
+    undefined,
+  );
+  assert.equal(
+    findItem(buildAdminNavSections(superAdmin, null, 3), "passport-refunds")?.item.badgeCount,
+    3,
+  );
+  assert.equal(findItem(buildAdminNavSections(buildAdmin(), null, 3), "passport-refunds"), null);
+});
+
 test("canonical Tenant authority exposes Add Event without any working-Event access", () => {
   const zeroEventTenantAdmin = buildAdmin({
     eventAccessRows: [],

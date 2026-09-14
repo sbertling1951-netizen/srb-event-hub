@@ -3906,6 +3906,23 @@ body.slideshow-view-mode .app-header-card {
   color: var(--color-nav-active-text);
 }
 
+.shell-nav-item-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.2em;
+  height: 1.2em;
+  margin-left: 2px;
+  padding: 0 0.28em;
+  border-radius: 999px;
+  background: var(--color-status-error);
+  color: white;
+  font-size: 0.68em;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+  vertical-align: super;
+}
+
 .shell-nav-item:focus-visible,
 .shell-nav-account-action:focus-visible,
 .shell-nav-trigger:focus-visible,

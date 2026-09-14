@@ -23,6 +23,7 @@ import { hasPermission } from "@/lib/getCurrentAdminAccess";
 export function buildAdminNavSections(
   admin: AdminAccessResult | null,
   tenantAuthority: AdminTenantAuthorityResult | null = null,
+  pendingPassportRefundCount = 0,
 ): ShellNavSection[] {
   const adminSection: ShellNavItem[] = [
     hasPermission(admin, "can_view_admin_dashboard") && { id: "dashboard", label: "Dashboard", href: "/admin/dashboard" },
@@ -43,6 +44,7 @@ export function buildAdminNavSections(
       id: "passport-refunds",
       label: "Passport Refunds",
       href: "/admin/passport-refunds",
+      ...(pendingPassportRefundCount > 0 ? { badgeCount: pendingPassportRefundCount } : {}),
     },
     hasPermission(admin, "can_manage_admins") && { id: "permissions", label: "Permissions", href: "/admin/permissions" },
   ].filter(Boolean) as ShellNavItem[];

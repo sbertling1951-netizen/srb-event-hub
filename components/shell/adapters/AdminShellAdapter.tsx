@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import { AppShell } from "@/components/shell/AppShell";
 import { buildShellBrand } from "@/components/shell/brand";
@@ -42,7 +42,29 @@ export function AdminShellAdapter({
   const { admin, tenantAuthority } = useAdmin();
   const { currentEvent } = useAdminWorkspace();
   const { tenant } = useTenant();
-  const navSections = buildAdminNavSections(admin, tenantAuthority);
+  const [pendingPassportRefundCount, setPendingPassportRefundCount] = useState(0);
+
+  useEffect(() => {
+    if (!admin?.isSuperAdmin) {
+      setPendingPassportRefundCount(0);
+      return;
+    }
+
+    let active = true;
+    void supabase
+      .rpc("list_self_service_event_passport_refund_review", { p_filter: "pending" })
+      .then(({ data, error }) => {
+        if (active) {
+          setPendingPassportRefundCount(!error && Array.isArray(data) ? data.length : 0);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [admin?.isSuperAdmin]);
+
+  const navSections = buildAdminNavSections(admin, tenantAuthority, pendingPassportRefundCount);
 
   const accountActions: ShellAccountAction[] = [
     {

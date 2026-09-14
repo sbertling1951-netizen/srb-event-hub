@@ -76,6 +76,11 @@ function NavSections({
                   </span>
                 ) : null}
                 <span>{item.label}</span>
+                {item.badgeCount && item.badgeCount > 0 ? (
+                  <sup className="shell-nav-item-badge" aria-label={`${item.badgeCount} pending approvals`}>
+                    {item.badgeCount}
+                  </sup>
+                ) : null}
               </Link>
             ))}
           </div>

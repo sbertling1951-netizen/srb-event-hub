@@ -21,6 +21,8 @@ export type ShellNavItem = {
   label: string;
   href: string;
   icon?: string;
+  /** A small, presentation-only count for an already-authorized work queue. */
+  badgeCount?: number;
 };
 
 export type ShellNavSection = {
