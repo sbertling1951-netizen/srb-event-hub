@@ -231,6 +231,11 @@ test("Admin Dashboard uses the canonical Admin shell", () => {
   );
 });
 
+test("Passport Refunds uses the canonical Admin shell exactly once", () => {
+  assert.equal(resolveShellMode("/admin/passport-refunds"), "canonical-admin");
+  assert.equal(resolveShellMode("/admin/passport-refunds/history"), "legacy");
+});
+
 test("Admin UI Reference (design workbench) uses the canonical Admin shell", () => {
   assert.equal(resolveShellMode("/admin/ui-reference"), "canonical-admin");
 });

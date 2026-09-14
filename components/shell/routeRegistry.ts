@@ -156,6 +156,7 @@ const EXACT_CANONICAL_ADMIN_ROUTES: readonly string[] = [
   "/admin/nearby-google",
   "/admin/nearby-settings",
   "/admin/parking",
+  "/admin/passport-refunds",
   "/admin/reports",
   "/admin/slideshow",
   "/admin/tenant-admins",
