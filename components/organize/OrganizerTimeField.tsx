@@ -100,12 +100,21 @@ export function OrganizerTimeField({
   id,
   required,
   ariaLabel,
+  "aria-describedby": ariaDescribedBy,
+  "aria-invalid": ariaInvalid,
+  "aria-required": ariaRequired,
 }: {
   value: string;
   onChange: (next: string) => void;
   id?: string;
   required?: boolean;
   ariaLabel?: string;
+  /** Forwarded verbatim from Field's render-prop controlProps when this
+   * control is used inside a Field -- does not affect parsing, formatting,
+   * validation, normalization, keyboard behavior, or value ownership. */
+  "aria-describedby"?: string;
+  "aria-invalid"?: true;
+  "aria-required"?: true;
 }) {
   return (
     <input
@@ -119,6 +128,9 @@ export function OrganizerTimeField({
       pattern="([01][0-9]|2[0-3]):[0-5][0-9]"
       title="Use 24-hour HH:MM, for example 17:00"
       aria-label={ariaLabel}
+      aria-describedby={ariaDescribedBy}
+      aria-invalid={ariaInvalid}
+      aria-required={ariaRequired}
       required={required}
       value={value}
       onChange={(event) => onChange(normalizeTimeInput(event.target.value))}

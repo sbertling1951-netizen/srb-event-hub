@@ -1,5 +1,6 @@
 "use client";
 
+import { Field, Input, Textarea } from "@/components/ui/Field";
 import type { OrganizerAgendaItem, OrganizerAgendaItemInput } from "@/lib/organizerAgenda";
 
 import { OrganizerTimeField } from "./OrganizerTimeField";
@@ -53,46 +54,78 @@ export function OrganizerAgendaItemFields({
   }
   return (
     <>
-      <label>
-        Title
-        <input className="app-form-input" value={values.title} onChange={(event) => update("title", event.target.value)} required />
-      </label>
-      <label>
-        Description <span style={{ fontWeight: 400 }}>(optional)</span>
-        <textarea className="app-form-input" value={values.description} rows={3} onChange={(event) => update("description", event.target.value)} />
-      </label>
-      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
-        <label>
-          Location <span style={{ fontWeight: 400 }}>(optional)</span>
-          <input className="app-form-input" value={values.location} onChange={(event) => update("location", event.target.value)} />
-        </label>
-        <label>
-          Speaker <span style={{ fontWeight: 400 }}>(optional)</span>
-          <input className="app-form-input" value={values.speaker} onChange={(event) => update("speaker", event.target.value)} />
-        </label>
-      </div>
-      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
-        <label>
-          Date <span style={{ fontWeight: 400 }}>(optional)</span>
-          <input className="app-form-input" type="date" value={values.agendaDate} onChange={(event) => update("agendaDate", event.target.value)} />
-        </label>
-        <label>
-          Start time <span style={{ fontWeight: 400 }}>(24-hour, e.g. 17:00)</span>
-          <OrganizerTimeField
-            value={values.startTime}
-            onChange={(next) => update("startTime", next)}
-            ariaLabel="Start time (24-hour HH:MM)"
+      <Field label="Title" required>
+        {(props) => (
+          <Input
+            {...props}
+            value={values.title}
+            onChange={(event) => update("title", event.target.value)}
             required
           />
-        </label>
-        <label>
-          End time <span style={{ fontWeight: 400 }}>(optional, 24-hour)</span>
-          <OrganizerTimeField
-            value={values.endTime}
-            onChange={(next) => update("endTime", next)}
-            ariaLabel="End time (24-hour HH:MM)"
+        )}
+      </Field>
+      <Field label={<>Description <span style={{ fontWeight: 400 }}>(optional)</span></>}>
+        {(props) => (
+          <Textarea
+            {...props}
+            value={values.description}
+            rows={3}
+            onChange={(event) => update("description", event.target.value)}
           />
-        </label>
+        )}
+      </Field>
+      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+        <Field label={<>Location <span style={{ fontWeight: 400 }}>(optional)</span></>}>
+          {(props) => (
+            <Input
+              {...props}
+              value={values.location}
+              onChange={(event) => update("location", event.target.value)}
+            />
+          )}
+        </Field>
+        <Field label={<>Speaker <span style={{ fontWeight: 400 }}>(optional)</span></>}>
+          {(props) => (
+            <Input
+              {...props}
+              value={values.speaker}
+              onChange={(event) => update("speaker", event.target.value)}
+            />
+          )}
+        </Field>
+      </div>
+      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
+        <Field label={<>Date <span style={{ fontWeight: 400 }}>(optional)</span></>}>
+          {(props) => (
+            <Input
+              {...props}
+              type="date"
+              value={values.agendaDate}
+              onChange={(event) => update("agendaDate", event.target.value)}
+            />
+          )}
+        </Field>
+        <Field label={<>Start time <span style={{ fontWeight: 400 }}>(24-hour, e.g. 17:00)</span></>} required>
+          {(props) => (
+            <OrganizerTimeField
+              {...props}
+              value={values.startTime}
+              onChange={(next) => update("startTime", next)}
+              ariaLabel="Start time (24-hour HH:MM)"
+              required
+            />
+          )}
+        </Field>
+        <Field label={<>End time <span style={{ fontWeight: 400 }}>(optional, 24-hour)</span></>}>
+          {(props) => (
+            <OrganizerTimeField
+              {...props}
+              value={values.endTime}
+              onChange={(next) => update("endTime", next)}
+              ariaLabel="End time (24-hour HH:MM)"
+            />
+          )}
+        </Field>
       </div>
     </>
   );
