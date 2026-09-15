@@ -14,7 +14,18 @@
   --color-border-default: #dddddd;
   --color-border-strong: #cbd5e1;
 
-  --color-action-primary: #60a5fa;
+  /* Tier 2 runtime tenant-branding bridge (docs/architecture/
+     EPICENTRAX_RUNTIME_TENANT_BRANDING_TOKEN_CONTRACT.md): --color-action-
+     primary, --color-selected, and --color-nav-active-text each fall back
+     to a --tenant-brand-* custom property, set per-request on <html> only
+     when a resolved Tenant supplies a valid color (app/layout.tsx). With no
+     override present, each `var(--tenant-brand-*, <literal>)` resolves to
+     its literal exactly as before -- unbranded rendering is unchanged.
+     -hover/-active/-bg derived-state siblings, all --color-status-*, and
+     --color-focus-ring are deliberately NOT wired to a tenant override:
+     doing so would require deriving a new shade or verifying contrast,
+     which this bridge does not invent (contract §6). */
+  --color-action-primary: var(--tenant-brand-primary, #60a5fa);
   --color-action-primary-hover: #3b82f6;
   --color-action-primary-active: #2563eb;
   --color-action-secondary: #f8fafc;
@@ -31,7 +42,7 @@
   --color-status-info: #1d4ed8;
   --color-status-info-bg: #eff6ff;
 
-  --color-selected: #2563eb;
+  --color-selected: var(--tenant-brand-secondary, #2563eb);
   --color-selected-bg: #dbeafe;
 
   --color-focus-ring: rgba(37, 99, 235, 0.35);
@@ -42,7 +53,7 @@
   --color-nav-bg: #ffffff;
   --color-nav-text: #111827;
   --color-nav-active-bg: #eff6ff;
-  --color-nav-active-text: #1d4ed8;
+  --color-nav-active-text: var(--tenant-brand-accent, #1d4ed8);
 
   --color-table-header-bg: #f8fafc;
   --color-table-row-hover: #f8fafc;
