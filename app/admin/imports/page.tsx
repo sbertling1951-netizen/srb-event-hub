@@ -1352,6 +1352,50 @@ function AdminAttendeeImportsPageInner() {
     return row.warnings.length ? row.warnings.join(" • ") : "None";
   }
 
+  // Governed Import Results: shared per-row field values and action
+  // rendering, reused by both the desktop DataTable cells and the
+  // compact-viewport ResponsiveList item below so the two presentations
+  // can never drift out of sync with each other. Every expression here,
+  // including the literal `row.rowState === "commit_failed"` conditional
+  // the existing focused test asserts on, is copied verbatim from the
+  // prior raw <table> cells.
+  function importResultDetailValue(row: AttendeeImportRowResult) {
+    return (
+      row.commitError?.message ||
+      row.issues.map((issue) => issue.message).join("; ") ||
+      "—"
+    );
+  }
+  function renderImportResultActions(row: AttendeeImportRowResult) {
+    return (
+      <div className="row-actions">
+        {row.rowState === "commit_failed" ? (
+          <button
+            type="button"
+            onClick={() => void handleRetryImportRow(row)}
+            disabled={retryingRowId === row.rowId}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 8,
+              border: "1px solid #ccc",
+              background: "white",
+              cursor: "pointer",
+              opacity: retryingRowId === row.rowId ? 0.6 : 1,
+            }}
+          >
+            {retryingRowId === row.rowId ? "Retrying..." : "Retry"}
+          </button>
+        ) : null}
+        <AbandonRowButton
+          row={row}
+          onAbandoned={handleImportRowAbandoned}
+          onError={(message) => setError(message)}
+        />
+        {row.rowState === "committed" || row.rowState === "validation_failed" ? "—" : null}
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <PageNavigation
@@ -1708,25 +1752,44 @@ function AdminAttendeeImportsPageInner() {
             );
           })()}
 
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
-              <thead>
-                <tr>
-                  <th style={tableHeadStyle}>Row</th>
-                  <th style={tableHeadStyle}>Entry ID</th>
-                  <th style={tableHeadStyle}>Email</th>
-                  <th style={tableHeadStyle}>State</th>
-                  <th style={tableHeadStyle}>Detail</th>
-                  <th style={tableHeadStyle}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {importRunResult.rows.map((row) => {
-                  const detail =
-                    row.commitError?.message ||
-                    row.issues.map((issue) => issue.message).join("; ") ||
-                    "—";
-                  return (
+          {isCompact ? (
+            <ResponsiveList aria-label="Governed import results">
+              {importRunResult.rows.map((row) => (
+                <li key={row.rowId} className="responsive-list-item">
+                  <div className="responsive-list-item-header">
+                    <div className="responsive-list-item-title">
+                      Row {row.sourceRowNumber || "—"}: {row.rowState}
+                    </div>
+                  </div>
+
+                  <div className="responsive-list-item-meta">
+                    <span>Entry ID: {row.candidate?.registration?.entry_id || "—"}</span>
+                    <span>{row.candidate?.registration?.email || "—"}</span>
+                  </div>
+
+                  <div className="responsive-list-item-meta">
+                    <span>Detail: {importResultDetailValue(row)}</span>
+                  </div>
+
+                  {renderImportResultActions(row)}
+                </li>
+              ))}
+            </ResponsiveList>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <DataTable caption="Governed import results">
+                <thead>
+                  <tr>
+                    <th scope="col" style={tableHeadStyle}>Row</th>
+                    <th scope="col" style={tableHeadStyle}>Entry ID</th>
+                    <th scope="col" style={tableHeadStyle}>Email</th>
+                    <th scope="col" style={tableHeadStyle}>State</th>
+                    <th scope="col" style={tableHeadStyle}>Detail</th>
+                    <th scope="col" style={tableHeadStyle}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importRunResult.rows.map((row) => (
                     <tr key={row.rowId}>
                       <td style={tableCellStyle}>{row.sourceRowNumber || "—"}</td>
                       <td style={tableCellStyle}>
@@ -1736,40 +1799,14 @@ function AdminAttendeeImportsPageInner() {
                         {row.candidate?.registration?.email || "—"}
                       </td>
                       <td style={tableCellStyle}>{row.rowState}</td>
-                      <td style={tableCellStyle}>{detail}</td>
-                      <td style={tableCellStyle}>
-                        <div className="row-actions">
-                          {row.rowState === "commit_failed" ? (
-                            <button
-                              type="button"
-                              onClick={() => void handleRetryImportRow(row)}
-                              disabled={retryingRowId === row.rowId}
-                              style={{
-                                padding: "6px 10px",
-                                borderRadius: 8,
-                                border: "1px solid #ccc",
-                                background: "white",
-                                cursor: "pointer",
-                                opacity: retryingRowId === row.rowId ? 0.6 : 1,
-                              }}
-                            >
-                              {retryingRowId === row.rowId ? "Retrying..." : "Retry"}
-                            </button>
-                          ) : null}
-                          <AbandonRowButton
-                            row={row}
-                            onAbandoned={handleImportRowAbandoned}
-                            onError={(message) => setError(message)}
-                          />
-                          {row.rowState === "committed" || row.rowState === "validation_failed" ? "—" : null}
-                        </div>
-                      </td>
+                      <td style={tableCellStyle}>{importResultDetailValue(row)}</td>
+                      <td style={tableCellStyle}>{renderImportResultActions(row)}</td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  ))}
+                </tbody>
+              </DataTable>
+            </div>
+          )}
         </div>
       ) : null}
 
