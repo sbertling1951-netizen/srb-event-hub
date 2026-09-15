@@ -9,9 +9,14 @@ import {
 } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import PageNavigation from "@/components/layout/PageNavigation";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
 import {
   getCurrentAdminEvent,
@@ -156,6 +161,7 @@ function AdminValidationRulesPageInner() {
   const pageTitle = "Validation Rules";
 
   const { admin } = useAdmin();
+  const { isCompact } = useShellInterfaceCapabilities();
 
   useEffect(() => {
     if (!admin) {
@@ -415,6 +421,47 @@ function AdminValidationRulesPageInner() {
     );
   }, [rules, search]);
 
+  // Shared per-rule rendering, reused by both the desktop DataTable cells
+  // and the compact-viewport ResponsiveList item below so the two
+  // presentations can never drift out of sync with each other.
+  function renderSeverityBadge(rule: ValidationRule) {
+    return (
+      <StatusBadge tone={rule.severity === "error" ? "danger" : "warning"}>
+        {rule.severity.toUpperCase()}
+      </StatusBadge>
+    );
+  }
+
+  function renderRuleActions(rule: ValidationRule) {
+    const deleting = deletingRuleId === rule.id;
+    return (
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          onClick={() => startEditRule(rule)}
+          style={secondaryButtonStyle}
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleToggleActive(rule)}
+          style={secondaryButtonStyle}
+        >
+          {rule.is_active ? "Disable" : "Enable"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleDeleteRule(rule.id)}
+          style={dangerButtonStyle}
+          disabled={deleting}
+        >
+          {deleting ? "Deleting..." : "Delete"}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <PageNavigation
@@ -634,86 +681,70 @@ function AdminValidationRulesPageInner() {
             </div>
           </div>
           {loading ? (
-            <div>Loading...</div>
+            <LoadingState message="Loading..." />
           ) : filteredRules.length === 0 ? (
-            <div style={{ opacity: 0.8 }}>No validation rules found.</div>
+            <EmptyState message="No validation rules found." />
+          ) : isCompact ? (
+            <ResponsiveList aria-label="Validation rules">
+              {filteredRules.map((rule) => (
+                <li key={rule.id} className="responsive-list-item">
+                  <div className="responsive-list-item-header">
+                    <div className="responsive-list-item-title">
+                      {fieldLabel(rule.field_name)}
+                    </div>
+                    {renderSeverityBadge(rule)}
+                  </div>
+
+                  <div className="responsive-list-item-meta">
+                    <span>{ruleTypeLabel(rule.rule_type)}</span>
+                    <span>Value: {rule.rule_value || "—"}</span>
+                  </div>
+
+                  <div className="responsive-list-item-meta">
+                    <span>{rule.message}</span>
+                  </div>
+
+                  <div className="responsive-list-item-meta">
+                    <span>Priority {rule.priority}</span>
+                    <span>{scopeLabel(rule, events)}</span>
+                    <span>Active: {rule.is_active ? "Yes" : "No"}</span>
+                  </div>
+
+                  {renderRuleActions(rule)}
+                </li>
+              ))}
+            </ResponsiveList>
           ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={tableStyle}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>Field</th>
-                    <th style={thStyle}>Type</th>
-                    <th style={thStyle}>Value</th>
-                    <th style={thStyle}>Message</th>
-                    <th style={thStyle}>Severity</th>
-                    <th style={thStyle}>Priority</th>
-                    <th style={thStyle}>Scope</th>
-                    <th style={thStyle}>Active</th>
-                    <th style={thStyle}>Actions</th>
+            <DataTable caption="Validation rules">
+              <thead>
+                <tr>
+                  <th scope="col" style={thStyle}>Field</th>
+                  <th scope="col" style={thStyle}>Type</th>
+                  <th scope="col" style={thStyle}>Value</th>
+                  <th scope="col" style={thStyle}>Message</th>
+                  <th scope="col" style={thStyle}>Severity</th>
+                  <th scope="col" style={thStyle}>Priority</th>
+                  <th scope="col" style={thStyle}>Scope</th>
+                  <th scope="col" style={thStyle}>Active</th>
+                  <th scope="col" style={thStyle}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRules.map((rule) => (
+                  <tr key={rule.id}>
+                    <td style={tdStyle}>{fieldLabel(rule.field_name)}</td>
+                    <td style={tdStyle}>{ruleTypeLabel(rule.rule_type)}</td>
+                    <td style={tdStyle}>{rule.rule_value || "—"}</td>
+                    <td style={tdStyle}>{rule.message}</td>
+                    <td style={tdStyle}>{renderSeverityBadge(rule)}</td>
+                    <td style={tdStyle}>{rule.priority}</td>
+                    <td style={tdStyle}>{scopeLabel(rule, events)}</td>
+                    <td style={tdStyle}>{rule.is_active ? "Yes" : "No"}</td>
+                    <td style={tdStyle}>{renderRuleActions(rule)}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {filteredRules.map((rule) => {
-                    const deleting = deletingRuleId === rule.id;
-                    return (
-                      <tr key={rule.id}>
-                        <td style={tdStyle}>{fieldLabel(rule.field_name)}</td>
-                        <td style={tdStyle}>{ruleTypeLabel(rule.rule_type)}</td>
-                        <td style={tdStyle}>{rule.rule_value || "—"}</td>
-                        <td style={tdStyle}>{rule.message}</td>
-                        <td style={tdStyle}>
-                          <span
-                            style={
-                              rule.severity === "error"
-                                ? errorBadgeStyle
-                                : warningBadgeStyle
-                            }
-                          >
-                            {rule.severity}
-                          </span>
-                        </td>
-                        <td style={tdStyle}>{rule.priority}</td>
-                        <td style={tdStyle}>{scopeLabel(rule, events)}</td>
-                        <td style={tdStyle}>{rule.is_active ? "Yes" : "No"}</td>
-                        <td style={tdStyle}>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: 8,
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => startEditRule(rule)}
-                              style={secondaryButtonStyle}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleToggleActive(rule)}
-                              style={secondaryButtonStyle}
-                            >
-                              {rule.is_active ? "Disable" : "Enable"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleDeleteRule(rule.id)}
-                              style={dangerButtonStyle}
-                              disabled={deleting}
-                            >
-                              {deleting ? "Deleting..." : "Delete"}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </DataTable>
           )}
         </div>
     </div>
@@ -772,27 +803,6 @@ const successBoxStyle: CSSProperties = {
   background: "#f0fdf4",
   color: "#166534",
 };
-const errorBadgeStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#fee2e2",
-  color: "#991b1b",
-  fontWeight: 700,
-  fontSize: 12,
-  textTransform: "uppercase",
-};
-const warningBadgeStyle: CSSProperties = {
-  display: "inline-block",
-  padding: "3px 8px",
-  borderRadius: 999,
-  background: "#fef3c7",
-  color: "#92400e",
-  fontWeight: 700,
-  fontSize: 12,
-  textTransform: "uppercase",
-};
-const tableStyle: CSSProperties = { width: "100%", borderCollapse: "collapse" };
 const thStyle: CSSProperties = {
   textAlign: "left",
   padding: "10px 8px",
