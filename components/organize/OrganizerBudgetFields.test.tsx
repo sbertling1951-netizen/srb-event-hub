@@ -36,12 +36,41 @@ const values: BudgetLineInput = {
 
 /** Walks the returned element tree so handlers can be invoked directly. */
 
+// Central UI migration: fields now route through Field's render-prop
+// (`children: (controlProps) => ReactNode`) and the forwardRef-wrapped
+// Input/Select/Textarea from components/ui/Field.tsx, instead of bare JSX
+// elements. Inert -- these values are never asserted on; they only let the
+// walker invoke the render-prop the same way Field itself would.
+const PLACEHOLDER_CONTROL_PROPS = {
+  id: "test-placeholder-id",
+  "aria-describedby": undefined,
+  "aria-invalid": undefined,
+  "aria-required": undefined,
+  disabled: false,
+};
+
 function collect(node: any, out: any[] = []): any[] {
   if (Array.isArray(node)) {
     node.forEach((child) => collect(child, out));
     return out;
   }
+  // Field's render-prop child: not yet invoked, since this walker calls the
+  // component as a plain function rather than through React's renderer.
+  // Invoking it here is the one bridge needed to see past that boundary --
+  // it does not change what Field itself passes at real render time.
+  if (typeof node === "function") {
+    collect(node(PLACEHOLDER_CONTROL_PROPS), out);
+    return out;
+  }
   if (!node || typeof node !== "object") {
+    return out;
+  }
+  // A forwardRef-wrapped canonical control (Input/Select/Textarea) --
+  // resolve it to the native element it renders, since every assertion in
+  // this file keys off e.type === "input"/"select"/"textarea" the same way
+  // the real DOM ultimately renders.
+  if (node.type && typeof node.type === "object" && typeof node.type.render === "function") {
+    collect(node.type.render(node.props, null), out);
     return out;
   }
   if (node.props) {
@@ -64,8 +93,10 @@ const selectEl = (els: any[]) => els.find((e) => e.type === "select");
 test("USD IS THE INITIAL CURRENCY on a brand-new, untouched form", () => {
   assert.equal(emptyBudgetLine().currency, "USD");
   const html = renderToStaticMarkup(<OrganizerBudgetFields values={emptyBudgetLine()} onChange={() => {}} />);
-  // react-dom/server marks the chosen option on the select itself
-  assert.match(html, /<select[^>]*class="app-form-input"[^>]*>/);
+  // react-dom/server marks the chosen option on the select itself.
+  // Central UI migration: the canonical Select primitive renders
+  // class="app-control", not the retired "app-form-input".
+  assert.match(html, /<select[^>]*class="app-control"[^>]*>/);
   assert.match(html, /<option value="USD" selected="">/, "USD is the selected option in the rendered markup");
   assert.doesNotMatch(html, /<option value="BTC" selected="">/, "BTC is offered but not pre-selected");
   const select = selectEl(elementsFor(emptyBudgetLine()));
