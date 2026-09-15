@@ -1,5 +1,6 @@
 "use client";
 
+import { Field, Input, Select, Textarea } from "@/components/ui/Field";
 import {
   REGISTRY_PLAN_STATUS_LABELS,
   REGISTRY_PLAN_STATUSES,
@@ -36,49 +37,55 @@ export function OrganizerRegistryPlanFields({
   }
   return (
     <>
-      <label>
-        Registry or provider
-        <input
-          className="app-form-input"
-          value={values.providerName}
-          onChange={(event) => update("providerName", event.target.value)}
-          required
-        />
-      </label>
-      <label>
-        Link <span style={{ fontWeight: 400 }}>(optional)</span>
-        <input
-          className="app-form-input"
-          value={values.registryUrl}
-          onChange={(event) => update("registryUrl", event.target.value)}
-        />
-        <span style={{ fontWeight: 400, color: "var(--color-text-muted, #475569)", fontSize: "0.85em" }}>
-          Saved exactly as you type it, for your own reference. EpicentraX never opens or checks it.
-        </span>
-      </label>
-      <label>
-        Status
-        <select
-          className="app-form-input"
-          value={values.status}
-          onChange={(event) => update("status", event.target.value as RegistryPlanStatus)}
-        >
-          {REGISTRY_PLAN_STATUSES.map((status) => (
-            <option key={status} value={status}>
-              {REGISTRY_PLAN_STATUS_LABELS[status]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Private note <span style={{ fontWeight: 400 }}>(optional, only you can see this)</span>
-        <textarea
-          className="app-form-input"
-          value={values.note}
-          rows={3}
-          onChange={(event) => update("note", event.target.value)}
-        />
-      </label>
+      <Field label="Registry or provider" required>
+        {(props) => (
+          <Input
+            {...props}
+            value={values.providerName}
+            onChange={(event) => update("providerName", event.target.value)}
+            required
+          />
+        )}
+      </Field>
+      <Field
+        label={<>Link <span style={{ fontWeight: 400 }}>(optional)</span></>}
+        help="Saved exactly as you type it, for your own reference. EpicentraX never opens or checks it."
+      >
+        {(props) => (
+          <Input
+            {...props}
+            value={values.registryUrl}
+            onChange={(event) => update("registryUrl", event.target.value)}
+          />
+        )}
+      </Field>
+      <Field label="Status">
+        {(props) => (
+          <Select
+            {...props}
+            value={values.status}
+            onChange={(event) => update("status", event.target.value as RegistryPlanStatus)}
+          >
+            {REGISTRY_PLAN_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {REGISTRY_PLAN_STATUS_LABELS[status]}
+              </option>
+            ))}
+          </Select>
+        )}
+      </Field>
+      <Field
+        label={<>Private note <span style={{ fontWeight: 400 }}>(optional, only you can see this)</span></>}
+      >
+        {(props) => (
+          <Textarea
+            {...props}
+            value={values.note}
+            rows={3}
+            onChange={(event) => update("note", event.target.value)}
+          />
+        )}
+      </Field>
     </>
   );
 }

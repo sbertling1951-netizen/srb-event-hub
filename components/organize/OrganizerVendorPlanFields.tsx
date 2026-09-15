@@ -1,5 +1,6 @@
 "use client";
 
+import { Field, Input, Select, Textarea } from "@/components/ui/Field";
 import {
   VENDOR_PLAN_STATUS_LABELS,
   VENDOR_PLAN_STATUSES,
@@ -39,66 +40,72 @@ export function OrganizerVendorPlanFields({
   }
   return (
     <>
-      <label>
-        Vendor or supplier
-        <input
-          className="app-form-input"
-          value={values.vendorName}
-          onChange={(event) => update("vendorName", event.target.value)}
-          required
-        />
-      </label>
-      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
-        <label>
-          Service category <span style={{ fontWeight: 400 }}>(optional)</span>
-          <input
-            className="app-form-input"
-            value={values.serviceCategory}
-            onChange={(event) => update("serviceCategory", event.target.value)}
+      <Field label="Vendor or supplier" required>
+        {(props) => (
+          <Input
+            {...props}
+            value={values.vendorName}
+            onChange={(event) => update("vendorName", event.target.value)}
+            required
           />
-        </label>
-        <label>
-          Status
-          <select
-            className="app-form-input"
-            value={values.status}
-            onChange={(event) => update("status", event.target.value as VendorPlanStatus)}
-          >
-            {VENDOR_PLAN_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {VENDOR_PLAN_STATUS_LABELS[status]}
-              </option>
-            ))}
-          </select>
-        </label>
+        )}
+      </Field>
+      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+        <Field label={<>Service category <span style={{ fontWeight: 400 }}>(optional)</span></>}>
+          {(props) => (
+            <Input
+              {...props}
+              value={values.serviceCategory}
+              onChange={(event) => update("serviceCategory", event.target.value)}
+            />
+          )}
+        </Field>
+        <Field label="Status">
+          {(props) => (
+            <Select
+              {...props}
+              value={values.status}
+              onChange={(event) => update("status", event.target.value as VendorPlanStatus)}
+            >
+              {VENDOR_PLAN_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {VENDOR_PLAN_STATUS_LABELS[status]}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
       </div>
       <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
-        <label>
-          Website <span style={{ fontWeight: 400 }}>(optional)</span>
-          <input
-            className="app-form-input"
-            value={values.website}
-            onChange={(event) => update("website", event.target.value)}
-          />
-        </label>
-        <label>
-          Contact name <span style={{ fontWeight: 400 }}>(optional)</span>
-          <input
-            className="app-form-input"
-            value={values.contactName}
-            onChange={(event) => update("contactName", event.target.value)}
-          />
-        </label>
+        <Field label={<>Website <span style={{ fontWeight: 400 }}>(optional)</span></>}>
+          {(props) => (
+            <Input
+              {...props}
+              value={values.website}
+              onChange={(event) => update("website", event.target.value)}
+            />
+          )}
+        </Field>
+        <Field label={<>Contact name <span style={{ fontWeight: 400 }}>(optional)</span></>}>
+          {(props) => (
+            <Input
+              {...props}
+              value={values.contactName}
+              onChange={(event) => update("contactName", event.target.value)}
+            />
+          )}
+        </Field>
       </div>
       <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
-        <label>
-          Phone number <span style={{ fontWeight: 400 }}>(optional)</span>
-          <input
-            className="app-form-input"
-            value={values.contactPhone}
-            onChange={(event) => update("contactPhone", event.target.value)}
-          />
-        </label>
+        <Field label={<>Phone number <span style={{ fontWeight: 400 }}>(optional)</span></>}>
+          {(props) => (
+            <Input
+              {...props}
+              value={values.contactPhone}
+              onChange={(event) => update("contactPhone", event.target.value)}
+            />
+          )}
+        </Field>
       </div>
       {values.legacyContactDetail ? (
         <div className="card" style={{ display: "grid", gap: 4 }}>
@@ -111,15 +118,18 @@ export function OrganizerVendorPlanFields({
           </span>
         </div>
       ) : null}
-      <label>
-        Private note <span style={{ fontWeight: 400 }}>(optional, only you can see this)</span>
-        <textarea
-          className="app-form-input"
-          value={values.note}
-          rows={3}
-          onChange={(event) => update("note", event.target.value)}
-        />
-      </label>
+      <Field
+        label={<>Private note <span style={{ fontWeight: 400 }}>(optional, only you can see this)</span></>}
+      >
+        {(props) => (
+          <Textarea
+            {...props}
+            value={values.note}
+            rows={3}
+            onChange={(event) => update("note", event.target.value)}
+          />
+        )}
+      </Field>
     </>
   );
 }
