@@ -1,5 +1,6 @@
 "use client";
 
+import { Field, Input, Textarea } from "@/components/ui/Field";
 import type { PlannedGuestInput } from "@/lib/organizerGuestList";
 
 /**
@@ -24,43 +25,49 @@ export function OrganizerGuestFields({
   }
   return (
     <>
-      <label>
-        Name
-        <input
-          className="app-form-input"
-          value={values.displayName}
-          onChange={(event) => update("displayName", event.target.value)}
-          required
-        />
-      </label>
+      <Field label="Name" required>
+        {(props) => (
+          <Input
+            {...props}
+            value={values.displayName}
+            onChange={(event) => update("displayName", event.target.value)}
+            required
+          />
+        )}
+      </Field>
       <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
-        <label>
-          Email <span style={{ fontWeight: 400 }}>(optional)</span>
-          <input
-            className="app-form-input"
-            type="email"
-            value={values.email}
-            onChange={(event) => update("email", event.target.value)}
-          />
-        </label>
-        <label>
-          Phone <span style={{ fontWeight: 400 }}>(optional)</span>
-          <input
-            className="app-form-input"
-            value={values.phone}
-            onChange={(event) => update("phone", event.target.value)}
-          />
-        </label>
+        <Field label={<>Email <span style={{ fontWeight: 400 }}>(optional)</span></>}>
+          {(props) => (
+            <Input
+              {...props}
+              type="email"
+              value={values.email}
+              onChange={(event) => update("email", event.target.value)}
+            />
+          )}
+        </Field>
+        <Field label={<>Phone <span style={{ fontWeight: 400 }}>(optional)</span></>}>
+          {(props) => (
+            <Input
+              {...props}
+              value={values.phone}
+              onChange={(event) => update("phone", event.target.value)}
+            />
+          )}
+        </Field>
       </div>
-      <label>
-        Private note <span style={{ fontWeight: 400 }}>(optional, only you can see this)</span>
-        <textarea
-          className="app-form-input"
-          value={values.note}
-          rows={3}
-          onChange={(event) => update("note", event.target.value)}
-        />
-      </label>
+      <Field
+        label={<>Private note <span style={{ fontWeight: 400 }}>(optional, only you can see this)</span></>}
+      >
+        {(props) => (
+          <Textarea
+            {...props}
+            value={values.note}
+            rows={3}
+            onChange={(event) => update("note", event.target.value)}
+          />
+        )}
+      </Field>
     </>
   );
 }

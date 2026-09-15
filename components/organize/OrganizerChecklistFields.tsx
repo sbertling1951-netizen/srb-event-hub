@@ -1,5 +1,6 @@
 "use client";
 
+import { Field, Input, Textarea } from "@/components/ui/Field";
 import type { ChecklistItemInput } from "@/lib/organizerChecklist";
 
 /**
@@ -29,36 +30,41 @@ export function OrganizerChecklistFields({
   }
   return (
     <>
-      <label>
-        Item
-        <input
-          className="app-form-input"
-          value={values.title}
-          onChange={(event) => update("title", event.target.value)}
-          required
-        />
-      </label>
-      <label>
-        Target date <span style={{ fontWeight: 400 }}>(optional)</span>
-        <input
-          className="app-form-input"
-          type="date"
-          value={values.targetDate}
-          onChange={(event) => update("targetDate", event.target.value)}
-        />
-        <span style={{ fontWeight: 400, color: "var(--color-text-muted, #475569)", fontSize: "0.85em" }}>
-          Just for your own reference. EpicentraX does not remind you or track this date.
-        </span>
-      </label>
-      <label>
-        Private note <span style={{ fontWeight: 400 }}>(optional, only you can see this)</span>
-        <textarea
-          className="app-form-input"
-          value={values.note}
-          rows={3}
-          onChange={(event) => update("note", event.target.value)}
-        />
-      </label>
+      <Field label="Item" required>
+        {(props) => (
+          <Input
+            {...props}
+            value={values.title}
+            onChange={(event) => update("title", event.target.value)}
+            required
+          />
+        )}
+      </Field>
+      <Field
+        label={<>Target date <span style={{ fontWeight: 400 }}>(optional)</span></>}
+        help="Just for your own reference. EpicentraX does not remind you or track this date."
+      >
+        {(props) => (
+          <Input
+            {...props}
+            type="date"
+            value={values.targetDate}
+            onChange={(event) => update("targetDate", event.target.value)}
+          />
+        )}
+      </Field>
+      <Field
+        label={<>Private note <span style={{ fontWeight: 400 }}>(optional, only you can see this)</span></>}
+      >
+        {(props) => (
+          <Textarea
+            {...props}
+            value={values.note}
+            rows={3}
+            onChange={(event) => update("note", event.target.value)}
+          />
+        )}
+      </Field>
     </>
   );
 }
