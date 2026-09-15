@@ -17,7 +17,9 @@ import {
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import PageNavigation from "@/components/layout/PageNavigation";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 import { AppLinkButton } from "@/components/ui/AppButton";
+import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -448,6 +450,7 @@ function AdminAttendeeImportsPageInner() {
   const importType = readImportType(searchParams);
 
   const { admin, loading: adminLoading } = useAdmin();
+  const { isCompact } = useShellInterfaceCapabilities();
 
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [availableEvents, setAvailableEvents] = useState<EventContext[]>([]);
@@ -1241,6 +1244,52 @@ function AdminAttendeeImportsPageInner() {
     window.top?.location.assign("/admin/attendees");
   }
 
+  // Saved Attendee List: shared per-row field values, reused by both the
+  // desktop DataTable cells and the compact-viewport ResponsiveList item
+  // below so the two presentations can never drift out of sync with each
+  // other. Every expression here is copied verbatim from the prior raw
+  // <table> cells -- no value, fallback, or text treatment changed.
+  function savedAttendeePilotValue(row: AttendeeRow) {
+    return fullName(row.pilot_first, row.pilot_last) || "—";
+  }
+  function savedAttendeeCopilotValue(row: AttendeeRow) {
+    return fullName(row.copilot_first, row.copilot_last) || "—";
+  }
+  function savedAttendeeEmailValue(row: AttendeeRow) {
+    return row.email || "—";
+  }
+  function savedAttendeeCityStateValue(row: AttendeeRow) {
+    return cityStateFromAttendee(row) || "—";
+  }
+  function savedAttendeeMemberNumberValue(row: AttendeeRow) {
+    return row.membership_number || "—";
+  }
+  function savedAttendeeSiteValue(row: AttendeeRow) {
+    return row.assigned_site || "—";
+  }
+  function savedAttendeeArrivedValue(row: AttendeeRow) {
+    return row.has_arrived ? "Yes" : "No";
+  }
+  function savedAttendeeFirstTimerValue(row: AttendeeRow) {
+    return row.is_first_timer ? "Yes" : "No";
+  }
+  function savedAttendeeVolunteerValue(row: AttendeeRow) {
+    return row.wants_to_volunteer ? "Yes" : "No";
+  }
+  function savedAttendeeSourceValue(row: AttendeeRow) {
+    return row.source_type || "imported";
+  }
+  function savedAttendeeEventScopeValue(row: AttendeeRow) {
+    return row.participant_type === "vendor"
+      ? row.vendor_assigned_event_id === selectedImportEventId
+        ? "Assigned to this event"
+        : "Vendor library only"
+      : "This event";
+  }
+  function savedAttendeeActiveValue(row: AttendeeRow) {
+    return row.is_active ? "Yes" : "No";
+  }
+
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <PageNavigation
@@ -1926,75 +1975,81 @@ function AdminAttendeeImportsPageInner() {
               Showing {visibleSavedAttendees.length} of {savedAttendees.length}
             </div>
 
-            <div style={{ overflowX: "auto" }}>
-              <table
-                style={{
-                  width: "100%",
-                  borderCollapse: "collapse",
-                  minWidth: 1200,
-                }}
-              >
-                <thead>
-                  <tr>
-                    <th style={tableHeadStyle}>Pilot</th>
-                    <th style={tableHeadStyle}>Co-Pilot</th>
-                    <th style={tableHeadStyle}>Email</th>
-                    <th style={tableHeadStyle}>City / State</th>
-                    <th style={tableHeadStyle}>Member #</th>
-                    <th style={tableHeadStyle}>Site</th>
-                    <th style={tableHeadStyle}>Arrived</th>
-                    <th style={tableHeadStyle}>First Timer</th>
-                    <th style={tableHeadStyle}>Volunteer</th>
-                    <th style={tableHeadStyle}>Source</th>
-                    <th style={tableHeadStyle}>Event Scope</th>
-                    <th style={tableHeadStyle}>Active</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleSavedAttendees.map((row) => (
-                    <tr key={row.id}>
-                      <td style={tableCellStyle}>
-                        {fullName(row.pilot_first, row.pilot_last) || "—"}
-                      </td>
-                      <td style={tableCellStyle}>
-                        {fullName(row.copilot_first, row.copilot_last) || "—"}
-                      </td>
-                      <td style={tableCellStyle}>{row.email || "—"}</td>
-                      <td style={tableCellStyle}>
-                        {cityStateFromAttendee(row) || "—"}
-                      </td>
-                      <td style={tableCellStyle}>
-                        {row.membership_number || "—"}
-                      </td>
-                      <td style={tableCellStyle}>{row.assigned_site || "—"}</td>
-                      <td style={tableCellStyle}>
-                        {row.has_arrived ? "Yes" : "No"}
-                      </td>
-                      <td style={tableCellStyle}>
-                        {row.is_first_timer ? "Yes" : "No"}
-                      </td>
-                      <td style={tableCellStyle}>
-                        {row.wants_to_volunteer ? "Yes" : "No"}
-                      </td>
-                      <td style={tableCellStyle}>
-                        {row.source_type || "imported"}
-                      </td>
-                      <td style={tableCellStyle}>
-                        {row.participant_type === "vendor"
-                          ? row.vendor_assigned_event_id ===
-                            selectedImportEventId
-                            ? "Assigned to this event"
-                            : "Vendor library only"
-                          : "This event"}
-                      </td>
-                      <td style={tableCellStyle}>
-                        {row.is_active ? "Yes" : "No"}
-                      </td>
+            {isCompact ? (
+              <ResponsiveList aria-label="Saved attendee list">
+                {visibleSavedAttendees.map((row) => (
+                  <li key={row.id} className="responsive-list-item">
+                    <div className="responsive-list-item-header">
+                      <div className="responsive-list-item-title">
+                        {savedAttendeePilotValue(row)}
+                      </div>
+                    </div>
+
+                    <div className="responsive-list-item-meta">
+                      <span>Co-Pilot: {savedAttendeeCopilotValue(row)}</span>
+                      <span>{savedAttendeeEmailValue(row)}</span>
+                      <span>{savedAttendeeCityStateValue(row)}</span>
+                    </div>
+
+                    <div className="responsive-list-item-meta">
+                      <span>Member #: {savedAttendeeMemberNumberValue(row)}</span>
+                      <span>Site: {savedAttendeeSiteValue(row)}</span>
+                      <span>Source: {savedAttendeeSourceValue(row)}</span>
+                    </div>
+
+                    <div className="responsive-list-item-meta">
+                      <span>Arrived: {savedAttendeeArrivedValue(row)}</span>
+                      <span>First Timer: {savedAttendeeFirstTimerValue(row)}</span>
+                      <span>Volunteer: {savedAttendeeVolunteerValue(row)}</span>
+                    </div>
+
+                    <div className="responsive-list-item-meta">
+                      <span>{savedAttendeeEventScopeValue(row)}</span>
+                      <span>Active: {savedAttendeeActiveValue(row)}</span>
+                    </div>
+                  </li>
+                ))}
+              </ResponsiveList>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <DataTable caption="Saved attendee list">
+                  <thead>
+                    <tr>
+                      <th scope="col" style={tableHeadStyle}>Pilot</th>
+                      <th scope="col" style={tableHeadStyle}>Co-Pilot</th>
+                      <th scope="col" style={tableHeadStyle}>Email</th>
+                      <th scope="col" style={tableHeadStyle}>City / State</th>
+                      <th scope="col" style={tableHeadStyle}>Member #</th>
+                      <th scope="col" style={tableHeadStyle}>Site</th>
+                      <th scope="col" style={tableHeadStyle}>Arrived</th>
+                      <th scope="col" style={tableHeadStyle}>First Timer</th>
+                      <th scope="col" style={tableHeadStyle}>Volunteer</th>
+                      <th scope="col" style={tableHeadStyle}>Source</th>
+                      <th scope="col" style={tableHeadStyle}>Event Scope</th>
+                      <th scope="col" style={tableHeadStyle}>Active</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {visibleSavedAttendees.map((row) => (
+                      <tr key={row.id}>
+                        <td style={tableCellStyle}>{savedAttendeePilotValue(row)}</td>
+                        <td style={tableCellStyle}>{savedAttendeeCopilotValue(row)}</td>
+                        <td style={tableCellStyle}>{savedAttendeeEmailValue(row)}</td>
+                        <td style={tableCellStyle}>{savedAttendeeCityStateValue(row)}</td>
+                        <td style={tableCellStyle}>{savedAttendeeMemberNumberValue(row)}</td>
+                        <td style={tableCellStyle}>{savedAttendeeSiteValue(row)}</td>
+                        <td style={tableCellStyle}>{savedAttendeeArrivedValue(row)}</td>
+                        <td style={tableCellStyle}>{savedAttendeeFirstTimerValue(row)}</td>
+                        <td style={tableCellStyle}>{savedAttendeeVolunteerValue(row)}</td>
+                        <td style={tableCellStyle}>{savedAttendeeSourceValue(row)}</td>
+                        <td style={tableCellStyle}>{savedAttendeeEventScopeValue(row)}</td>
+                        <td style={tableCellStyle}>{savedAttendeeActiveValue(row)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </DataTable>
+              </div>
+            )}
           </>
         )}
       </div>
