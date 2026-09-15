@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Input } from "@/components/ui/Field";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
 
@@ -33,6 +38,7 @@ function mapCategoryRpcError(err: unknown, fallback: string): string {
 function AgendaCategoriesPageInner() {
   const { admin } = useAdmin();
   const isSuperAdmin = !!admin?.isSuperAdmin;
+  const { isCompact } = useShellInterfaceCapabilities();
 
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<any[]>([]);
@@ -133,6 +139,60 @@ function AgendaCategoriesPageInner() {
     loadCategories();
   }, []);
 
+  // Shared per-category rendering, reused by both the desktop DataTable
+  // cells and the compact-viewport ResponsiveList item below so the two
+  // presentations can never drift out of sync with each other.
+  function renderColorValue(category: any) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div
+          style={{
+            width: 18,
+            height: 18,
+            borderRadius: 4,
+            backgroundColor: category.color,
+            border: "1px solid #ccc",
+          }}
+        />
+        <span>{category.color}</span>
+      </div>
+    );
+  }
+
+  function renderActiveBadge(category: any) {
+    return (
+      <StatusBadge tone={category.is_active ? "success" : "neutral"}>
+        {category.is_active ? "Active" : "Inactive"}
+      </StatusBadge>
+    );
+  }
+
+  function renderDefaultValue(category: any) {
+    return category.is_default ? "⭐ Default" : "";
+  }
+
+  function renderCategoryActions(category: any) {
+    if (!isSuperAdmin) {
+      return null;
+    }
+    return (
+      <button
+        onClick={() => openEditDialog(category)}
+        style={{
+          backgroundColor: "#64748b",
+          color: "white",
+          border: "none",
+          borderRadius: 6,
+          padding: "6px 12px",
+          fontWeight: 600,
+          cursor: "pointer",
+        }}
+      >
+        Edit
+      </button>
+    );
+  }
+
   return (
     <div style={{ padding: 24 }}>
       <p style={{ marginTop: 0 }}>Manage agenda categories used throughout the event.</p>
@@ -173,100 +233,53 @@ function AgendaCategoriesPageInner() {
       )}
 
       {loading ? (
-        <p>Loading...</p>
+        <LoadingState message="Loading categories..." />
+      ) : categories.length === 0 ? (
+        <EmptyState message="No categories yet." />
+      ) : isCompact ? (
+        <ResponsiveList aria-label="Agenda categories">
+          {categories.map((category) => (
+            <li key={category.id} className="responsive-list-item">
+              <div className="responsive-list-item-header">
+                <div className="responsive-list-item-title">{category.name}</div>
+                {renderActiveBadge(category)}
+              </div>
+
+              <div className="responsive-list-item-meta">{renderColorValue(category)}</div>
+
+              {category.is_default ? (
+                <div className="responsive-list-item-meta">{renderDefaultValue(category)}</div>
+              ) : null}
+
+              {isSuperAdmin ? renderCategoryActions(category) : null}
+            </li>
+          ))}
+        </ResponsiveList>
       ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <DataTable caption="Agenda categories">
           <thead>
             <tr>
-              <th align="left">Name</th>
-              <th align="left">Color</th>
-              <th align="left">Active</th>
-              <th align="left">Default</th>
-              {isSuperAdmin && <th align="left">Actions</th>}
+              <th scope="col">Name</th>
+              <th scope="col">Color</th>
+              <th scope="col">Active</th>
+              <th scope="col">Default</th>
+              {isSuperAdmin && <th scope="col">Actions</th>}
             </tr>
           </thead>
           <tbody>
             {categories.map((category) => (
               <tr key={category.id}>
-                <td>{category.name}</td>
                 <td>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: 4,
-                        backgroundColor: category.color,
-                        border: "1px solid #ccc",
-                      }}
-                    />
-                    <span>{category.color}</span>
-                  </div>
+                  <div className="data-table-cell-primary">{category.name}</div>
                 </td>
-                <td>
-                  {category.is_active ? (
-                    <span
-                      style={{
-                        backgroundColor: "#22c55e",
-                        color: "white",
-                        padding: "2px 8px",
-                        borderRadius: 9999,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        display: "inline-block",
-                        minWidth: 60,
-                        textAlign: "center",
-                      }}
-                    >
-                      Active
-                    </span>
-                  ) : (
-                    <span
-                      style={{
-                        backgroundColor: "#9ca3af",
-                        color: "white",
-                        padding: "2px 8px",
-                        borderRadius: 9999,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        display: "inline-block",
-                        minWidth: 60,
-                        textAlign: "center",
-                      }}
-                    >
-                      Inactive
-                    </span>
-                  )}
-                </td>
-                <td>{category.is_default ? "⭐ Default" : ""}</td>
-                {isSuperAdmin && (
-                  <td>
-                    <button
-                      onClick={() => openEditDialog(category)}
-                      style={{
-                        backgroundColor: "#64748b",
-                        color: "white",
-                        border: "none",
-                        borderRadius: 6,
-                        padding: "6px 12px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Edit
-                    </button>
-                  </td>
-                )}
+                <td>{renderColorValue(category)}</td>
+                <td>{renderActiveBadge(category)}</td>
+                <td>{renderDefaultValue(category)}</td>
+                {isSuperAdmin && <td>{renderCategoryActions(category)}</td>}
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       )}
 
       {showDialog && (
