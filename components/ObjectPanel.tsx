@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { FormActions } from "@/components/ui/FormActions";
 import {
   isTopDialogLayer,
   popDialogLayer,
@@ -354,9 +355,9 @@ export function ObjectPanel({
         </div>
 
         {primaryActions ? (
-          <div className="object-panel-primary-actions app-button-row">
+          <FormActions className="object-panel-primary-actions">
             {primaryActions}
-          </div>
+          </FormActions>
         ) : null}
 
         {(onPrevious || onNext) && (
@@ -386,9 +387,9 @@ export function ObjectPanel({
         ) : null}
 
         {secondaryActions ? (
-          <div className="object-panel-secondary-actions app-button-row">
+          <FormActions className="object-panel-secondary-actions">
             {secondaryActions}
-          </div>
+          </FormActions>
         ) : null}
 
         {footer ? <div className="object-panel-footer">{footer}</div> : null}

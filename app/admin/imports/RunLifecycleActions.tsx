@@ -14,6 +14,7 @@ import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Select } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
 import {
   abandonImportRunOpenRows,
   abandonImportRunRow,
@@ -283,57 +284,59 @@ export function RunLifecycleActions({
   }
 
   return (
-    <div className="app-button-row" style={{ marginBottom: 12 }}>
-      {status === "staging" ? (
-        <AppButton variant="secondary" onClick={() => setConfirmCloseOpen(true)}>
-          Close Source Staging
-        </AppButton>
-      ) : null}
+    <div style={{ marginBottom: 12 }}>
+      <FormActions>
+        {status === "staging" ? (
+          <AppButton variant="secondary" onClick={() => setConfirmCloseOpen(true)}>
+            Close Source Staging
+          </AppButton>
+        ) : null}
 
-      {status === "ready_for_review" && hasOpenRows ? (
-        <AppButton variant="danger" onClick={() => setAbandonAllOpen(true)}>
-          {abandonAllLabel}
-        </AppButton>
-      ) : null}
+        {status === "ready_for_review" && hasOpenRows ? (
+          <AppButton variant="danger" onClick={() => setAbandonAllOpen(true)}>
+            {abandonAllLabel}
+          </AppButton>
+        ) : null}
 
-      {status === "ready_for_review" ? (
-        <AppButton
-          variant="primary"
-          disabled={!allRowsTerminal}
-          onClick={() => setConfirmFinalizeOpen(true)}
-        >
-          Finalize Run
-        </AppButton>
-      ) : null}
+        {status === "ready_for_review" ? (
+          <AppButton
+            variant="primary"
+            disabled={!allRowsTerminal}
+            onClick={() => setConfirmFinalizeOpen(true)}
+          >
+            Finalize Run
+          </AppButton>
+        ) : null}
 
-      <ConfirmDialog
-        open={confirmCloseOpen}
-        title="Close Source Staging"
-        message="Close source staging for this run? No further rows may be staged from the source file after this. Rows already needing review remain reviewable."
-        confirmLabel="Close Staging"
-        busy={closingStaging}
-        onConfirm={handleCloseStaging}
-        onCancel={() => (closingStaging ? null : setConfirmCloseOpen(false))}
-      />
+        <ConfirmDialog
+          open={confirmCloseOpen}
+          title="Close Source Staging"
+          message="Close source staging for this run? No further rows may be staged from the source file after this. Rows already needing review remain reviewable."
+          confirmLabel="Close Staging"
+          busy={closingStaging}
+          onConfirm={handleCloseStaging}
+          onCancel={() => (closingStaging ? null : setConfirmCloseOpen(false))}
+        />
 
-      <AbandonReasonDialog
-        open={abandonAllOpen}
-        title={abandonAllDialogTitle}
-        description={abandonAllDialogDescription}
-        busy={abandoningAll}
-        onConfirm={handleAbandonAllOpenRows}
-        onCancel={() => (abandoningAll ? null : setAbandonAllOpen(false))}
-      />
+        <AbandonReasonDialog
+          open={abandonAllOpen}
+          title={abandonAllDialogTitle}
+          description={abandonAllDialogDescription}
+          busy={abandoningAll}
+          onConfirm={handleAbandonAllOpenRows}
+          onCancel={() => (abandoningAll ? null : setAbandonAllOpen(false))}
+        />
 
-      <ConfirmDialog
-        open={confirmFinalizeOpen}
-        title="Finalize Run"
-        message="Finalize this run? Every row is committed, failed validation, or abandoned. Finalizing is final -- the run becomes read-only and moves to Import History."
-        confirmLabel="Finalize"
-        busy={finalizing}
-        onConfirm={handleFinalize}
-        onCancel={() => (finalizing ? null : setConfirmFinalizeOpen(false))}
-      />
+        <ConfirmDialog
+          open={confirmFinalizeOpen}
+          title="Finalize Run"
+          message="Finalize this run? Every row is committed, failed validation, or abandoned. Finalizing is final -- the run becomes read-only and moves to Import History."
+          confirmLabel="Finalize"
+          busy={finalizing}
+          onConfirm={handleFinalize}
+          onCancel={() => (finalizing ? null : setConfirmFinalizeOpen(false))}
+        />
+      </FormActions>
     </div>
   );
 }

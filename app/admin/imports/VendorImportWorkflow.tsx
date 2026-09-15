@@ -17,6 +17,7 @@ import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, Select } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
@@ -575,7 +576,7 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
             </Alert>
           ) : null}
 
-          <div className="app-button-row">
+          <FormActions>
             <AppButton
               variant="primary"
               onClick={() => void handleImport()}
@@ -584,7 +585,7 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
             >
               {importing ? "Importing..." : "Import Vendors"}
             </AppButton>
-          </div>
+          </FormActions>
         </div>
       </div>
 

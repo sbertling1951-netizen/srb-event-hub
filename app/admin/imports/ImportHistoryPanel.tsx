@@ -15,6 +15,7 @@ import { AppButton } from "@/components/ui/AppButton";
 import { DataTable } from "@/components/ui/DataTable";
 import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FormActions } from "@/components/ui/FormActions";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import {
@@ -225,17 +226,19 @@ export function ImportHistoryPanel({ eventId, importType }: ImportHistoryPanelPr
             </DataTable>
           ) : null}
           {hasMore && runs.length ? (
-            <div className="app-button-row" style={{ marginTop: 12 }}>
-              <AppButton
-                variant="secondary"
-                loading={loading}
-                onClick={() => {
-                  const last = runs[runs.length - 1];
-                  void loadHistory({ finalizedAt: last.finalizedAt, importRunId: last.importRunId });
-                }}
-              >
-                Load More
-              </AppButton>
+            <div style={{ marginTop: 12 }}>
+              <FormActions>
+                <AppButton
+                  variant="secondary"
+                  loading={loading}
+                  onClick={() => {
+                    const last = runs[runs.length - 1];
+                    void loadHistory({ finalizedAt: last.finalizedAt, importRunId: last.importRunId });
+                  }}
+                >
+                  Load More
+                </AppButton>
+              </FormActions>
             </div>
           ) : null}
         </div>
