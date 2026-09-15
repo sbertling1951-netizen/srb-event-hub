@@ -1290,6 +1290,68 @@ function AdminAttendeeImportsPageInner() {
     return row.is_active ? "Yes" : "No";
   }
 
+  // Imported Data Preview: shared per-row field values, reused by both the
+  // desktop DataTable cells and the compact-viewport ResponsiveList item
+  // below so the two presentations can never drift out of sync with each
+  // other. Every expression here is copied verbatim from the prior raw
+  // <table> cells -- no value, fallback, joined-pair, or list-rendering
+  // treatment changed.
+  function previewRowValue(row: ParsedRegistration) {
+    return row.rowNumber;
+  }
+  function previewEntryIdValue(row: ParsedRegistration) {
+    return row.entry_id || "—";
+  }
+  function previewPilotValue(row: ParsedRegistration) {
+    return [row.pilot_first, row.pilot_last].filter(Boolean).join(" ") || "—";
+  }
+  function previewCopilotValue(row: ParsedRegistration) {
+    return (
+      [row.copilot_first, row.copilot_last].filter(Boolean).join(" ") || "—"
+    );
+  }
+  function previewEmailValue(row: ParsedRegistration) {
+    return row.email || "—";
+  }
+  function previewPhonesValue(row: ParsedRegistration) {
+    return (
+      [row.primary_phone, row.cell_phone].filter(Boolean).join(" / ") || "—"
+    );
+  }
+  function previewCityStateValue(row: ParsedRegistration) {
+    return [row.city, row.state].filter(Boolean).join(", ") || "—";
+  }
+  function previewCoachValue(row: ParsedRegistration) {
+    return (
+      [row.coach_manufacturer, row.coach_model].filter(Boolean).join(" ") ||
+      "—"
+    );
+  }
+  function previewShareValue(row: ParsedRegistration) {
+    return row.share_with_attendees ? "Yes" : "No";
+  }
+  function previewVolunteerValue(row: ParsedRegistration) {
+    return row.wants_to_volunteer ? "Yes" : "No";
+  }
+  function previewFirstTimerValue(row: ParsedRegistration) {
+    return row.is_first_timer ? "Yes" : "No";
+  }
+  function previewActivitiesValue(row: ParsedRegistration) {
+    return row.activities.length
+      ? row.activities
+          .map(
+            (activity) =>
+              `${activity.activity_name} x${activity.quantity}${
+                activity.price !== null ? ` ($${activity.price})` : ""
+              }`,
+          )
+          .join(" • ")
+      : "—";
+  }
+  function previewWarningsValue(row: ParsedRegistration) {
+    return row.warnings.length ? row.warnings.join(" • ") : "None";
+  }
+
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <PageNavigation
@@ -1800,94 +1862,84 @@ function AdminAttendeeImportsPageInner() {
 
             {!rows.length ? (
               <div style={{ opacity: 0.8 }}>No file loaded yet.</div>
+            ) : isCompact ? (
+              <ResponsiveList aria-label="Imported data preview">
+                {sortedRows.map((row) => (
+                  <li key={row.rowNumber} className="responsive-list-item">
+                    <div className="responsive-list-item-header">
+                      <div className="responsive-list-item-title">
+                        Row {previewRowValue(row)}: {previewPilotValue(row)}
+                      </div>
+                    </div>
+
+                    <div className="responsive-list-item-meta">
+                      <span>Entry ID: {previewEntryIdValue(row)}</span>
+                      <span>Co-Pilot: {previewCopilotValue(row)}</span>
+                      <span>{previewEmailValue(row)}</span>
+                    </div>
+
+                    <div className="responsive-list-item-meta">
+                      <span>Phones: {previewPhonesValue(row)}</span>
+                      <span>{previewCityStateValue(row)}</span>
+                      <span>Coach: {previewCoachValue(row)}</span>
+                    </div>
+
+                    <div className="responsive-list-item-meta">
+                      <span>Share: {previewShareValue(row)}</span>
+                      <span>Volunteer: {previewVolunteerValue(row)}</span>
+                      <span>First Timer: {previewFirstTimerValue(row)}</span>
+                    </div>
+
+                    <div className="responsive-list-item-meta">
+                      <span>Activities: {previewActivitiesValue(row)}</span>
+                    </div>
+
+                    <div className="responsive-list-item-meta">
+                      <span>Warnings: {previewWarningsValue(row)}</span>
+                    </div>
+                  </li>
+                ))}
+              </ResponsiveList>
             ) : (
               <div style={{ overflowX: "auto" }}>
-                <table
-                  style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    minWidth: 1300,
-                  }}
-                >
+                <DataTable caption="Imported data preview">
                   <thead>
                     <tr>
-                      <th style={tableHeadStyle}>Row</th>
-                      <th style={tableHeadStyle}>Entry ID</th>
-                      <th style={tableHeadStyle}>Pilot</th>
-                      <th style={tableHeadStyle}>Co-Pilot</th>
-                      <th style={tableHeadStyle}>Email</th>
-                      <th style={tableHeadStyle}>Phones</th>
-                      <th style={tableHeadStyle}>City / State</th>
-                      <th style={tableHeadStyle}>Coach</th>
-                      <th style={tableHeadStyle}>Share</th>
-                      <th style={tableHeadStyle}>Volunteer</th>
-                      <th style={tableHeadStyle}>First Timer</th>
-                      <th style={tableHeadStyle}>Activities</th>
-                      <th style={tableHeadStyle}>Warnings</th>
+                      <th scope="col" style={tableHeadStyle}>Row</th>
+                      <th scope="col" style={tableHeadStyle}>Entry ID</th>
+                      <th scope="col" style={tableHeadStyle}>Pilot</th>
+                      <th scope="col" style={tableHeadStyle}>Co-Pilot</th>
+                      <th scope="col" style={tableHeadStyle}>Email</th>
+                      <th scope="col" style={tableHeadStyle}>Phones</th>
+                      <th scope="col" style={tableHeadStyle}>City / State</th>
+                      <th scope="col" style={tableHeadStyle}>Coach</th>
+                      <th scope="col" style={tableHeadStyle}>Share</th>
+                      <th scope="col" style={tableHeadStyle}>Volunteer</th>
+                      <th scope="col" style={tableHeadStyle}>First Timer</th>
+                      <th scope="col" style={tableHeadStyle}>Activities</th>
+                      <th scope="col" style={tableHeadStyle}>Warnings</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sortedRows.map((row) => (
                       <tr key={row.rowNumber}>
-                        <td style={tableCellStyle}>{row.rowNumber}</td>
-                        <td style={tableCellStyle}>{row.entry_id || "—"}</td>
-                        <td style={tableCellStyle}>
-                          {[row.pilot_first, row.pilot_last]
-                            .filter(Boolean)
-                            .join(" ") || "—"}
-                        </td>
-                        <td style={tableCellStyle}>
-                          {[row.copilot_first, row.copilot_last]
-                            .filter(Boolean)
-                            .join(" ") || "—"}
-                        </td>
-                        <td style={tableCellStyle}>{row.email || "—"}</td>
-                        <td style={tableCellStyle}>
-                          {[row.primary_phone, row.cell_phone]
-                            .filter(Boolean)
-                            .join(" / ") || "—"}
-                        </td>
-                        <td style={tableCellStyle}>
-                          {[row.city, row.state].filter(Boolean).join(", ") ||
-                            "—"}
-                        </td>
-                        <td style={tableCellStyle}>
-                          {[row.coach_manufacturer, row.coach_model]
-                            .filter(Boolean)
-                            .join(" ") || "—"}
-                        </td>
-                        <td style={tableCellStyle}>
-                          {row.share_with_attendees ? "Yes" : "No"}
-                        </td>
-                        <td style={tableCellStyle}>
-                          {row.wants_to_volunteer ? "Yes" : "No"}
-                        </td>
-                        <td style={tableCellStyle}>
-                          {row.is_first_timer ? "Yes" : "No"}
-                        </td>
-                        <td style={tableCellStyle}>
-                          {row.activities.length
-                            ? row.activities
-                                .map(
-                                  (activity) =>
-                                    `${activity.activity_name} x${activity.quantity}${
-                                      activity.price !== null
-                                        ? ` ($${activity.price})`
-                                        : ""
-                                    }`,
-                                )
-                                .join(" • ")
-                            : "—"}
-                        </td>
-                        <td style={tableCellStyle}>
-                          {row.warnings.length
-                            ? row.warnings.join(" • ")
-                            : "None"}
-                        </td>
+                        <td style={tableCellStyle}>{previewRowValue(row)}</td>
+                        <td style={tableCellStyle}>{previewEntryIdValue(row)}</td>
+                        <td style={tableCellStyle}>{previewPilotValue(row)}</td>
+                        <td style={tableCellStyle}>{previewCopilotValue(row)}</td>
+                        <td style={tableCellStyle}>{previewEmailValue(row)}</td>
+                        <td style={tableCellStyle}>{previewPhonesValue(row)}</td>
+                        <td style={tableCellStyle}>{previewCityStateValue(row)}</td>
+                        <td style={tableCellStyle}>{previewCoachValue(row)}</td>
+                        <td style={tableCellStyle}>{previewShareValue(row)}</td>
+                        <td style={tableCellStyle}>{previewVolunteerValue(row)}</td>
+                        <td style={tableCellStyle}>{previewFirstTimerValue(row)}</td>
+                        <td style={tableCellStyle}>{previewActivitiesValue(row)}</td>
+                        <td style={tableCellStyle}>{previewWarningsValue(row)}</td>
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </DataTable>
               </div>
             )}
           </div>
