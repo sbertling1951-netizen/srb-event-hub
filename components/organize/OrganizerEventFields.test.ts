@@ -185,7 +185,11 @@ test("the selector renders ONLY when options exist and the Location field is sho
     shared.indexOf("Starter template"),
   );
   assert.ok(locBlock.includes("Use a planned place"), "the selector sits with the Location field");
-  assert.ok(locBlock.includes("Location\n"), "the Location input is still rendered in that branch");
+  // Central UI migration: the label is now the Field primitive's `label`
+  // attribute rather than bare JSX text, so the literal shape changed from
+  // "Location\n" to a quoted attribute value -- the field's presence is what
+  // this assertion protects, not its incidental whitespace.
+  assert.ok(locBlock.includes('label="Location"'), "the Location input is still rendered in that branch");
 });
 
 test("the create surface passes no options, so it is unchanged", () => {

@@ -1,5 +1,6 @@
 "use client";
 
+import { Field, Input, Select } from "@/components/ui/Field";
 import type { OrganizerDraft } from "@/lib/organizerDrafts";
 
 /**
@@ -127,69 +128,77 @@ export function OrganizerEventFields({
   }
   return (
     <>
-      <label>
-        Event name
-        <input className="app-form-input" value={values.eventName} onChange={(event) => update("eventName", event.target.value)} required />
-      </label>
+      <Field label="Event name" required>
+        {(props) => (
+          <Input {...props} value={values.eventName} onChange={(event) => update("eventName", event.target.value)} required />
+        )}
+      </Field>
       <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
-        <label>
-          Start date <span style={{ fontWeight: 400 }}>(optional)</span>
-          <input className="app-form-input" type="date" value={values.startDate} onChange={(event) => update("startDate", event.target.value)} />
-        </label>
-        <label>
-          End date
-          <input className="app-form-input" type="date" min={values.startDate || undefined} value={values.endDate} onChange={(event) => update("endDate", event.target.value)} required />
-        </label>
-        <label>
-          Time zone
-          <input className="app-form-input" value={values.timezone} onChange={(event) => update("timezone", event.target.value)} placeholder="America/Los_Angeles" required />
-        </label>
+        <Field label={<>Start date <span style={{ fontWeight: 400 }}>(optional)</span></>}>
+          {(props) => (
+            <Input {...props} type="date" value={values.startDate} onChange={(event) => update("startDate", event.target.value)} />
+          )}
+        </Field>
+        <Field label="End date" required>
+          {(props) => (
+            <Input {...props} type="date" min={values.startDate || undefined} value={values.endDate} onChange={(event) => update("endDate", event.target.value)} required />
+          )}
+        </Field>
+        <Field label="Time zone" required>
+          {(props) => (
+            <Input {...props} value={values.timezone} onChange={(event) => update("timezone", event.target.value)} placeholder="America/Los_Angeles" required />
+          )}
+        </Field>
       </div>
-      <label>
-        Event place
-        <select className="app-form-input" value={values.locationMode} onChange={(event) => updateLocationMode(event.target.value as OrganizerLocationMode)}>
-          <option value="no_location">No location yet</option>
-          <option value="online">Online</option>
-          <option value="location">A physical location</option>
-        </select>
-      </label>
+      <Field label="Event place">
+        {(props) => (
+          <Select {...props} value={values.locationMode} onChange={(event) => updateLocationMode(event.target.value as OrganizerLocationMode)}>
+            <option value="no_location">No location yet</option>
+            <option value="online">Online</option>
+            <option value="location">A physical location</option>
+          </Select>
+        )}
+      </Field>
       {values.locationMode === "location" ? (
         <>
           {plannedPlaceOptions && plannedPlaceOptions.length > 0 ? (
-            <label>
-              Use a planned place <span style={{ fontWeight: 400 }}>(optional)</span>
-              <select
-                className="app-form-input"
-                value=""
-                onChange={(event) => {
-                  const text = event.target.value;
-                  if (text) {
-                    update("location", text);
-                  }
-                }}
-              >
-                <option value="">Choose a planned place</option>
-                {plannedPlaceOptions.map((text, index) => (
-                  <option key={index} value={text}>{text}</option>
-                ))}
-              </select>
-              <span style={{ fontWeight: 400, color: "var(--color-text-muted, #475569)", fontSize: "0.85em" }}>
-                This fills the Location field. Save changes to use it for this Event.
-              </span>
-            </label>
+            <Field
+              label={<>Use a planned place <span style={{ fontWeight: 400 }}>(optional)</span></>}
+              help="This fills the Location field. Save changes to use it for this Event."
+            >
+              {(props) => (
+                <Select
+                  {...props}
+                  value=""
+                  onChange={(event) => {
+                    const text = event.target.value;
+                    if (text) {
+                      update("location", text);
+                    }
+                  }}
+                >
+                  <option value="">Choose a planned place</option>
+                  {plannedPlaceOptions.map((text, index) => (
+                    <option key={index} value={text}>{text}</option>
+                  ))}
+                </Select>
+              )}
+            </Field>
           ) : null}
-          <label>
-            Location
-            <input className="app-form-input" value={values.location} onChange={(event) => update("location", event.target.value)} required />
-          </label>
+          <Field label="Location" required>
+            {(props) => (
+              <Input {...props} value={values.location} onChange={(event) => update("location", event.target.value)} required />
+            )}
+          </Field>
         </>
       ) : null}
-      <label>
-        Starter template
-        <select className="app-form-input" value={values.starterTemplate} onChange={(event) => update("starterTemplate", event.target.value)}>
-          {STARTER_TEMPLATES.map((template) => <option key={template.key} value={template.key}>{template.label}</option>)}
-        </select>
-      </label>
+      <Field label="Starter template">
+        {(props) => (
+          <Select {...props} value={values.starterTemplate} onChange={(event) => update("starterTemplate", event.target.value)}>
+            {STARTER_TEMPLATES.map((template) => <option key={template.key} value={template.key}>{template.label}</option>)}
+          </Select>
+        )}
+      </Field>
       <p style={{ margin: 0, color: "var(--color-text-muted, #475569)" }}>
         {STARTER_TEMPLATES.find((template) => template.key === values.starterTemplate)?.detail}
       </p>
