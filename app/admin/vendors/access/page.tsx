@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { AppButton } from "@/components/ui/AppButton";
 import { FormActions } from "@/components/ui/FormActions";
 import { supabase } from "@/lib/supabase";
 
@@ -311,9 +312,9 @@ function AdminVendorAccessInner() {
         </label>
 
         <FormActions>
-          <button type="button" className="app-button app-button-primary" disabled={busy} onClick={() => void sendInvite("invite")}>Send Invitation</button>
-          <button type="button" className="app-button" disabled={busy} onClick={() => void sendInvite("resend")}>Resend Invitation</button>
-          <button type="button" className="app-button app-button-muted" disabled={busy} onClick={() => void load()}>Refresh</button>
+          <AppButton type="button" variant="primary" disabled={busy} onClick={() => void sendInvite("invite")}>Send Invitation</AppButton>
+          <AppButton type="button" variant="default" disabled={busy} onClick={() => void sendInvite("resend")}>Resend Invitation</AppButton>
+          <AppButton type="button" variant="secondary" disabled={busy} onClick={() => void load()}>Refresh</AppButton>
         </FormActions>
       </div>
 
@@ -351,14 +352,14 @@ function AdminVendorAccessInner() {
 
                 {row.status !== "revoked" ? (
                   <div>
-                    <button
+                    <AppButton
                       type="button"
-                      className="app-button app-button-danger"
+                      variant="danger"
                       disabled={busy}
                       onClick={() => void revoke(row.id)}
                     >
                       Revoke Access
-                    </button>
+                    </AppButton>
                   </div>
                 ) : null}
               </div>
