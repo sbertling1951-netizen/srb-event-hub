@@ -65,6 +65,11 @@ test("the organizer adapter's imports are limited to react + the shell primitive
     'import { AppShell } from "@/components/shell/AppShell";',
     'import { buildPlatformShellBrand } from "@/components/shell/brand";',
     'import { buildOrganizerNavSections } from "@/components/shell/navigation/organizerNav";',
-    'import type { ShellContentMode } from "@/components/shell/types";',
+    'import type { ShellBackTarget, ShellContentMode } from "@/components/shell/types";',
   ]);
+});
+
+test("the organizer adapter accepts and forwards backTarget into the shared shell config, exactly as the other role adapters do", () => {
+  assert.match(SOURCE, /backTarget\?: ShellBackTarget \| null;/);
+  assert.match(SOURCE, /backTarget: backTarget \?\? null,/);
 });

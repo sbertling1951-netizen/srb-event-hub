@@ -5,11 +5,12 @@ import type { ReactNode } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { buildPlatformShellBrand } from "@/components/shell/brand";
 import { buildOrganizerNavSections } from "@/components/shell/navigation/organizerNav";
-import type { ShellContentMode } from "@/components/shell/types";
+import type { ShellBackTarget, ShellContentMode } from "@/components/shell/types";
 
 export type OrganizerShellAdapterProps = {
   pageTitle?: string;
   pageSubtitle?: string;
+  backTarget?: ShellBackTarget | null;
   contentMode?: ShellContentMode;
   children: ReactNode;
 };
@@ -36,6 +37,7 @@ export type OrganizerShellAdapterProps = {
 export function OrganizerShellAdapter({
   pageTitle,
   pageSubtitle,
+  backTarget,
   contentMode,
   children,
 }: OrganizerShellAdapterProps) {
@@ -48,7 +50,7 @@ export function OrganizerShellAdapter({
         pageTitle,
         pageSubtitle,
         navSections: buildOrganizerNavSections(),
-        backTarget: null,
+        backTarget: backTarget ?? null,
         contentMode,
       }}
     >

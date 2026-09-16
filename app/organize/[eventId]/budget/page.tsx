@@ -197,7 +197,7 @@ export default function OrganizerBudgetPage({ params }: BudgetPageProps) {
     return <Page><Alert tone="warning">This private draft is unavailable. It may belong to a different organizer account.</Alert><p><Link href="/organize">Return to your events</Link></p></Page>;
   }
   if (state === "error") {
-    return <Page><Alert tone="danger">We could not open this budget plan. Please return to your event and try again.</Alert><p><Link href={`/organize/${encodeURIComponent(eventId)}`}>Back to this event</Link></p></Page>;
+    return <Page><Alert tone="danger">We could not open this budget plan. Please return to your event and try again.</Alert></Page>;
   }
 
   return (
@@ -279,8 +279,6 @@ export default function OrganizerBudgetPage({ params }: BudgetPageProps) {
           <AppButton onClick={() => setAddOpen(true)}>Add a budget line</AppButton>
         )}
       </PageSection>
-
-      <p><Link href={`/organize/${encodeURIComponent(eventId)}`}>Back to this event</Link></p>
     </Page>
   );
 }

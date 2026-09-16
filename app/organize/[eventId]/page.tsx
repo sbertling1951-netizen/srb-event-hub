@@ -357,8 +357,6 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
           </div>
         )}
       </PageSection>
-
-      <p><Link href="/organize">Back to your events</Link></p>
     </Page>
   );
 }

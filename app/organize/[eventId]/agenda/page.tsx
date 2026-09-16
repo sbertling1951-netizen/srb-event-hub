@@ -211,7 +211,7 @@ export default function OrganizerAgendaPage({ params }: AgendaPageProps) {
     return <Page><Alert tone="warning">This private draft is unavailable. It may belong to a different organizer account.</Alert><p><Link href="/organize">Return to your events</Link></p></Page>;
   }
   if (state === "error") {
-    return <Page><Alert tone="danger">We could not open this agenda. Please return to your event and try again.</Alert><p><Link href={`/organize/${encodeURIComponent(eventId)}`}>Back to this event</Link></p></Page>;
+    return <Page><Alert tone="danger">We could not open this agenda. Please return to your event and try again.</Alert></Page>;
   }
 
   return (
@@ -297,8 +297,6 @@ export default function OrganizerAgendaPage({ params }: AgendaPageProps) {
           <AppButton onClick={() => setAddOpen(true)}>Add an agenda item</AppButton>
         )}
       </PageSection>
-
-      <p><Link href={`/organize/${encodeURIComponent(eventId)}`}>Back to this event</Link></p>
     </Page>
   );
 }
