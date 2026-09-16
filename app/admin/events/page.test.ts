@@ -157,6 +157,29 @@ test("Event Assignments save through ONE atomic dual compare-and-swap RPC -- no 
   assert.match(saveAssignments, /p_expected_nearby_list_id: assignmentBaselineRef\.current\.nearbyListId \|\| null/);
 });
 
+test("the Selected Stored Nearby List picker sends the linked nearby_areas parent id, not the template's own id -- events.selected_nearby_area_id's FK targets nearby_areas", () => {
+  // The loaded query and row shape must carry the parent link.
+  assert.match(PAGE_SOURCE, /\.from\("nearby_area_templates"\)\s*\n\s*\.select\("id,name,description,nearby_area_id"\)/);
+  assert.match(PAGE_SOURCE, /nearby_area_id: string \| null;/);
+
+  // Only a template with a backfilled parent is offered at all.
+  assert.match(
+    PAGE_SOURCE,
+    /const loadedNearby = \(\(nearbyResult\.data \|\| \[\]\) as NearbyAreaRow\[\]\)\.filter\(\s*\n\s*\(row\) => !!row\.nearby_area_id,\s*\n\s*\);/,
+  );
+
+  // The option's own value -- what actually gets saved -- must be the
+  // parent link, never the template's own id (the id stays only as the
+  // React key and is never reused as the value).
+  const nearbyOption = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("{nearbyLists.map((list) => ("),
+    PAGE_SOURCE.indexOf("))}", PAGE_SOURCE.indexOf("{nearbyLists.map((list) => (")),
+  );
+  assert.match(nearbyOption, /key=\{list\.id\}/);
+  assert.match(nearbyOption, /value=\{list\.nearby_area_id \?\? ""\}/);
+  assert.doesNotMatch(nearbyOption, /value=\{list\.id\}/);
+});
+
 test("a stale Event Details save preserves the draft, refreshes persisted state, and shows a non-destructive conflict notice -- never auto-retry/overwrite/merge", () => {
   const saveEvent = PAGE_SOURCE.slice(
     PAGE_SOURCE.indexOf("async function saveEvent"),

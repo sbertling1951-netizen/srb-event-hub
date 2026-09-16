@@ -54,6 +54,7 @@ type NearbyAreaRow = {
   id: string;
   name: string;
   description: string | null;
+  nearby_area_id: string | null;
 };
 
 type EventMapSettingsRow = {
@@ -511,7 +512,7 @@ function EventAdminPageInner() {
 
         supabase
           .from("nearby_area_templates")
-          .select("id,name,description")
+          .select("id,name,description,nearby_area_id")
           .order("name", { ascending: true }),
       ]);
 
@@ -549,7 +550,12 @@ function EventAdminPageInner() {
         return normalizedStatus === eventStatusFilter;
       });
       const loadedMaps = (mapsResult.data || []) as MasterMapRow[];
-      const loadedNearby = (nearbyResult.data || []) as NearbyAreaRow[];
+      // Only a template with a valid, backfilled nearby_areas parent is a
+      // valid assignment candidate -- events.selected_nearby_area_id's FK
+      // targets nearby_areas, never nearby_area_templates directly.
+      const loadedNearby = ((nearbyResult.data || []) as NearbyAreaRow[]).filter(
+        (row) => !!row.nearby_area_id,
+      );
 
       setEvents(loadedEvents);
       setMasterMaps(loadedMaps);
@@ -1528,7 +1534,7 @@ function EventAdminPageInner() {
                 >
                   <option value="">No stored nearby list selected</option>
                   {nearbyLists.map((list) => (
-                    <option key={list.id} value={list.id}>
+                    <option key={list.id} value={list.nearby_area_id ?? ""}>
                       {list.name}
                     </option>
                   ))}
