@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
+import { Field, Input } from "@/components/ui/Field";
 import {
   type CatalogSearchResult,
   type OrganizerRegistryPlanRpcClient,
@@ -209,17 +210,24 @@ export function OrganizerRegistryCatalogSelector({
         </div>
       ) : null}
 
-      <label>
-        {attached ? "Replace with a different catalog provider" : "Attach a catalog provider"}{" "}
-        <span style={{ fontWeight: 400 }}>(optional)</span>
-        <input
-          className="app-form-input"
-          value={query}
-          disabled={disabled}
-          onChange={(event) => void runSearch(event.target.value)}
-          placeholder="Type at least two letters of a provider name"
-        />
-      </label>
+      <Field
+        label={
+          <>
+            {attached ? "Replace with a different catalog provider" : "Attach a catalog provider"}{" "}
+            <span style={{ fontWeight: 400 }}>(optional)</span>
+          </>
+        }
+      >
+        {(props) => (
+          <Input
+            {...props}
+            value={query}
+            disabled={disabled}
+            onChange={(event) => void runSearch(event.target.value)}
+            placeholder="Type at least two letters of a provider name"
+          />
+        )}
+      </Field>
 
       {searching ? <span style={{ fontSize: "0.85em" }}>Searching…</span> : null}
 
