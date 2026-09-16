@@ -1129,7 +1129,7 @@ function TenantAdministrationWorkspace() {
                   description={detail.organization_name}
                   descriptionClassName="app-subtle-text"
                   actions={
-                    <div className="app-button-row">
+                    <FormActions>
                       <StatusBadge tone={detail.is_active ? "success" : "warning"}>
                         Tenant {detail.is_active ? "Active" : "Inactive"}
                       </StatusBadge>
@@ -1143,7 +1143,7 @@ function TenantAdministrationWorkspace() {
                       >
                         {detail.is_active ? "Deactivate Tenant" : "Activate Tenant"}
                       </AppButton>
-                    </div>
+                    </FormActions>
                   }
                 />
                 <dl className="tenant-admin-identity-grid">
