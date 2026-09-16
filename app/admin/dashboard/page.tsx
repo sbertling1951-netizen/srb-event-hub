@@ -6,6 +6,7 @@ import AdminSummaryLink from "@/components/admin/AdminSummaryLink";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { Alert, type AlertTone } from "@/components/ui/Alert";
+import { Select } from "@/components/ui/Field";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useAdmin } from "@/lib/adminContext";
 import {
@@ -569,12 +570,11 @@ function AdminDashboardPageInner() {
               <label style={labelStyle} htmlFor="admin-working-event">
                 Admin Working Event
               </label>
-              <select
+              <Select
                 id="admin-working-event"
                 value={selectedEventId}
                 onChange={(e) => void handleSwitchEvent(e.target.value)}
                 disabled={loading || switching}
-                className="app-form-input"
                 style={{ minHeight: 44 }}
               >
                 <option value="">Select an event</option>
@@ -583,7 +583,7 @@ function AdminDashboardPageInner() {
                     {formatEventLabel(evt)}
                   </option>
                 ))}
-              </select>
+              </Select>
               {selectedEvent ? (
                 <div style={workingEventLineStyle}>
                   <span>Working Event: {formatEventLabel(selectedEvent)}</span>
