@@ -216,3 +216,10 @@ test("Member Nearby and Admin Nearby files are untouched by this Stage D adoptio
     assert.equal(adminNearbySource.includes(needle), false, `admin/nearby/page.tsx should not reference ${needle}`);
   }
 });
+
+test("the page offers a persistent parent-return control via the shell's own backTarget mechanism -- not a page-local link", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /<AdminShellAdapter\s*\n\s*pageTitle="Nearby Settings"\s*\n\s*backTarget=\{\{ href: "\/admin\/map-admin", label: "Map Admin" \}\}\s*\n\s*>/,
+  );
+});

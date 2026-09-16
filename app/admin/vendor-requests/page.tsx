@@ -226,7 +226,10 @@ function vendorRequestStatusTone(message: string): AlertTone {
 export default function VendorRequestsPage() {
   return (
     <AdminRouteGuard requiredTask="event.vendors.manage">
-      <AdminShellAdapter pageTitle="Vendor Requests">
+      <AdminShellAdapter
+        pageTitle="Vendor Requests"
+        backTarget={{ href: "/admin/vendors", label: "Vendor Management" }}
+      >
         <VendorRequestsInner />
       </AdminShellAdapter>
     </AdminRouteGuard>

@@ -42,3 +42,10 @@ test("the invite actions use the shared FormActions layout primitive", () => {
   assert.match(source, /<FormActions>[\s\S]*?Send Invitation[\s\S]*?Resend Invitation[\s\S]*?Refresh[\s\S]*?<\/FormActions>/);
   assert.equal(/display: "flex", gap: 8, flexWrap: "wrap"/.test(source), false);
 });
+
+test("the page offers a persistent parent-return control via the shell's own backTarget mechanism -- not a page-local link", () => {
+  assert.match(
+    source,
+    /<AdminShellAdapter\s*\n\s*pageTitle="Vendor Access Invitations"\s*\n\s*backTarget=\{\{ href: "\/admin\/vendors", label: "Vendor Management" \}\}\s*\n\s*>/,
+  );
+});

@@ -381,7 +381,10 @@ function AdminVendorAccessInner() {
 export default function AdminVendorAccessPage() {
   return (
     <AdminRouteGuard requiredVendorCatalogAuthority>
-      <AdminShellAdapter pageTitle="Vendor Access Invitations">
+      <AdminShellAdapter
+        pageTitle="Vendor Access Invitations"
+        backTarget={{ href: "/admin/vendors", label: "Vendor Management" }}
+      >
         <AdminVendorAccessInner />
       </AdminShellAdapter>
     </AdminRouteGuard>

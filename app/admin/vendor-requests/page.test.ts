@@ -174,3 +174,10 @@ test("the Service Requests header's Refresh/Export CSV actions render inside the
   assert.match(source, /<FormActions>\s*\n\s*<AppButton onClick=\{\(\) => void loadRequests\(\)\}>Refresh<\/AppButton>/);
   assert.equal(/className="app-button-row"/.test(source), false);
 });
+
+test("the page offers a persistent parent-return control via the shell's own backTarget mechanism -- not a page-local link", () => {
+  assert.match(
+    source,
+    /<AdminShellAdapter\s*\n\s*pageTitle="Vendor Requests"\s*\n\s*backTarget=\{\{ href: "\/admin\/vendors", label: "Vendor Management" \}\}\s*\n\s*>/,
+  );
+});

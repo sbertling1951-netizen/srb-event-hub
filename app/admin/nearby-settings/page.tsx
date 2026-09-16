@@ -589,7 +589,10 @@ function NearbySettingsPageInner() {
 export default function NearbySettingsPage() {
   return (
     <AdminRouteGuard requiredTenantAuthority>
-      <AdminShellAdapter pageTitle="Nearby Settings">
+      <AdminShellAdapter
+        pageTitle="Nearby Settings"
+        backTarget={{ href: "/admin/map-admin", label: "Map Admin" }}
+      >
         <NearbySettingsPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>
