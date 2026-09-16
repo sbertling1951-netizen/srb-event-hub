@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { AppButton } from "@/components/ui/AppButton";
+import { Field, Select } from "@/components/ui/Field";
 import { FormActions } from "@/components/ui/FormActions";
 import { supabase } from "@/lib/supabase";
 
@@ -253,41 +254,45 @@ function AdminVendorAccessInner() {
       >
         <h2 style={{ marginTop: 0, marginBottom: 0 }}>Invite or Resend</h2>
 
-        <label>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>Vendor Organization</div>
-          <select
-            value={selectedVendorId}
-            onChange={(e) => {
-              setSelectedVendorId(e.target.value);
-              setContactId("");
-            }}
-            style={{ width: "100%", padding: 10 }}
-          >
-            <option value="">Select vendor</option>
-            {vendors.map((vendor) => (
-              <option key={vendor.id} value={vendor.id}>
-                {vendor.business_name || "Vendor"}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Field label="Vendor Organization">
+          {(props) => (
+            <Select
+              {...props}
+              value={selectedVendorId}
+              onChange={(e) => {
+                setSelectedVendorId(e.target.value);
+                setContactId("");
+              }}
+              style={{ width: "100%", padding: 10 }}
+            >
+              <option value="">Select vendor</option>
+              {vendors.map((vendor) => (
+                <option key={vendor.id} value={vendor.id}>
+                  {vendor.business_name || "Vendor"}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
 
-        <label>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>Existing Contact (optional)</div>
-          <select
-            value={contactId}
-            onChange={(e) => setContactId(e.target.value)}
-            style={{ width: "100%", padding: 10 }}
-            disabled={!selectedVendorId}
-          >
-            <option value="">Create/select by email</option>
-            {contactsForVendor.map((contact) => (
-              <option key={contact.id} value={contact.id}>
-                {contactName(contact)}{contact.email ? ` (${contact.email})` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Field label="Existing Contact (optional)">
+          {(props) => (
+            <Select
+              {...props}
+              value={contactId}
+              onChange={(e) => setContactId(e.target.value)}
+              style={{ width: "100%", padding: 10 }}
+              disabled={!selectedVendorId}
+            >
+              <option value="">Create/select by email</option>
+              {contactsForVendor.map((contact) => (
+                <option key={contact.id} value={contact.id}>
+                  {contactName(contact)}{contact.email ? ` (${contact.email})` : ""}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
 
         {!contactId ? (
           <div style={{ display: "grid", gap: 10 }}>
@@ -299,17 +304,19 @@ function AdminVendorAccessInner() {
           </div>
         ) : null}
 
-        <label>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>Access role</div>
-          <select
-            value={accessRole}
-            onChange={(e) => setAccessRole(e.target.value as "vendor_admin" | "vendor_member")}
-            style={{ width: "100%", padding: 10 }}
-          >
-            <option value="vendor_member">vendor_member</option>
-            <option value="vendor_admin">vendor_admin</option>
-          </select>
-        </label>
+        <Field label="Access role">
+          {(props) => (
+            <Select
+              {...props}
+              value={accessRole}
+              onChange={(e) => setAccessRole(e.target.value as "vendor_admin" | "vendor_member")}
+              style={{ width: "100%", padding: 10 }}
+            >
+              <option value="vendor_member">vendor_member</option>
+              <option value="vendor_admin">vendor_admin</option>
+            </Select>
+          )}
+        </Field>
 
         <FormActions>
           <AppButton type="button" variant="primary" disabled={busy} onClick={() => void sendInvite("invite")}>Send Invitation</AppButton>
