@@ -11,6 +11,7 @@ export default function AdminEvaluationsPage() {
       <AdminShellAdapter
         pageTitle="Evaluations"
         pageSubtitle="Build tenant evaluation templates, assign them to the event or to individual agenda items, and review results."
+        backTarget={{ href: "/admin/events", label: "Event Admin" }}
       >
         <AdminEvaluationsClient />
       </AdminShellAdapter>

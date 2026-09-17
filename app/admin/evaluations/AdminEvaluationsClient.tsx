@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { Alert } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { LoadingState } from "@/components/ui/LoadingState";
 import { PageSection } from "@/components/ui/PageSection";
 import {
   getCurrentAdminEvent,
@@ -42,7 +47,7 @@ const statLabel: React.CSSProperties = {
 };
 const statValue: React.CSSProperties = { fontSize: 26, fontWeight: 700 };
 const card: React.CSSProperties = {
-  border: "1px solid var(--border, #e5e7eb)",
+  border: "1px solid var(--color-border-default)",
   borderRadius: 10,
   padding: 14,
 };
@@ -66,18 +71,18 @@ export function AdminEvaluationsClient() {
   return (
     <div style={{ display: "grid", gap: "var(--space-6)", minWidth: 0 }}>
       <div style={{ display: "flex", gap: 8 }}>
-        <button
-          className={`app-button ${view === "results" ? "app-button-primary" : "app-button-muted"}`}
+        <AppButton
+          variant={view === "results" ? "primary" : "secondary"}
           onClick={() => setView("results")}
         >
           Results
-        </button>
-        <button
-          className={`app-button ${view === "builder" ? "app-button-primary" : "app-button-muted"}`}
+        </AppButton>
+        <AppButton
+          variant={view === "builder" ? "primary" : "secondary"}
           onClick={() => setView("builder")}
         >
           Form Builder
-        </button>
+        </AppButton>
       </div>
 
       {view === "results" ? (
@@ -134,7 +139,7 @@ function ResultsView({ eventId }: { eventId: string }) {
   }, [selected, eventId]);
 
   if (loading) {
-    return <div style={{ padding: 12 }}>Loading…</div>;
+    return <LoadingState message="Loading evaluations..." />;
   }
   if (rows.length === 0) {
     return (
@@ -224,9 +229,9 @@ function ReportDetail({
     return (
       <PageSection variant="card" title={label}>
         <EmptyState message="No evaluation is assigned to this target." />
-        <button className="app-button app-button-muted" onClick={onClose}>
+        <AppButton variant="secondary" onClick={onClose}>
           Close
-        </button>
+        </AppButton>
       </PageSection>
     );
   }
@@ -239,9 +244,9 @@ function ReportDetail({
             {contextLine}
           </div>
         )}
-        <button className="app-button app-button-muted" onClick={onClose}>
+        <AppButton variant="secondary" onClick={onClose}>
           Close
-        </button>
+        </AppButton>
       </div>
 
       <div
@@ -324,7 +329,7 @@ function ReportDetail({
                   <span className="app-subtle-text">No responses yet.</span>
                 )}
                 {q.free_text.map((t, i) => (
-                  <div key={i} style={{ ...card, background: "#f9fafb" }}>
+                  <div key={i} style={{ ...card, background: "var(--color-bg-muted)" }}>
                     {t}
                   </div>
                 ))}
@@ -336,7 +341,7 @@ function ReportDetail({
                 <div style={statLabel}>Comments</div>
                 <div style={{ display: "grid", gap: 6, marginTop: 4 }}>
                   {q.comments.map((c, i) => (
-                    <div key={i} style={{ ...card, background: "#f9fafb" }}>
+                    <div key={i} style={{ ...card, background: "var(--color-bg-muted)" }}>
                       {c}
                     </div>
                   ))}
@@ -408,29 +413,32 @@ function BuilderView({ eventId }: { eventId: string }) {
 
   if (error && !config) {
     return (
-      <EmptyState
-        message={
-          /authority/i.test(error)
-            ? "Building and assigning evaluation templates needs tenant-administrator access for this event. You can still review results on the Results tab — ask a tenant administrator to set up the evaluation form."
-            : error
-        }
-      />
+      <Alert tone="danger">
+        {/authority/i.test(error)
+          ? "Building and assigning evaluation templates needs tenant-administrator access for this event. You can still review results on the Results tab — ask a tenant administrator to set up the evaluation form."
+          : error}
+      </Alert>
     );
   }
   if (!config) {
-    return <div style={{ padding: 12 }}>Loading…</div>;
+    return <LoadingState message="Loading evaluation configuration..." />;
   }
 
   const eventAssignment = config.assignments.find((a) => a.target_type === "event");
 
   return (
     <div style={{ display: "grid", gap: "var(--space-5)" }}>
-      {error && <div style={{ color: "#dc2626", fontSize: 14 }}>{error}</div>}
+      {/* The one detailed failure surface for a later operation (config is
+          already loaded, e.g. a save/RPC call failed) -- the fatal,
+          no-config case above is a separate, mutually exclusive early
+          return with its own single Alert, so these two can never render
+          at once. */}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
 
       <PageSection variant="card" title="Templates">
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          <button
-            className="app-button app-button-primary"
+          <AppButton
+            variant="primary"
             disabled={busy}
             onClick={() =>
               run(async () => {
@@ -444,9 +452,9 @@ function BuilderView({ eventId }: { eventId: string }) {
             }
           >
             New from Event default
-          </button>
-          <button
-            className="app-button app-button-primary"
+          </AppButton>
+          <AppButton
+            variant="primary"
             disabled={busy}
             onClick={() =>
               run(async () => {
@@ -460,9 +468,9 @@ function BuilderView({ eventId }: { eventId: string }) {
             }
           >
             New Presentation template
-          </button>
-          <button
-            className="app-button app-button-muted"
+          </AppButton>
+          <AppButton
+            variant="secondary"
             disabled={busy}
             onClick={() =>
               run(async () => {
@@ -476,7 +484,7 @@ function BuilderView({ eventId }: { eventId: string }) {
             }
           >
             New blank template
-          </button>
+          </AppButton>
         </div>
 
         {config.templates.length === 0 ? (
@@ -491,7 +499,7 @@ function BuilderView({ eventId }: { eventId: string }) {
                   width: "100%",
                   textAlign: "left",
                   cursor: "pointer",
-                  borderColor: t.id === selectedTemplateId ? "#2563eb" : undefined,
+                  borderColor: t.id === selectedTemplateId ? "var(--color-selected)" : undefined,
                 }}
                 onClick={() => setSelectedTemplateId(t.id)}
               >
@@ -616,22 +624,26 @@ function AssignmentControl({
   }
 
   return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-      <select
-        value={choice}
-        disabled={busy}
-        onChange={(e) => setChoice(e.target.value)}
-        style={{ padding: 6, minWidth: 220 }}
-      >
-        <option value="">— Not assigned —</option>
-        {templates.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.name}
-          </option>
-        ))}
-      </select>
-      <button
-        className="app-button app-button-primary"
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+      <Field label="Template" disabled={busy}>
+        {(controlProps) => (
+          <Select
+            {...controlProps}
+            value={choice}
+            onChange={(e) => setChoice(e.target.value)}
+            style={{ minWidth: 220 }}
+          >
+            <option value="">— Not assigned —</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </Select>
+        )}
+      </Field>
+      <AppButton
+        variant="primary"
         disabled={busy || choice === (currentTemplateId ?? "")}
         onClick={() =>
           run(() =>
@@ -645,7 +657,7 @@ function AssignmentControl({
         }
       >
         {choice ? "Assign / Re-snapshot" : "Unassign"}
-      </button>
+      </AppButton>
       {currentTemplateId && (
         <a
           className="app-subtle-text"
@@ -713,22 +725,29 @@ function TemplateEditor({
   return (
     <PageSection variant="card" title={`Editing: ${template.name}`}>
       <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
-        <input
-          value={name}
-          disabled={busy}
-          onChange={(e) => setName(e.target.value)}
-          style={{ padding: 8, fontWeight: 600 }}
-        />
-        <textarea
-          value={description}
-          disabled={busy}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={2}
-          style={{ padding: 8 }}
-        />
+        <Field label="Template Name" disabled={busy}>
+          {(controlProps) => (
+            <Input
+              {...controlProps}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              style={{ fontWeight: 600 }}
+            />
+          )}
+        </Field>
+        <Field label="Description" disabled={busy}>
+          {(controlProps) => (
+            <Textarea
+              {...controlProps}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+            />
+          )}
+        </Field>
         <div>
-          <button
-            className="app-button app-button-muted"
+          <AppButton
+            variant="secondary"
             disabled={busy}
             onClick={() =>
               run(() =>
@@ -742,7 +761,7 @@ function TemplateEditor({
             }
           >
             Save details
-          </button>
+          </AppButton>
         </div>
       </div>
 
@@ -812,6 +831,7 @@ function QuestionEditor({
   const [choicesText, setChoicesText] = useState(
     (question?.choices ?? []).map((c) => c.label).join("\n"),
   );
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   useEffect(() => {
     if (!question) {return;}
@@ -852,115 +872,137 @@ function QuestionEditor({
   return (
     <div style={{ ...card }}>
       {question && (
+        <ConfirmDialog
+          open={confirmDeleteOpen}
+          title="Delete Question"
+          message={`Delete "${question.prompt}"? This cannot be undone.`}
+          confirmLabel="Delete"
+          danger
+          busy={busy}
+          onCancel={() => setConfirmDeleteOpen(false)}
+          onConfirm={() => {
+            setConfirmDeleteOpen(false);
+            void run(() =>
+              rpc("delete_evaluation_template_question", {
+                p_event_id: eventId,
+                p_question_id: question.id,
+              }),
+            );
+          }}
+        />
+      )}
+      {question && (
         <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
-          <button
-            className="app-button app-button-muted"
+          <AppButton
+            variant="secondary"
             disabled={busy || index === 0}
             onClick={() => onMove(index, -1)}
           >
             ↑
-          </button>
-          <button
-            className="app-button app-button-muted"
+          </AppButton>
+          <AppButton
+            variant="secondary"
             disabled={busy || index >= count - 1}
             onClick={() => onMove(index, 1)}
           >
             ↓
-          </button>
-          <button
-            className="app-button app-button-muted"
+          </AppButton>
+          <AppButton
+            variant="secondary"
             disabled={busy}
-            onClick={() =>
-              run(() =>
-                rpc("delete_evaluation_template_question", {
-                  p_event_id: eventId,
-                  p_question_id: question.id,
-                }),
-              )
-            }
+            onClick={() => setConfirmDeleteOpen(true)}
           >
             Delete
-          </button>
+          </AppButton>
         </div>
       )}
       <div style={{ display: "grid", gap: 8, marginTop: question ? 8 : 0 }}>
-        <input
-          placeholder={question ? "Question prompt" : "New question prompt"}
-          value={prompt}
-          disabled={busy}
-          onChange={(e) => setPrompt(e.target.value)}
-          style={{ padding: 8 }}
-        />
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <select
-            value={type}
+        <Field label="Prompt" disabled={busy}>
+          {(controlProps) => (
+            <Input
+              {...controlProps}
+              placeholder={question ? "Question prompt" : "New question prompt"}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+            />
+          )}
+        </Field>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <Field label="Question Type" disabled={busy}>
+            {(controlProps) => (
+              <Select
+                {...controlProps}
+                value={type}
+                onChange={(e) => setType(e.target.value as EvaluationQuestionType)}
+              >
+                {EVALUATION_QUESTION_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {questionTypeLabel(t)}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Checkbox
+            checked={required}
             disabled={busy}
-            onChange={(e) => setType(e.target.value as EvaluationQuestionType)}
-            style={{ padding: 6 }}
-          >
-            {EVALUATION_QUESTION_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {questionTypeLabel(t)}
-              </option>
-            ))}
-          </select>
-          <label style={{ fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={required}
-              disabled={busy}
-              onChange={(e) => setRequired(e.target.checked)}
-            />{" "}
-            Required
-          </label>
-          <label style={{ fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={allowComment}
-              disabled={busy}
-              onChange={(e) => setAllowComment(e.target.checked)}
-            />{" "}
-            Allow comment
-          </label>
+            onChange={(e) => setRequired(e.target.checked)}
+            label="Required"
+          />
+          <Checkbox
+            checked={allowComment}
+            disabled={busy}
+            onChange={(e) => setAllowComment(e.target.checked)}
+            label="Allow comment"
+          />
           {type === "rating" && (
-            <span style={{ fontSize: 13 }}>
-              Scale{" "}
-              <input
-                type="number"
-                value={ratingMin}
-                disabled={busy}
-                onChange={(e) => setRatingMin(Number(e.target.value))}
-                style={{ width: 52 }}
-              />{" "}
-              to{" "}
-              <input
-                type="number"
-                value={ratingMax}
-                disabled={busy}
-                onChange={(e) => setRatingMax(Number(e.target.value))}
-                style={{ width: 52 }}
-              />
-            </span>
+            <>
+              <Field label="Scale Min" disabled={busy}>
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    type="number"
+                    value={ratingMin}
+                    onChange={(e) => setRatingMin(Number(e.target.value))}
+                    style={{ width: 72 }}
+                  />
+                )}
+              </Field>
+              <Field label="Scale Max" disabled={busy}>
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    type="number"
+                    value={ratingMax}
+                    onChange={(e) => setRatingMax(Number(e.target.value))}
+                    style={{ width: 72 }}
+                  />
+                )}
+              </Field>
+            </>
           )}
         </div>
         {isChoiceType(type) && (
-          <textarea
-            placeholder="One choice per line"
-            value={choicesText}
-            disabled={busy}
-            onChange={(e) => setChoicesText(e.target.value)}
-            rows={4}
-            style={{ padding: 8 }}
-          />
+          <Field label="Choices (one per line)" disabled={busy}>
+            {(controlProps) => (
+              <Textarea
+                {...controlProps}
+                placeholder="One choice per line"
+                value={choicesText}
+                onChange={(e) => setChoicesText(e.target.value)}
+                rows={4}
+              />
+            )}
+          </Field>
         )}
         <div>
-          <button
-            className="app-button app-button-primary"
+          <AppButton
+            variant="primary"
             disabled={busy || !prompt.trim()}
             onClick={save}
           >
             {question ? "Save question" : "Add question"}
-          </button>
+          </AppButton>
         </div>
       </div>
     </div>
