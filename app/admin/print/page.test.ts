@@ -156,7 +156,10 @@ test("the Print Settings link's visibility uses the shared canonical helper for 
   );
   assert.match(source, /\{canManagePrintSettings \? \(/);
   assert.equal(/\.rpc\(\s*"has_event_task_authority"/.test(source), false);
-  assert.equal((source.match(/checkAdminEventTaskAuthority\(/g) || []).length, 1);
+  // Scoped to the print.manage call specifically -- a second, independent
+  // checkAdminEventTaskAuthority call for the distinct event.reports.view
+  // task now legitimately exists (see the Reports-link tests below).
+  assert.equal((source.match(/checkAdminEventTaskAuthority\(\s*"event\.print\.manage"/g) || []).length, 1);
 });
 
 test("Print Settings link authority fails closed and resets before the async check resolves", () => {
@@ -197,6 +200,96 @@ test("Print Settings link authority re-checks on every Admin working-Event chang
 test("printing itself (window.print) remains ungated, unchanged -- Print Center's own view/print action was never a distinct manage-level capability", () => {
   assert.match(source, /function handlePrint\(\) \{\s*\n\s*window\.print\(\);\s*\n\s*\}/);
   assert.match(source, /function printOnlyAttendee\(attendeeId: string\) \{/);
+});
+
+// -- Print Center: Exact-Authority Return Navigation Alignment --------------
+// The Reports link now uses the same established async, event-change-safe
+// Task Authority pattern already proven above for Print Settings --
+// checkAdminEventTaskAuthority("event.reports.view", eventId), the exact
+// task Reports' own route guard requires, never a proxy permission and
+// never a copy of the Print Settings check's own state/refs.
+
+test("the Dashboard link remains present and unconditional -- untouched by this change", () => {
+  assert.match(source, /<Link href="\/admin\/dashboard" className="app-button">\s*\n\s*← Dashboard\s*\n\s*<\/Link>/);
+});
+
+test("Print Settings retains its exact event.print.manage behavior, unmodified by the Reports-link addition", () => {
+  assert.match(
+    source,
+    /checkAdminEventTaskAuthority\(\s*"event\.print\.manage",\s*eventId,?\s*\)/,
+  );
+  assert.match(source, /\{canManagePrintSettings \? \(/);
+  assert.equal((source.match(/checkAdminEventTaskAuthority\(\s*"event\.print\.manage"/g) || []).length, 1);
+});
+
+test("the Reports link's visibility uses the shared canonical helper for event.reports.view -- the exact task Reports' own route guard requires, never a proxy permission", () => {
+  assert.match(
+    source,
+    /const \[canViewReports, setCanViewReports\] = useState\(false\);/,
+  );
+  assert.match(
+    source,
+    /checkAdminEventTaskAuthority\(\s*"event\.reports\.view",\s*eventId,?\s*\)/,
+  );
+  assert.match(source, /\{canViewReports \? \(/);
+  assert.equal((source.match(/checkAdminEventTaskAuthority\(\s*"event\.reports\.view"/g) || []).length, 1);
+  assert.equal(/hasPermission\([^)]*"can_manage_reports"/.test(source), false);
+});
+
+test("Reports is omitted, not disabled/errored/fallback-gated, when it is absent -- a plain conditional render with no else branch", () => {
+  const navStart = source.indexOf('aria-label="Print Center navigation"');
+  const navEnd = source.indexOf("</nav>", navStart);
+  const navBlock = source.slice(navStart, navEnd);
+
+  assert.match(
+    navBlock,
+    /\{canViewReports \? \(\s*\n\s*<Link href="\/admin\/reports" className="app-button">\s*\n\s*Reports\s*\n\s*<\/Link>\s*\n\s*\) : null\}/,
+  );
+  assert.equal(/disabled/i.test(navBlock), false);
+  assert.equal(/aria-disabled/.test(navBlock), false);
+});
+
+test("Reports authority fails closed and resets before the async check resolves, discards a stale response from an abandoned Event's check, and re-checks on every Admin working-Event change -- the same discipline already proven for Print Settings", () => {
+  const fn = source.slice(
+    source.indexOf("const runReportsAuthorityCheck = useCallback"),
+  );
+  const fnBody = fn.slice(0, fn.indexOf("}, []);"));
+
+  const resetIdx = fnBody.indexOf("setCanViewReports(false);");
+  const checkIdx = fnBody.indexOf("checkAdminEventTaskAuthority(");
+  assert.ok(resetIdx > -1 && checkIdx > -1);
+  assert.ok(resetIdx < checkIdx, "must reset before issuing the async check");
+
+  assert.match(fnBody, /const generation = \+\+reportsCheckGeneration\.current;/);
+  assert.match(
+    fnBody,
+    /if \(reportsCheckGeneration\.current === generation\) \{\s*\n\s*setCanViewReports\(result\.status === "allowed"\);/,
+  );
+  assert.equal(/setCanViewReports\(true\)/.test(source), false);
+
+  assert.match(
+    source,
+    /useEffect\(\(\) => \{\s*\n\s*runReportsAuthorityCheck\(\);\s*\n\s*\n\s*return subscribeToAdminWorkspace\(runReportsAuthorityCheck\);\s*\n\s*\}, \[runReportsAuthorityCheck\]\);/,
+  );
+});
+
+test("the Reports authority check owns its own independent generation counter and state -- never shares or reuses Print Settings' own printSettingsCheckGeneration/canManagePrintSettings", () => {
+  assert.match(source, /const reportsCheckGeneration = useRef\(0\);/);
+  const fnStart = source.indexOf("const runReportsAuthorityCheck = useCallback");
+  const fnEnd = source.indexOf("}, []);", fnStart) + "}, []);".length;
+  const fnSource = source.slice(fnStart, fnEnd);
+  assert.doesNotMatch(fnSource, /printSettingsCheckGeneration|canManagePrintSettings/);
+});
+
+test("no shell adapter or print-isolation behavior changed by the Reports-link authority addition", () => {
+  // The page's own comment names AdminShellAdapter to explain why it is
+  // deliberately not rendered -- so this checks for an actual render
+  // (an opening JSX tag), not the bare word anywhere in the file.
+  assert.equal(/<AdminShellAdapter\b/.test(source), false);
+  assert.match(source, /<AdminRouteGuard requiredTask="event\.print\.view">/);
+  assert.equal((source.match(/<AdminRouteGuard/g) || []).length, 1);
+  assert.match(source, /className="no-print"/);
+  assert.match(source, /body \* \{\s*\n\s*visibility: hidden;\s*\n\s*\}/);
 });
 
 // -- Admin Batch 2: Central UI Standard migration ---------------------------

@@ -470,6 +470,14 @@ function AdminPrintPageInner() {
   // any non-super-admin.
   const [canManagePrintSettings, setCanManagePrintSettings] = useState(false);
   const printSettingsCheckGeneration = useRef(0);
+  // Reports' own route guard requires event.reports.view -- a distinct
+  // task from this page's own event.print.view, and not guaranteed to
+  // travel with it under every profile/manual-grant combination. This
+  // link is shown only when the admin holds event.reports.view for
+  // their own current working Event, the same exact check Reports'
+  // route guard performs -- never a proxy permission.
+  const [canViewReports, setCanViewReports] = useState(false);
+  const reportsCheckGeneration = useRef(0);
   const printLoadGenerationRef = useRef(0);
   const printInitRef = useRef<() => void>(() => {});
 
@@ -515,6 +523,34 @@ function AdminPrintPageInner() {
 
     return subscribeToAdminWorkspace(runPrintSettingsAuthorityCheck);
   }, [runPrintSettingsAuthorityCheck]);
+
+  const runReportsAuthorityCheck = useCallback(() => {
+    const generation = ++reportsCheckGeneration.current;
+    const eventId = getCurrentAdminEvent()?.id ?? null;
+
+    // Reset before the async check resolves: a prior Event's authority
+    // must never remain effective while the new Event's check is still
+    // unresolved.
+    setCanViewReports(false);
+
+    if (!eventId) {
+      return;
+    }
+
+    void checkAdminEventTaskAuthority("event.reports.view", eventId).then(
+      (result) => {
+        if (reportsCheckGeneration.current === generation) {
+          setCanViewReports(result.status === "allowed");
+        }
+      },
+    );
+  }, []);
+
+  useEffect(() => {
+    runReportsAuthorityCheck();
+
+    return subscribeToAdminWorkspace(runReportsAuthorityCheck);
+  }, [runReportsAuthorityCheck]);
 
   useEffect(() => {
     if (!admin) {
@@ -1042,9 +1078,11 @@ function AdminPrintPageInner() {
         <Link href="/admin/dashboard" className="app-button">
           ← Dashboard
         </Link>
-        <Link href="/admin/reports" className="app-button">
-          Reports
-        </Link>
+        {canViewReports ? (
+          <Link href="/admin/reports" className="app-button">
+            Reports
+          </Link>
+        ) : null}
         {canManagePrintSettings ? (
           <Link href="/admin/print-settings" className="app-button">
             Print Settings
