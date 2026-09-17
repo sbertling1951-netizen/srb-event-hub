@@ -33,7 +33,11 @@ test("Imports always retains its normal guarded presentation", () => {
 
 test("Validation Rules has one guarded route path", () => {
   assert.ok(validationRulesSource.includes('AdminRouteGuard requiredTask="event.validation_rules.manage"'));
-  assert.ok(validationRulesSource.includes("<PageNavigation"));
+  // PageNavigation was retired in favor of the canonical AdminShellAdapter
+  // backTarget (Central UI: Modernize Validation Rules and Confirm Rule
+  // Deletion) -- unrelated to embedded-mode retirement, which this test
+  // otherwise covers.
+  assert.ok(!validationRulesSource.includes("<PageNavigation"));
   assert.ok(!validationRulesSource.includes("useSearchParams"));
   assert.ok(!validationRulesSource.includes("isEmbedded"));
   assert.ok(!validationRulesSource.includes("admin-embedded-shell"));

@@ -9,9 +9,11 @@ import {
 } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import PageNavigation from "@/components/layout/PageNavigation";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { Alert, type AlertTone } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
@@ -146,6 +148,36 @@ function scopeLabel(rule: ValidationRule, events: EventOption[]) {
   return found ? found.name || "Specific Event" : "Specific Event";
 }
 
+// Pure, presentation-only classification of this page's own existing
+// status/flash confirmation text into an Alert tone -- never a second
+// source of any message itself (every setStatus/showFlash call site is
+// unchanged). Mirrors the same heuristic already established for
+// Checklist/Event Staff/Admin Users.
+export function validationRuleStatusTone(message: string): AlertTone {
+  const lower = message.toLowerCase();
+
+  if (lower.includes("failed") || lower.startsWith("could not")) {
+    return "danger";
+  }
+
+  if (lower.endsWith("...")) {
+    return "info";
+  }
+
+  if (
+    lower.startsWith("loaded") ||
+    lower === "rule updated." ||
+    lower === "rule created." ||
+    lower === "rule deleted." ||
+    lower === "rule disabled." ||
+    lower === "rule enabled."
+  ) {
+    return "success";
+  }
+
+  return "neutral";
+}
+
 function AdminValidationRulesPageInner() {
   const [currentEvent, setCurrentEvent] = useState<EventContext | null>(null);
   const [rules, setRules] = useState<ValidationRule[]>([]);
@@ -153,12 +185,12 @@ function AdminValidationRulesPageInner() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
+  const [pendingDeleteRule, setPendingDeleteRule] = useState<ValidationRule | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading validation rules...");
   const [form, setForm] = useState<RuleFormState>(createEmptyForm());
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const pageTitle = "Validation Rules";
 
   const { admin } = useAdmin();
   const { isCompact } = useShellInterfaceCapabilities();
@@ -341,14 +373,10 @@ function AdminValidationRulesPageInner() {
     }
   }
 
+  // Confirmation now happens in the ConfirmDialog rendered from
+  // pendingDeleteRule -- this function itself is the exact prior governed
+  // deletion path, called exactly once, only from that dialog's onConfirm.
   async function handleDeleteRule(ruleId: string) {
-    const confirmed = window.confirm(
-      "Delete this validation rule? This cannot be undone.",
-    );
-    if (!confirmed) {
-      return;
-    }
-
     try {
       setDeletingRuleId(ruleId);
       setError(null);
@@ -436,54 +464,64 @@ function AdminValidationRulesPageInner() {
     const deleting = deletingRuleId === rule.id;
     return (
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button
-          type="button"
-          onClick={() => startEditRule(rule)}
-          style={secondaryButtonStyle}
-        >
+        <AppButton variant="secondary" onClick={() => startEditRule(rule)}>
           Edit
-        </button>
-        <button
-          type="button"
-          onClick={() => void handleToggleActive(rule)}
-          style={secondaryButtonStyle}
-        >
+        </AppButton>
+        <AppButton variant="secondary" onClick={() => void handleToggleActive(rule)}>
           {rule.is_active ? "Disable" : "Enable"}
-        </button>
-        <button
-          type="button"
-          onClick={() => void handleDeleteRule(rule.id)}
-          style={dangerButtonStyle}
+        </AppButton>
+        <AppButton
+          variant="danger"
+          onClick={() => setPendingDeleteRule(rule)}
           disabled={deleting}
         >
           {deleting ? "Deleting..." : "Delete"}
-        </button>
+        </AppButton>
       </div>
     );
   }
 
+  const statusOrFlash = flashMessage ?? status;
+
   return (
     <div style={{ display: "grid", gap: 18 }}>
-      <PageNavigation
-        homeHref="/admin/dashboard"
-        homeLabel="Dashboard"
-        parentHref="/admin/attendees"
-        parentLabel="Attendees"
+      <ConfirmDialog
+        open={!!pendingDeleteRule}
+        title="Delete Validation Rule"
+        message={
+          pendingDeleteRule
+            ? `Delete the ${fieldLabel(pendingDeleteRule.field_name)} rule "${pendingDeleteRule.message}"? This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        danger
+        busy={!!pendingDeleteRule && deletingRuleId === pendingDeleteRule.id}
+        onCancel={() => setPendingDeleteRule(null)}
+        onConfirm={() => {
+          if (!pendingDeleteRule) {
+            return;
+          }
+          const ruleId = pendingDeleteRule.id;
+          setPendingDeleteRule(null);
+          void handleDeleteRule(ruleId);
+        }}
       />
 
       <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>{pageTitle}</h1>
           <div style={{ fontSize: 14, opacity: 0.8 }}>
             Superadmin rule editor for Data Review and future validation checks.
             {currentEvent?.name || currentEvent?.eventName
               ? ` Current admin event: ${currentEvent.name || currentEvent.eventName}`
               : ""}
           </div>
-          <div style={{ marginTop: 12, fontSize: 14 }}>{status}</div>
-          {flashMessage ? (
-            <div style={successBoxStyle}>{flashMessage}</div>
+          <div style={{ marginTop: 12 }}>
+            <Alert tone={validationRuleStatusTone(statusOrFlash)}>{statusOrFlash}</Alert>
+          </div>
+          {error ? (
+            <div style={{ marginTop: 12 }}>
+              <Alert tone="danger">{error}</Alert>
+            </div>
           ) : null}
-          {error ? <div style={errorBoxStyle}>{error}</div> : null}
       </div>
 
         <div className="card" style={{ padding: 18 }}>
@@ -505,13 +543,9 @@ function AdminValidationRulesPageInner() {
                 />
               )}
             </Field>
-            <button
-              type="button"
-              onClick={startNewRule}
-              style={secondaryButtonStyle}
-            >
+            <AppButton variant="secondary" onClick={startNewRule}>
               New Rule
-            </button>
+            </AppButton>
           </div>
         </div>
 
@@ -653,22 +687,16 @@ function AdminValidationRulesPageInner() {
               flexWrap: "wrap",
             }}
           >
-            <button
-              type="button"
+            <AppButton
+              variant="primary"
               onClick={() => void handleSaveRule()}
-              style={primaryButtonStyle}
               disabled={saving}
             >
               {saving ? "Saving..." : form.id ? "Update Rule" : "Create Rule"}
-            </button>
-            <button
-              type="button"
-              onClick={startNewRule}
-              style={secondaryButtonStyle}
-              disabled={saving}
-            >
+            </AppButton>
+            <AppButton variant="secondary" onClick={startNewRule} disabled={saving}>
               Clear Form
-            </button>
+            </AppButton>
           </div>
         </div>
 
@@ -754,59 +782,20 @@ function AdminValidationRulesPageInner() {
 function AdminValidationRulesPageContent() {
   return (
     <AdminRouteGuard requiredTask="event.validation_rules.manage">
-      <AdminShellAdapter pageTitle="Validation Rules">
+      <AdminShellAdapter
+        pageTitle="Validation Rules"
+        backTarget={{ href: "/admin/attendees", label: "Attendees" }}
+      >
         <AdminValidationRulesPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>
   );
 }
 
-const primaryButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "none",
-  background: "#111827",
-  color: "white",
-  fontWeight: 700,
-  cursor: "pointer",
-};
-const secondaryButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  background: "white",
-  fontWeight: 700,
-  cursor: "pointer",
-};
-const dangerButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "1px solid #ef4444",
-  background: "#fff1f2",
-  color: "#b91c1c",
-  fontWeight: 700,
-  cursor: "pointer",
-};
-const errorBoxStyle: CSSProperties = {
-  marginTop: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #e2b4b4",
-  background: "#fff3f3",
-  color: "#8a1f1f",
-};
-const successBoxStyle: CSSProperties = {
-  marginTop: 12,
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #bbf7d0",
-  background: "#f0fdf4",
-  color: "#166534",
-};
 const thStyle: CSSProperties = {
   textAlign: "left",
   padding: "10px 8px",
-  borderBottom: "2px solid #ddd",
+  borderBottom: "2px solid var(--color-border-default)",
   whiteSpace: "nowrap",
   verticalAlign: "top",
   fontSize: 12,
@@ -815,7 +804,7 @@ const thStyle: CSSProperties = {
 const tdStyle: CSSProperties = {
   textAlign: "left",
   padding: "10px 8px",
-  borderTop: "1px solid #ddd",
+  borderTop: "1px solid var(--color-border-default)",
   verticalAlign: "top",
   whiteSpace: "normal",
 };
