@@ -37,16 +37,11 @@ export function buildAdminNavSections(
   pendingPassportRefundCount = 0,
 ): ShellNavSection[] {
   // -- Admin workspace (new parent; Admin Users / Permissions / Tenant
-  //    Administration / Registry Provider Catalog / Passport Refunds) --
+  //    Administration / Passport Refunds) --
   const adminWorkspaceChildren: ShellNavItem[] = [
     hasPermission(admin, "can_manage_admins") && { id: "admin-users", label: "Admin Users", href: "/admin/admin-users" },
     hasPermission(admin, "can_manage_admins") && { id: "permissions", label: "Permissions", href: "/admin/permissions" },
     admin?.isSuperAdmin && { id: "tenants", label: "Tenant Administration", href: "/admin/tenants" },
-    admin?.isSuperAdmin && {
-      id: "registry-providers",
-      label: "Registry Provider Catalog",
-      href: "/admin/registry-providers",
-    },
     admin?.isSuperAdmin && {
       id: "passport-refunds",
       label: "Passport Refunds",
@@ -68,6 +63,31 @@ export function buildAdminNavSections(
       label: "Admin",
       href: "/admin/admin",
       children: adminWorkspaceChildren,
+    };
+
+  // -- Catalogs (new parent for reusable, curated platform reference
+  //    data; its only current child is the existing Registry Provider
+  //    Catalog route, moved here from the Admin workspace submenu above).
+  //    Registry Provider Catalog's own visibility gate (admin?.isSuperAdmin)
+  //    is reproduced verbatim -- not loosened, tightened, or duplicated.
+  const catalogsChildren: ShellNavItem[] = [
+    admin?.isSuperAdmin && {
+      id: "registry-providers",
+      label: "Registry Provider Catalog",
+      href: "/admin/registry-providers",
+    },
+  ].filter(Boolean) as ShellNavItem[];
+
+  // Like the Admin workspace parent above, /admin/catalogs has no
+  // independent content of its own beyond listing these children -- so
+  // the parent itself is hidden once it would have nothing to show,
+  // rather than rendering as a dead destination.
+  const catalogsItem: ShellNavItem | false =
+    catalogsChildren.length > 0 && {
+      id: "catalogs",
+      label: "Catalogs",
+      href: "/admin/catalogs",
+      children: catalogsChildren,
     };
 
   // -- Event (existing Event Admin page promoted to this group's parent;
@@ -260,6 +280,7 @@ export function buildAdminNavSections(
   const items: ShellNavItem[] = [
     hasPermission(admin, "can_view_admin_dashboard") && { id: "dashboard", label: "Dashboard", href: "/admin/dashboard" },
     adminWorkspaceItem,
+    catalogsItem,
     eventItem,
     attendeesItem,
     agendaItem,

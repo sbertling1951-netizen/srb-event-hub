@@ -22,6 +22,11 @@ test("the workspace is guarded by exact Platform authority and uses the canonica
   );
 });
 
+test("the shell-level parent return target points to the Catalogs workspace, using the existing AdminShellAdapter backTarget mechanism", () => {
+  assert.match(SOURCE, /backTarget=\{\{ href: "\/admin\/catalogs", label: "Catalogs" \}\}/);
+  assert.equal((SOURCE.match(/backTarget=/g) || []).length, 1);
+});
+
 test("every provider action row uses the shared FormActions layout primitive", () => {
   assert.match(SOURCE, /import \{ FormActions \} from "@\/components\/ui\/FormActions";/);
   assert.equal((SOURCE.match(/<FormActions>/g) || []).length, 3);

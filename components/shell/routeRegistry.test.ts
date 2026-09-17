@@ -332,6 +332,12 @@ test("the new Admin workspace overview (/admin/admin) uses the canonical Admin s
   assert.equal(resolveShellMode("/admin/admin/history"), "legacy");
 });
 
+test("the new Catalogs workspace overview (/admin/catalogs) is canonical -- /admin/catalogs is a canonical Admin route while Registry Provider Catalog's own route behavior remains intact", () => {
+  assert.equal(resolveShellMode("/admin/catalogs"), "canonical-admin");
+  assert.equal(resolveShellMode("/admin/catalogs/history"), "legacy");
+  assert.equal(resolveShellMode("/admin/registry-providers"), "canonical-admin");
+});
+
 /**
  * Defect-class regression proof (Admin only, per this repair's scope).
  *
@@ -392,13 +398,14 @@ test("every Admin page.tsx that actually renders AdminShellAdapter is classified
     adapterRoutes.push(routePath || "/admin");
   }
 
-  // Ground truth as of Central Navigation Batch 1 (which added
-  // /admin/admin, the new Admin workspace overview): 40 Admin routes
-  // render their own AdminShellAdapter directly (verified by direct
-  // enumeration, not assumed) -- this pins the count so a route silently
-  // gaining or losing its adapter render is visible here too, not just a
-  // resolve() check on routes this file already knows to ask about.
-  assert.equal(adapterRoutes.length, 40, `expected 40 Admin routes rendering AdminShellAdapter, found ${adapterRoutes.length}: ${adapterRoutes.join(", ")}`);
+  // Ground truth as of Catalogs Workspace Batch 3A (which added
+  // /admin/catalogs, the new Catalogs parent workspace overview): 41
+  // Admin routes render their own AdminShellAdapter directly (verified by
+  // direct enumeration, not assumed) -- this pins the count so a route
+  // silently gaining or losing its adapter render is visible here too,
+  // not just a resolve() check on routes this file already knows to ask
+  // about.
+  assert.equal(adapterRoutes.length, 41, `expected 41 Admin routes rendering AdminShellAdapter, found ${adapterRoutes.length}: ${adapterRoutes.join(", ")}`);
 
   for (const routePath of adapterRoutes) {
     assert.equal(

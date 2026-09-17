@@ -135,6 +135,7 @@ const EXACT_CANONICAL_ADMIN_ROUTES: readonly string[] = [
   "/admin/agenda",
   "/admin/agenda/categories",
   "/admin/attendees",
+  "/admin/catalogs",
   "/admin/checklist",
   "/admin/checkin",
   "/admin/data-review",

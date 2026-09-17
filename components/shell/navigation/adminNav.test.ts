@@ -126,6 +126,46 @@ test("the Admin workspace parent itself disappears entirely when every one of it
   assert.equal(findItem(buildAdminNavSections(noAdminAccess), "admin-users"), null);
 });
 
+test("Registry Provider Catalog is nested under the Catalogs parent, never under the Admin workspace parent, gated on isSuperAdmin verbatim", () => {
+  const superAdmin = buildAdmin({ isSuperAdmin: true });
+  const tenantAdmin = buildAdmin({ permissionMap: { can_manage_admins: true } });
+
+  const found = findItem(buildAdminNavSections(superAdmin), "registry-providers");
+  assert.ok(found);
+  assert.equal(found.item.label, "Registry Provider Catalog");
+  assert.equal(found.item.href, "/admin/registry-providers");
+  assert.equal(found.ownerId, "catalogs");
+  assert.notEqual(found.ownerId, "admin-workspace");
+  assert.equal(findItem(buildAdminNavSections(tenantAdmin), "registry-providers"), null);
+  assert.equal(findItem(buildAdminNavSections(null), "registry-providers"), null);
+});
+
+test("the Catalogs parent renders with its href/label and is absent entirely when every one of its children is hidden -- a dead parent never renders", () => {
+  const superAdmin = buildAdmin({ isSuperAdmin: true });
+  const nonSuperAdmin = buildAdmin({ permissionMap: { can_manage_admins: true } });
+
+  const catalogs = findItem(buildAdminNavSections(superAdmin), "catalogs");
+  assert.ok(catalogs);
+  assert.equal(catalogs.item.label, "Catalogs");
+  assert.equal(catalogs.item.href, "/admin/catalogs");
+
+  assert.equal(findItem(buildAdminNavSections(nonSuperAdmin), "catalogs"), null);
+  assert.equal(findItem(buildAdminNavSections(null), "catalogs"), null);
+});
+
+test("Catalogs derives its links from the canonical Admin nav model, not a copied visibility list -- getAdminNavItemChildren('catalogs') matches buildAdminNavSections() exactly", () => {
+  const superAdmin = buildAdmin({ isSuperAdmin: true });
+  const nonSuperAdmin = buildAdmin({ permissionMap: { can_manage_admins: true } });
+
+  const direct = findItem(buildAdminNavSections(superAdmin), "catalogs");
+  const viaHelper = getAdminNavItemChildren(superAdmin, null, "catalogs");
+  assert.deepEqual(viaHelper, direct?.item.children);
+  assert.deepEqual(viaHelper.map((c) => c.id), ["registry-providers"]);
+
+  assert.deepEqual(getAdminNavItemChildren(nonSuperAdmin, null, "catalogs"), []);
+  assert.deepEqual(getAdminNavItemChildren(null, null, "catalogs"), []);
+});
+
 test("canonical Tenant authority exposes Add Event, nested under the Event parent, without any working-Event access", () => {
   const zeroEventTenantAdmin = buildAdmin({
     eventAccessRows: [],
@@ -326,6 +366,7 @@ test("a full-access admin sees the complete approved top-level order and every d
   assert.deepEqual(topLevelIds(sections), [
     "dashboard",
     "admin-workspace",
+    "catalogs",
     "events",
     "attendees",
     "agenda",
@@ -343,8 +384,9 @@ test("a full-access admin sees the complete approved top-level order and every d
     "admin-users",
     "permissions",
     "tenants",
-    "registry-providers",
     "passport-refunds",
+    "catalogs",
+    "registry-providers",
     "events",
     "add-event",
     "checklist",

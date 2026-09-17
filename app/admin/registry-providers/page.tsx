@@ -302,6 +302,7 @@ export default function RegistryProviderCatalogPage() {
       <AdminShellAdapter
         pageTitle="Registry Provider Catalog"
         pageSubtitle="Platform-owned catalog curation -- no organizer-facing surface yet"
+        backTarget={{ href: "/admin/catalogs", label: "Catalogs" }}
       >
         <RegistryProviderCatalogWorkspace />
       </AdminShellAdapter>
