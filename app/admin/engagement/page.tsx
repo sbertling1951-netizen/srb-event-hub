@@ -4,6 +4,11 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { Alert } from "@/components/ui/Alert";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Field, Select } from "@/components/ui/Field";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { PageSection } from "@/components/ui/PageSection";
 import {
   getCurrentAdminEvent,
   useAdminWorkingEventScope,
@@ -75,6 +80,14 @@ function EngagementPageInner() {
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [activityLimit, setActivityLimit] = useState<ActivityLimitOption>("100");
 
+  // Presentation-only: true from mount until loadStats's own generation
+  // check confirms this call's result is the current one (or there is no
+  // working Event at all). Never gates a query itself -- only whether the
+  // summary cards/feature grid/recent-activity list render their real
+  // values or a LoadingState, so zero-valued cards are never shown as if
+  // they were the loaded answer.
+  const [loading, setLoading] = useState(true);
+
   const [featureStats, setFeatureStats] = useState({
     attendeeLocator: 0,
     agenda: 0,
@@ -96,11 +109,19 @@ function EngagementPageInner() {
     setActiveRegistrationsError(null);
     setRecentActivity([]);
     setFeatureStats(EMPTY_FEATURE_STATS);
+    setLoading(true);
     loadStatsRef.current();
   });
 
   const loadStats = useCallback(async () => {
     const generation = captureGeneration();
+    // Every invocation of loadStats -- initial mount, a working-Event
+    // switch, and a Show-filter change (activityLimit is a useCallback dep,
+    // so a new filter value re-runs this whole function) -- is a genuine
+    // reload of remote data and must synchronously enter loading before
+    // its request begins, so a filter change can never leave stale/zero
+    // values on screen looking like the current answer.
+    setLoading(true);
     const currentEvent = getCurrentAdminEvent();
     if (!currentEvent?.id) {
       setStats({ loggedIn: 0, started: 0, submitted: 0 });
@@ -117,6 +138,7 @@ function EngagementPageInner() {
         checkIn: 0,
         participants: 0,
       });
+      setLoading(false);
       return;
     }
 
@@ -247,6 +269,7 @@ function EngagementPageInner() {
 
     setRecentActivity(recentActivity ?? []);
     setFeatureStats(featureCounts);
+    setLoading(false);
   }, [activityLimit, captureGeneration, isCurrent]);
 
   useEffect(() => {
@@ -287,10 +310,11 @@ function EngagementPageInner() {
   const cards: { title: string; value: number | string }[] = [
     {
       title: "Active Registrations",
-      value:
-        activeRegistrations !== null
-          ? activeRegistrations
-          : activeRegistrationsError || "Unavailable",
+      // A neutral placeholder only -- never the error text itself. The
+      // one detailed, user-facing failure surface is the Alert below;
+      // showing activeRegistrationsError here too would be a second,
+      // redundant rendering of the same failure.
+      value: activeRegistrations !== null ? activeRegistrations : "Unavailable",
     },
     { title: "Logged Into App", value: stats.loggedIn },
     { title: "Evaluations Started", value: stats.started },
@@ -309,113 +333,100 @@ function EngagementPageInner() {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
-      <h1 style={{ marginBottom: 6 }}>Attendee Engagement</h1>
-      <p style={{ color: "#666", marginBottom: 24 }}>
-        Monitor attendee activity and engagement throughout your event.
-      </p>
+    <div style={{ display: "grid", gap: "var(--space-6)", minWidth: 0 }}>
+      <PageSection variant="card">
+        <p className="app-subtle-text" style={{ marginTop: 0 }}>
+          Monitor attendee activity and engagement throughout your event.
+        </p>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 16,
-          marginBottom: 24,
-        }}
-      >
-        {cards.map((card) => (
-          <div
-            key={card.title}
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 10,
-              padding: 16,
-              background: "#fff",
-            }}
-          >
-            <div style={{ fontSize: 14, color: "#666" }}>{card.title}</div>
-            <div
-              style={
-                typeof card.value === "number"
-                  ? { fontSize: 32, fontWeight: 700, marginTop: 8 }
-                  : {
-                      fontSize: 14,
-                      fontWeight: 600,
-                      marginTop: 8,
-                      color: "#b91c1c",
-                    }
-              }
-            >
-              {card.value}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <section style={{ border: "1px solid #ddd", borderRadius: 10, padding: 16 }}>
-        <h2>Feature Activity</h2>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: 12,
-          }}
-        >
-          {featureCards.map((card) => (
-            <div
-              key={card.title}
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: 10,
-                padding: 12,
-                background: "#fff",
-              }}
-            >
-              <div style={{ fontSize: 13, color: "#666" }}>{card.title}</div>
-              <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6 }}>
-                {card.value}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <div style={{ display: "grid", gap: 16 }}>
-        <section
-          style={{ border: "1px solid #ddd", borderRadius: 10, padding: 16 }}
-        >
+        {loading ? (
+          <LoadingState message="Loading engagement data..." />
+        ) : (
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              marginBottom: 16,
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: "var(--space-4)",
             }}
           >
-            <h2 style={{ margin: 0 }}>Recent Activity</h2>
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                fontSize: 14,
-                color: "#666",
-              }}
-            >
-              <span>Show:</span>
-              <select
-                value={activityLimit}
-                onChange={handleActivityLimitChange}
+            {cards.map((card) => (
+              <div
+                key={card.title}
                 style={{
-                  border: "1px solid #ddd",
-                  borderRadius: 8,
-                  padding: "6px 10px",
-                  background: "#fff",
-                  color: "#111",
-                  fontSize: 14,
+                  border: "var(--border-width-default) solid var(--color-border-default)",
+                  borderRadius: "var(--radius-medium)",
+                  padding: "var(--space-4)",
+                  background: "var(--color-bg-panel)",
                 }}
               >
+                <div className="app-subtle-text" style={{ fontSize: 14 }}>{card.title}</div>
+                <div
+                  style={
+                    typeof card.value === "number"
+                      ? { fontSize: 32, fontWeight: 700, marginTop: "var(--space-2)" }
+                      : {
+                          fontSize: 14,
+                          fontWeight: 600,
+                          marginTop: "var(--space-2)",
+                          color: "var(--color-text-muted)",
+                        }
+                  }
+                >
+                  {card.value}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* The sole detailed, user-facing failure surface for Active
+            Registrations (Central UI Standard) -- the card above shows
+            only the neutral "Unavailable" placeholder when this error
+            exists, never the error text itself, so the failure is
+            rendered exactly once, here. */}
+        {activeRegistrationsError ? (
+          <div style={{ marginTop: "var(--space-4)" }}>
+            <Alert tone="danger">{activeRegistrationsError}</Alert>
+          </div>
+        ) : null}
+      </PageSection>
+
+      <PageSection variant="section" title="Feature Activity">
+        {loading ? (
+          <LoadingState message="Loading feature activity..." />
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: "var(--space-3)",
+            }}
+          >
+            {featureCards.map((card) => (
+              <div
+                key={card.title}
+                style={{
+                  border: "var(--border-width-default) solid var(--color-border-default)",
+                  borderRadius: "var(--radius-medium)",
+                  padding: "var(--space-3)",
+                  background: "var(--color-bg-panel)",
+                }}
+              >
+                <div className="app-subtle-text" style={{ fontSize: "var(--font-size-caption)" }}>{card.title}</div>
+                <div style={{ fontSize: 26, fontWeight: 700, marginTop: "var(--space-2)" }}>
+                  {card.value}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </PageSection>
+
+      <PageSection variant="section" title="Recent Activity">
+        <div style={{ display: "grid", gap: "var(--space-4)" }}>
+          <Field label="Show">
+            {(controlProps) => (
+              <Select {...controlProps} value={activityLimit} onChange={handleActivityLimitChange}>
                 <option value="10">10</option>
                 <option value="25">25</option>
                 <option value="50">50</option>
@@ -423,13 +434,16 @@ function EngagementPageInner() {
                 <option value="250">250</option>
                 <option value="500">500</option>
                 <option value="all">All</option>
-              </select>
-            </label>
-          </div>
-          {recentActivity.length === 0 ? (
-            <p>No recent activity yet.</p>
+              </Select>
+            )}
+          </Field>
+
+          {loading ? (
+            <LoadingState message="Loading recent activity..." />
+          ) : recentActivity.length === 0 ? (
+            <EmptyState message="No recent activity yet." />
           ) : (
-            <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ display: "grid", gap: "var(--space-2)" }}>
               {recentActivity.map((item, index) => {
                 const attendee = Array.isArray(item.attendees)
                   ? item.attendees[0]
@@ -441,8 +455,8 @@ function EngagementPageInner() {
                     style={{
                       display: "flex",
                       justifyContent: "space-between",
-                      borderBottom: "1px solid #eee",
-                      paddingBottom: 6,
+                      borderBottom: "var(--border-width-default) solid var(--color-border-default)",
+                      paddingBottom: "var(--space-2)",
                     }}
                   >
                     <div>
@@ -451,11 +465,11 @@ function EngagementPageInner() {
                           ? `${attendee.pilot_first} ${attendee.pilot_last}`
                           : "Unknown Attendee"}
                       </strong>
-                      <div style={{ fontSize: 13, color: "#666" }}>
+                      <div className="app-subtle-text" style={{ fontSize: "var(--font-size-caption)" }}>
                         {formatActivityLabel(item.activity_type)}
                       </div>
                     </div>
-                    <div style={{ fontSize: 13, color: "#666" }}>
+                    <div className="app-subtle-text" style={{ fontSize: "var(--font-size-caption)" }}>
                       {new Date(item.activity_time).toLocaleTimeString([], {
                         hour: "numeric",
                         minute: "2-digit",
@@ -466,15 +480,14 @@ function EngagementPageInner() {
               })}
             </div>
           )}
-        </section>
+        </div>
+      </PageSection>
 
-        <section
-          style={{ border: "1px solid #ddd", borderRadius: 10, padding: 16 }}
-        >
-          <h2>Evaluation Progress</h2>
-          <p>Evaluation completion metrics will appear here.</p>
-        </section>
-      </div>
+      <PageSection variant="section" title="Evaluation Progress">
+        <p className="app-subtle-text" style={{ margin: 0 }}>
+          Evaluation completion metrics will appear here.
+        </p>
+      </PageSection>
     </div>
   );
 }
@@ -497,7 +510,10 @@ export default function EngagementPage() {
     // closes the "reachable by any authenticated user" gap without
     // asserting a privilege-group-specific rule the guard cannot express.
     <AdminRouteGuard>
-      <AdminShellAdapter pageTitle="Attendee Engagement">
+      <AdminShellAdapter
+        pageTitle="Attendee Engagement"
+        backTarget={{ href: "/admin/events", label: "Event Admin" }}
+      >
         <EngagementPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>
