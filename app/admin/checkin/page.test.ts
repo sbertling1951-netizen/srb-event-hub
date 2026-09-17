@@ -489,3 +489,51 @@ test("the empty browse-result state uses the canonical EmptyState primitive, not
   );
   assert.match(source, /<EmptyState message="No attendees found\." \/>/);
 });
+
+// -- Central UI: return navigation and loading-state alignment --------------
+// Confined to the shell backTarget and the initial-loading display only --
+// no workspace section, nav/route-registry/authority change, empty-state
+// change, button-row change, or data/filter/check-in-workflow change.
+
+test("the shell backTarget points to Attendees (/admin/attendees), completing the same pattern every other canonical nav child already uses", () => {
+  assert.match(
+    source,
+    /<AdminShellAdapter\s*\n\s*pageTitle="Admin Check-In"\s*\n\s*backTarget=\{\{ href: "\/admin\/attendees", label: "Attendees" \}\}\s*\n\s*>/,
+  );
+  assert.equal((source.match(/<AdminShellAdapter/g) || []).length, 1);
+});
+
+test("the original task guard and shell page title remain exactly as before -- no double shell, no bespoke guard, no workspace/nav import introduced", () => {
+  assert.match(source, /<AdminRouteGuard requiredTask="event\.checkin\.manage">/);
+  assert.equal((source.match(/<AdminRouteGuard/g) || []).length, 1);
+  assert.equal(/getAdminNavItemChildren/.test(source), false);
+  assert.equal(/from "@\/components\/shell\/navigation\/adminNav"/.test(source), false);
+});
+
+test("the pre-existing conditional AdminReturnLink is unchanged and coexists with the new structural Attendees backTarget", () => {
+  assert.match(
+    source,
+    /import \{ AdminReturnLink \} from "@\/components\/admin\/AdminReturnLink";/,
+  );
+  assert.match(source, /<AdminReturnLink searchParams=\{searchParams\} \/>/);
+  assert.equal((source.match(/<AdminReturnLink/g) || []).length, 1);
+});
+
+test("the initial-loading display uses the shared LoadingState primitive, gated on the existing loading boolean -- the general post-load status Alert channel is otherwise unchanged", () => {
+  assert.match(source, /import \{ LoadingState \} from "@\/components\/ui\/LoadingState";/);
+  assert.match(
+    source,
+    /\{loading \? <LoadingState message=\{status\} \/> : <Alert tone="neutral">\{status\}<\/Alert>\}/,
+  );
+  // The same status/setLoading pairing this gate depends on is untouched.
+  assert.match(source, /const \[status, setStatus\] = useState\("Loading check-in\.\.\."\);/);
+  assert.match(source, /const \[loading, setLoading\] = useState\(true\);/);
+});
+
+test("no workspace section, nav-model change, authority change, or data/filter/check-in-workflow behavior was introduced by this pass", () => {
+  assert.equal(/PageSection variant="card" title="Attendees Workspace"/.test(source), false);
+  assert.equal(/requiredPermission|requiredTenantAuthority|requiredPlatformAuthority|requiredVendorCatalogAuthority/.test(source), false);
+  // The same complete_admin_checkin governed RPC path is still the sole
+  // mutation entry point -- unchanged by this pass.
+  assert.match(source, /complete_admin_checkin/);
+});

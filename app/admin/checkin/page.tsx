@@ -19,6 +19,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox } from "@/components/ui/Field";
+import { LoadingState } from "@/components/ui/LoadingState";
 import { PageSection } from "@/components/ui/PageSection";
 import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
 import {
@@ -186,7 +187,10 @@ function classifyCheckinFailure(error: unknown): CheckinOperationFailure {
 export default function AdminCheckinPage() {
   return (
     <AdminRouteGuard requiredTask="event.checkin.manage">
-      <AdminShellAdapter pageTitle="Admin Check-In">
+      <AdminShellAdapter
+        pageTitle="Admin Check-In"
+        backTarget={{ href: "/admin/attendees", label: "Attendees" }}
+      >
         <AdminCheckinPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>
@@ -872,7 +876,7 @@ function AdminCheckinPageInner() {
         }}
       />
 
-      <Alert tone="neutral">{status}</Alert>
+      {loading ? <LoadingState message={status} /> : <Alert tone="neutral">{status}</Alert>}
 
       {error ? (
         <Alert tone="danger">
