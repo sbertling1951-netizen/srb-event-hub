@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildAdminNavSections } from "@/components/shell/navigation/adminNav";
+import { buildAdminNavSections, getAdminNavItemChildren } from "@/components/shell/navigation/adminNav";
 import type { AdminAccessResult } from "@/lib/getCurrentAdminAccess";
 
 // Central Navigation Batch 1: buildAdminNavSections() rebuilt around
@@ -416,4 +416,60 @@ test("a subordinate-profile admin (no event-staff preset hint, no tenant authori
 test("can_manage_admins alone no longer reveals Event Staff -- that legacy OR was removed", () => {
   const adminsOnly = buildAdmin({ permissionMap: { can_manage_admins: true, can_manage_events: true } });
   assert.equal(findItem(buildAdminNavSections(adminsOnly, { status: "denied" }), "event-staff"), null);
+});
+
+// ---- Central Navigation Batch 2A: getAdminNavItemChildren(), the shared
+// projection Event/Attendees workspace entry areas use. ----
+
+test("getAdminNavItemChildren('events') returns exactly the same children buildAdminNavSections() itself nests under Event, for a full-access admin", () => {
+  const admin = buildAdmin({ isSuperAdmin: true, privilege_group: "super_admin" });
+  const eventChildrenFromSections = findItem(buildAdminNavSections(admin, { status: "allowed" }), "checklist");
+  assert.ok(eventChildrenFromSections, "sanity: checklist must be nested under events in the full nav tree");
+
+  const children = getAdminNavItemChildren(admin, { status: "allowed" }, "events");
+  const childIds = children.map((c) => c.id).sort();
+  assert.deepEqual(childIds, ["add-event", "checklist", "engagement", "event-staff", "evaluations"].sort());
+});
+
+test("getAdminNavItemChildren('attendees') returns exactly Check-In, Imports, and Validation Rules for a full-access admin -- never Attendees itself", () => {
+  const admin = buildAdmin({ isSuperAdmin: true });
+  const children = getAdminNavItemChildren(admin, null, "attendees");
+  const childIds = children.map((c) => c.id).sort();
+  assert.deepEqual(childIds, ["checkin", "imports", "validation-rules"].sort());
+  assert.ok(!childIds.includes("attendees"), "the parent item itself must never appear in its own children list");
+});
+
+test("a hidden child is absent from getAdminNavItemChildren()'s result -- exactly matching what the sidebar/drawer itself would hide", () => {
+  // can_manage_attendees alone satisfies Attendees' own OR-gate but none
+  // of its children's independent gates (can_manage_checkin,
+  // can_manage_imports, isSuperAdmin) -- proving hidden children stay
+  // hidden in the projection, not just in the full nav tree.
+  const attendeesOnlyAdmin = buildAdmin({ permissionMap: { can_manage_attendees: true } });
+  assert.deepEqual(getAdminNavItemChildren(attendeesOnlyAdmin, null, "attendees"), []);
+
+  // can_manage_events alone satisfies Event's own gate AND its
+  // "checklist" child's identical gate, but none of the other three
+  // children's independent gates -- proving the projection is per-child,
+  // not all-or-nothing with the parent.
+  const eventsOnlyAdmin = buildAdmin({ permissionMap: { can_manage_events: true } });
+  assert.deepEqual(getAdminNavItemChildren(eventsOnlyAdmin, null, "events").map((c) => c.id), ["checklist"]);
+});
+
+test("getAdminNavItemChildren() for a parent that is not visible at all (or does not exist) returns an empty array, never throws", () => {
+  const noAccessAdmin = buildAdmin({ permissionMap: {} });
+  assert.deepEqual(getAdminNavItemChildren(noAccessAdmin, null, "events"), []);
+  assert.deepEqual(getAdminNavItemChildren(noAccessAdmin, null, "attendees"), []);
+  assert.deepEqual(getAdminNavItemChildren(noAccessAdmin, null, "not-a-real-parent-id"), []);
+  assert.deepEqual(getAdminNavItemChildren(null, null, "events"), []);
+});
+
+test("getAdminNavItemChildren() calls the real buildAdminNavSections() -- adding a permission changes both identically", () => {
+  const before = buildAdmin({ permissionMap: { can_manage_events: true } });
+  const after = buildAdmin({ permissionMap: { can_manage_events: true, can_manage_reports: true } });
+
+  assert.deepEqual(getAdminNavItemChildren(before, null, "events").map((c) => c.id), ["checklist"]);
+  assert.deepEqual(getAdminNavItemChildren(after, null, "events").map((c) => c.id).sort(), ["checklist", "evaluations"].sort());
+  // Identical change is visible in the full nav tree too -- same source.
+  assert.ok(findItem(buildAdminNavSections(after), "evaluations"));
+  assert.equal(findItem(buildAdminNavSections(before), "evaluations"), null);
 });

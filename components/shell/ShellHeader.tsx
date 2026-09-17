@@ -33,13 +33,20 @@ function formatWorkspaceDateRange(startDate?: string | null, endDate?: string | 
 
 /**
  * Canonical header composition (§G, Stage 2; workspace metadata completed
- * Stage 3B §B; compact "show less" hierarchy completed Stage 4C §A).
- * Defines consistent slots -- brand, workspace/Event identity (name,
- * location, date range), page title/subtitle, back action, mobile menu
- * control, account controls, optional contextual status area -- without
- * forcing every page to populate every slot. A role/page adapter decides
- * which fields are present; the shell only guarantees consistent spacing
- * and slot order.
+ * Stage 3B §B; compact "show less" hierarchy completed Stage 4C §A; home
+ * action added Central Navigation Batch 2A). Defines consistent slots --
+ * brand, workspace/Event identity (name, location, date range), page
+ * title/subtitle, back action, home action, mobile menu control, account
+ * controls, optional contextual status area -- without forcing every page
+ * to populate every slot. A role/page adapter decides which fields are
+ * present; the shell only guarantees consistent spacing and slot order.
+ *
+ * `backTarget` (a page's own explicit parent-return link) and
+ * `homeAction` (a role's persistent home/Dashboard escape path) are
+ * independent slots and both render together when both are present --
+ * neither ever replaces or hides the other. Both render unconditionally
+ * of `isCompact`, so both are already present in compact/mobile
+ * presentation with no separate mobile-only wiring required.
  *
  * Workspace location/date render as subordinate metadata beneath the
  * workspace name, never as a second page title -- `pageTitle` remains the
@@ -67,7 +74,7 @@ function formatWorkspaceDateRange(startDate?: string | null, endDate?: string | 
  * focus to this button when the drawer closes.
  */
 export function ShellHeader({ config, isCompact, navOpen, onToggleNav, navTriggerRef }: ShellHeaderProps) {
-  const { brand, workspace, pageTitle, pageSubtitle, backTarget, accountActions, statusContent } = config;
+  const { brand, workspace, pageTitle, pageSubtitle, backTarget, homeAction, accountActions, statusContent } = config;
   const workspaceDateRange = formatWorkspaceDateRange(workspace?.startDate, workspace?.endDate);
   const hasWorkspaceMeta = !isCompact && Boolean(workspace?.location || workspaceDateRange);
   const workspaceDisplayName = isCompact ? (workspace?.compactName ?? workspace?.name) : workspace?.name;
@@ -95,6 +102,12 @@ export function ShellHeader({ config, isCompact, navOpen, onToggleNav, navTrigge
           {backTarget ? (
             <a href={backTarget.href} className="shell-back-action">
               ← {backTarget.label}
+            </a>
+          ) : null}
+
+          {homeAction ? (
+            <a href={homeAction.href} className="shell-back-action shell-home-action">
+              {homeAction.label}
             </a>
           ) : null}
 

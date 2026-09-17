@@ -30,6 +30,12 @@ export type AdminShellAdapterProps = {
  * source of truth `components/layout/Sidebar.tsx`'s own (currently
  * identical, currently un-deduplicated per ADR-011 §18) array should be
  * checked against.
+ *
+ * Central Navigation Batch 2A: also derives `homeAction` (the header's
+ * persistent "Dashboard" escape path) from that exact same nav model's
+ * own output -- never a second `can_view_admin_dashboard` check. This is
+ * the sole place `homeAction` is populated today; every other role
+ * adapter leaves it unset.
  */
 export function AdminShellAdapter({
   pageTitle,
@@ -66,6 +72,14 @@ export function AdminShellAdapter({
 
   const navSections = buildAdminNavSections(admin, tenantAuthority, pendingPassportRefundCount);
 
+  // Central Navigation Batch 2A: a persistent header "Dashboard" escape
+  // path on every canonical Admin page, derived from the canonical nav
+  // model's own already-computed Dashboard visibility -- never a second,
+  // duplicate can_view_admin_dashboard check. Absent entirely (null) for
+  // an account the nav model itself would not show Dashboard to.
+  const dashboardNavItem = navSections.flatMap((section) => section.items).find((item) => item.id === "dashboard");
+  const homeAction = dashboardNavItem ? { href: dashboardNavItem.href, label: dashboardNavItem.label } : null;
+
   const accountActions: ShellAccountAction[] = [
     {
       id: "sign-out",
@@ -98,6 +112,7 @@ export function AdminShellAdapter({
         accountActions,
         statusContent,
         backTarget: backTarget ?? null,
+        homeAction,
         contentMode,
       }}
     >

@@ -83,6 +83,20 @@ export type ShellBackTarget = {
   href: string;
 };
 
+/**
+ * A persistent, secondary header escape path to the role's own home/
+ * Dashboard destination (Central Navigation Batch 2A) -- role-neutral in
+ * shape (reuses `ShellBackTarget`'s own `{label, href}`), but populated
+ * today only by `AdminShellAdapter`, from the canonical Admin nav model's
+ * own already-computed Dashboard visibility -- never a second permission
+ * decision. Distinct from `backTarget`: a page's explicit parent-return
+ * link is never replaced or hidden by this field; both may render
+ * together. `null`/omitted means no such action for this role/account
+ * (e.g. Member/Vendor/Organizer never set this field today, and an Admin
+ * account without `can_view_admin_dashboard` gets `null` here too).
+ */
+export type ShellHomeAction = ShellBackTarget;
+
 export type ShellContentMode = "standard" | "full-bleed";
 
 /**
@@ -110,6 +124,7 @@ export type ShellConfig = {
   accountActions?: ShellAccountAction[];
   statusContent?: ReactNode;
   backTarget?: ShellBackTarget | null;
+  homeAction?: ShellHomeAction | null;
   contentMode?: ShellContentMode;
   presentationHint?: ShellPresentationHint;
 };

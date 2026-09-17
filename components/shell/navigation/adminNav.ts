@@ -279,3 +279,24 @@ export function buildAdminNavSections(
   // single untitled section.
   return items.length ? [{ id: "admin", items }] : [];
 }
+
+/**
+ * Minimal shared projection of `buildAdminNavSections()`'s own output
+ * (Central Navigation Batch 2A): the visible submenu children of exactly
+ * one top-level Admin nav item, by id, for a parent-workspace "entry
+ * area" surface (e.g. `/admin/events`, `/admin/attendees`) to render as
+ * real links. Never a second permission/visibility computation -- calls
+ * `buildAdminNavSections()` itself and reads its result, so a workspace
+ * page can only ever show a link the sidebar/drawer would also show for
+ * the same admin. Returns an empty array when the parent item itself is
+ * not visible, or has no visible children, for this admin.
+ */
+export function getAdminNavItemChildren(
+  admin: AdminAccessResult | null,
+  tenantAuthority: AdminTenantAuthorityResult | null,
+  parentId: string,
+): ShellNavItem[] {
+  const sections = buildAdminNavSections(admin, tenantAuthority);
+  const parent = sections.flatMap((section) => section.items).find((item) => item.id === parentId);
+  return parent?.children ?? [];
+}

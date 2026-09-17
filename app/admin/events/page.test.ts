@@ -1317,3 +1317,71 @@ test("eventAdminStatusTone classifies confirmation/loading/failure text correctl
     "warning",
   );
 });
+
+// ---- Central Navigation Batch 2A: the Event Workspace entry area. ----
+
+test("the Event Workspace entry area derives its links from getAdminNavItemChildren('events') -- never a second hardcoded href list", () => {
+  assert.match(PAGE_SOURCE, /import \{ getAdminNavItemChildren \} from "@\/components\/shell\/navigation\/adminNav";/);
+  assert.match(PAGE_SOURCE, /const eventWorkspaceLinks = getAdminNavItemChildren\(admin, tenantAuthority, "events"\);/);
+  assert.match(PAGE_SOURCE, /\{eventWorkspaceLinks\.map\(\(link\) => \(/);
+  assert.match(PAGE_SOURCE, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="default">/);
+});
+
+test("Add Event appears in Event Workspace whenever the canonical Event nav model exposes it -- no post-projection filtering removes it", () => {
+  const workspaceSection = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf('title="Event Workspace"'),
+    PAGE_SOURCE.indexOf("</PageSection>", PAGE_SOURCE.indexOf('title="Event Workspace"')) + "</PageSection>".length,
+  );
+  // The workspace section maps eventWorkspaceLinks directly -- no
+  // .filter(...) call of any kind sits between the derived list and the
+  // rendered links, so whatever getAdminNavItemChildren("events")
+  // returns (Add Event included, whenever tenantAuthority exposes it) is
+  // exactly what renders here.
+  assert.doesNotMatch(workspaceSection, /\.filter\(/);
+  assert.doesNotMatch(PAGE_SOURCE, /link\.id !== "add-event"/);
+});
+
+test("Add Event remains absent from Event Workspace when tenant authority does not expose it -- unchanged, since this section only ever mirrors getAdminNavItemChildren's own result", () => {
+  // getAdminNavItemChildren("events") already omits "add-event" whenever
+  // tenantAuthority.status !== "allowed" (proven directly in
+  // components/shell/navigation/adminNav.test.ts); this section maps
+  // that same array with no re-insertion or independent visibility
+  // decision of its own, so the same omission necessarily carries
+  // through to what renders here.
+  assert.match(PAGE_SOURCE, /const eventWorkspaceLinks = getAdminNavItemChildren\(admin, tenantAuthority, "events"\);/);
+  assert.doesNotMatch(PAGE_SOURCE, /eventWorkspaceLinks\.concat/);
+  assert.doesNotMatch(PAGE_SOURCE, /\.\.\.eventWorkspaceLinks,\s*\{\s*id:\s*"add-event"/);
+});
+
+test("Add Event keeps its own separate, pre-existing control in Select Event, unchanged -- the workspace entry is an additional, not a replacement, path", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /<AppLinkButton href="\/admin\/events\/new" variant="primary">\s*Add Event\s*<\/AppLinkButton>/,
+  );
+  const selectEventIndex = PAGE_SOURCE.indexOf('title="Select Event"');
+  const workspaceIndex = PAGE_SOURCE.indexOf('title="Event Workspace"');
+  const hardcodedAddEventIndex = PAGE_SOURCE.indexOf('href="/admin/events/new" variant="primary"');
+  assert.ok(selectEventIndex !== -1 && workspaceIndex !== -1 && hardcodedAddEventIndex !== -1);
+  assert.ok(
+    hardcodedAddEventIndex > selectEventIndex && hardcodedAddEventIndex < workspaceIndex,
+    "the pre-existing Add Event control must remain inside Select Event, before the Event Workspace section",
+  );
+});
+
+test("the Event Workspace section renders only when at least one link is visible -- never an empty dead section", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /\{eventWorkspaceLinks\.length > 0 \? \(\s*\n\s*<PageSection variant="card" title="Event Workspace">/,
+  );
+});
+
+test("the Event Workspace entry area uses only established shared primitives -- PageSection, FormActions, AppLinkButton", () => {
+  const workspaceSection = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf('title="Event Workspace"'),
+    PAGE_SOURCE.indexOf("</PageSection>", PAGE_SOURCE.indexOf('title="Event Workspace"')) + "</PageSection>".length,
+  );
+  assert.match(workspaceSection, /<FormActions>/);
+  assert.match(workspaceSection, /<AppLinkButton/);
+  assert.doesNotMatch(workspaceSection, /<button\b/);
+  assert.doesNotMatch(workspaceSection, /onClick=\{/);
+});

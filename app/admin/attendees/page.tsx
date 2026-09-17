@@ -59,6 +59,7 @@ import {
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { ObjectPanel } from "@/components/ObjectPanel";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { getAdminNavItemChildren } from "@/components/shell/navigation/adminNav";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 import { Alert } from "@/components/ui/Alert";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
@@ -2612,8 +2613,12 @@ function AdminAttendeesPageInner() {
   // localStorage, and this carries no authority of its own.
   const searchParams = useSearchParams();
   const openReviewQueueFromDeepLink = searchParams.get("view") === "review";
-  const { admin } = useAdmin();
+  const { admin, tenantAuthority } = useAdmin();
   const adminRef = useRef(admin);
+  // Central Navigation Batch 2A: the Attendees parent-workspace entry
+  // area's links are exactly the canonical "attendees" nav item's own
+  // visible children -- never a second permission/visibility map.
+  const attendeesWorkspaceLinks = getAdminNavItemChildren(admin, tenantAuthority, "attendees");
   // Shell's own canonical compact-state signal (UI Phase 2-4) -- decides
   // desktop table vs. narrow-viewport list, replacing what would
   // otherwise be a page-local resize listener.
@@ -4736,6 +4741,25 @@ created_at
         <Alert tone="success">{flashMessage}</Alert>
       ) : !loading && status ? (
         <Alert tone="neutral">{status}</Alert>
+      ) : null}
+
+      {/* Central Navigation Batch 2A: orientation-and-entry surface for
+          the Attendees workspace's related destinations -- exactly the
+          canonical "attendees" nav item's own visible children, never a
+          second permission/visibility map. This is not a second roster
+          summary/dashboard (the existing "Roster Summary" section below
+          keeps that role) and owns none of these destinations' own data
+          -- each remains fully owned by its own module. */}
+      {attendeesWorkspaceLinks.length > 0 ? (
+        <PageSection variant="card" title="Attendees Workspace">
+          <FormActions>
+            {attendeesWorkspaceLinks.map((link) => (
+              <AppLinkButton key={link.id} href={link.href} variant="default">
+                {link.label}
+              </AppLinkButton>
+            ))}
+          </FormActions>
+        </PageSection>
       ) : null}
 
       <>

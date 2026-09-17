@@ -4,6 +4,7 @@ import { type CSSProperties, useCallback, useEffect, useRef, useState } from "re
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { getAdminNavItemChildren } from "@/components/shell/navigation/adminNav";
 import { Alert, type AlertTone } from "@/components/ui/Alert";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
@@ -360,7 +361,14 @@ function EventAdminPageInner() {
   const pendingWorkspaceEventIdRef = useRef<string | null>(null);
   const [confirmDialogState, setConfirmDialogState] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
-  const { admin } = useAdmin();
+  const { admin, tenantAuthority } = useAdmin();
+  // Central Navigation Batch 2A: the Event parent-workspace entry area's
+  // links are exactly the canonical "events" nav item's own visible
+  // children -- never a second permission/visibility map. An admin
+  // without tenantAuthority "allowed" simply never sees "Add Event" here,
+  // matching the sidebar/drawer exactly; every other child is filtered
+  // the same way.
+  const eventWorkspaceLinks = getAdminNavItemChildren(admin, tenantAuthority, "events");
 
   const selectedEvent =
     events.find((evt) => evt.id === selectedEventId) || null;
@@ -1202,6 +1210,30 @@ function EventAdminPageInner() {
           </FormActions>
         </div>
       </PageSection>
+
+      {/* Central Navigation Batch 2A: orientation-and-entry surface for
+          the Event workspace's related destinations. This mirrors every
+          currently visible canonical Event child exactly -- including
+          Add Event, which also has its own established, separately
+          tested control immediately above in "Select Event". That
+          existing control is an unconditional convenience shortcut on
+          this one page; this section is the consistent parent-workspace
+          path every Admin workspace offers, so Add Event intentionally
+          appears in both places rather than being suppressed here. This
+          page never re-derives or duplicates the nav model's own
+          visibility decision, and owns none of these destinations' own
+          data -- each remains fully owned by its own module. */}
+      {eventWorkspaceLinks.length > 0 ? (
+        <PageSection variant="card" title="Event Workspace">
+          <FormActions>
+            {eventWorkspaceLinks.map((link) => (
+              <AppLinkButton key={link.id} href={link.href} variant="default">
+                {link.label}
+              </AppLinkButton>
+            ))}
+          </FormActions>
+        </PageSection>
+      ) : null}
 
       <div
         style={{

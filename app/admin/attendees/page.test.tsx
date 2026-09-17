@@ -2142,3 +2142,43 @@ test("Authorized Party Size preserves null semantics and does not auto-derive ca
     /participant_capacity:\s*\n\s*editorMode === "create"\s*\n\s*\? initialCapacityForCreate\s*\n\s*: isCapacityIncrease\s*\n\s*\? editorState\.registration_capacity_original\s*\n\s*: requiredCapacity,/,
   );
 });
+
+// ---- Central Navigation Batch 2A: the Attendees Workspace entry area. ----
+
+test("the Attendees Workspace entry area derives its links from getAdminNavItemChildren('attendees') -- never a second hardcoded href list", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  assert.match(source, /import \{ getAdminNavItemChildren \} from "@\/components\/shell\/navigation\/adminNav";/);
+  assert.match(source, /const attendeesWorkspaceLinks = getAdminNavItemChildren\(admin, tenantAuthority, "attendees"\);/);
+  assert.match(source, /\{attendeesWorkspaceLinks\.map\(\(link\) => \(/);
+  assert.match(source, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="default">/);
+});
+
+test("the Attendees Workspace section renders only when at least one link is visible -- never an empty dead section", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  assert.match(
+    source,
+    /\{attendeesWorkspaceLinks\.length > 0 \? \(\s*\n\s*<PageSection variant="card" title="Attendees Workspace">/,
+  );
+});
+
+test("the Attendees Workspace entry area is not a second roster summary/dashboard -- it renders no stats, no data reads of its own", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const start = source.indexOf('title="Attendees Workspace"');
+  const end = source.indexOf("</PageSection>", start) + "</PageSection>".length;
+  const workspaceSection = source.slice(start, end);
+  assert.doesNotMatch(workspaceSection, /SummaryCards/);
+  assert.doesNotMatch(workspaceSection, /supabase\.(from|rpc)\(/);
+  assert.match(workspaceSection, /<FormActions>/);
+  assert.match(workspaceSection, /<AppLinkButton/);
+  assert.doesNotMatch(workspaceSection, /<button\b/);
+});
+
+test("the Attendees Workspace entry area does not duplicate the existing Roster Summary section -- it appears exactly once, before it", () => {
+  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const workspaceIndex = source.indexOf('title="Attendees Workspace"');
+  const rosterSummaryIndex = source.indexOf('title="Roster Summary"');
+  assert.notEqual(workspaceIndex, -1);
+  assert.notEqual(rosterSummaryIndex, -1);
+  assert.ok(workspaceIndex < rosterSummaryIndex, "the workspace entry area must appear before the existing Roster Summary section");
+  assert.equal((source.match(/title="Attendees Workspace"/g) || []).length, 1);
+});
