@@ -5,9 +5,14 @@ import { fileURLToPath } from "node:url";
 
 import {
   adminUserStatusTone,
+  beginAssignedEventsLoad,
   formatEventOptionLabel,
+  getEventAccessRole,
+  isAssignedEventsReadyForSave,
   orderEventsForAccessSelector,
   pickInitialEventId,
+  planEventAccessSync,
+  resolveAssignedEventsLoadOutcome,
 } from "@/app/admin/admin-users/page";
 
 // Central UI Standard, Stage 3 -- /admin/admin-users migration (first
@@ -286,7 +291,10 @@ test("no new RPC/API call was introduced for Event Access -- the same admin_even
 });
 
 test("action hierarchy: Create/Save is primary, Send Reset Email is secondary, New and Cancel are the unset ghost default -- no status-color-as-action-color", () => {
-  assert.match(source, /<AppButton variant="primary" onClick=\{\(\) => void handleSave\(\)\} loading=\{saving\}>/);
+  assert.match(
+    source,
+    /<AppButton\s*\n\s*variant="primary"\s*\n\s*onClick=\{\(\) => void handleSave\(\)\}\s*\n\s*loading=\{saving\}/,
+  );
   assert.match(source, /<AppButton\s*\n\s*variant="secondary"\s*\n\s*onClick=\{\(\) => void handleSendPasswordReset\(\)\}\s*\n\s*loading=\{sendingReset\}/);
   assert.match(source, /<AppButton onClick=\{openNewAdminDialog\} aria-haspopup="dialog">\s*\n\s*New\s*\n\s*<\/AppButton>/);
   assert.match(source, /<AppButton onClick=\{closeAdminDialog\}>Cancel<\/AppButton>/);
@@ -344,7 +352,7 @@ test("Save/Create and Cancel are the dialog's own footer, not a page-level butto
   const footerEnd = source.indexOf("}\n      >", footerStart);
   const footerSource = source.slice(footerStart, footerEnd);
   assert.match(footerSource, /<AppButton onClick=\{closeAdminDialog\}>Cancel<\/AppButton>/);
-  assert.match(footerSource, /variant="primary" onClick=\{\(\) => void handleSave\(\)\} loading=\{saving\}/);
+  assert.match(footerSource, /variant="primary"\s*\n\s*onClick=\{\(\) => void handleSave\(\)\}\s*\n\s*loading=\{saving\}/);
 });
 
 test("active/inactive renders through the canonical StatusBadge with the same success=active/neutral=inactive tone mapping used elsewhere (e.g. vendors' catalogStatusTone)", () => {
@@ -546,10 +554,184 @@ test("loading and empty presentations use the canonical LoadingState/EmptyState 
   assert.match(source, /<LoadingState message="Loading admin users\.\.\." \/>/);
   assert.match(source, /<EmptyState message="No admin users found\." \/>/);
   assert.match(source, /<EmptyState message="No events found\." \/>/);
-  // The "Super Admin automatically has access" line is informational, not
-  // an empty-collection state -- it correctly stays a plain Alert.
+  // The Super Admin informational line is informational, not an
+  // empty-collection state -- it correctly stays a plain Alert.
+  assert.match(source, /<Alert tone="neutral">\s*\n\s*Super Admin platform-wide access is automatic/);
+});
+
+// -- Preserve Super Admin Event-Staff Roles Without Changing Platform
+// Authority: an explicit admin_event_access row for a Super Admin is a
+// responsibility/roster record only, never auto-cleared or auto-revoked
+// solely because the admin is/becomes super_admin. See
+// planEventAccessSync's own comment for the invariant being proven.
+
+test("handlePrivilegeGroupChange no longer force-clears assignedEventIds when the group becomes super_admin", () => {
+  assert.equal(
+    /if \(nextGroup === "super_admin"\)/.test(source),
+    false,
+    "switching to Super Admin must not clear the in-progress Event Access selection",
+  );
+});
+
+test("syncEventAccess no longer forces the desired event-id set to empty for the super_admin group -- planEventAccessSync is the single source of the diff", () => {
+  assert.equal(
+    /group === "super_admin" \? new Set<string>\(\) : new Set\(eventIds\)/.test(source),
+    false,
+  );
   assert.match(
     source,
-    /<Alert tone="neutral">Super Admin automatically has access to all events\.<\/Alert>/,
+    /const \{ targetProfile, toRemove, toAdd, toReprofile \} = planEventAccessSync\(group, eventIds, currentAssignments\);/,
   );
+});
+
+test("getEventAccessRole maps super_admin to the canonical event_admin profile -- the same explicit role Event Staff uses", () => {
+  assert.equal(getEventAccessRole("super_admin"), "event_admin");
+});
+
+test("planEventAccessSync: a Super Admin's existing assignment whose stored role already matches is left completely alone -- no remove, no add, no reprofile", () => {
+  const currentAssignments = [{ id: "a1", event_id: "event-a", role: "event_admin" }];
+  const plan = planEventAccessSync("super_admin", ["event-a"], currentAssignments);
+  assert.equal(plan.targetProfile, "event_admin");
+  assert.deepEqual(plan.toRemove, []);
+  assert.deepEqual(plan.toAdd, []);
+  assert.deepEqual(plan.toReprofile, []);
+});
+
+test("planEventAccessSync: a super_admin group never force-empties the desired set -- an existing assignment is never planned for removal solely because group is super_admin", () => {
+  const currentAssignments = [{ id: "a1", event_id: "event-a", role: "event_admin" }];
+  // Regression guard for the exact prior bug: previously wantEventIds was
+  // forced to new Set() whenever group === "super_admin", which planned
+  // this assignment for removal even though the operator never unchecked
+  // it (eventIds still includes it).
+  const plan = planEventAccessSync("super_admin", ["event-a"], currentAssignments);
+  assert.deepEqual(plan.toRemove, []);
+});
+
+test("planEventAccessSync: promoting an admin with a mismatched existing role to super_admin reprofiles it to canonical event_admin, matching Event Staff's own roster rendering", () => {
+  const currentAssignments = [{ id: "a1", event_id: "event-a", role: "checkin" }];
+  const plan = planEventAccessSync("super_admin", ["event-a"], currentAssignments);
+  assert.equal(plan.toReprofile.length, 1);
+  assert.equal(plan.toReprofile[0].id, "a1");
+  assert.equal(plan.targetProfile, "event_admin");
+});
+
+test("planEventAccessSync: an intentional uncheck still removes the assignment for a super_admin, exactly as for any other group -- this is an operator action, not an automatic group-based clear", () => {
+  const currentAssignments = [{ id: "a1", event_id: "event-a", role: "event_admin" }];
+  const plan = planEventAccessSync("super_admin", [], currentAssignments);
+  assert.equal(plan.toRemove.length, 1);
+  assert.equal(plan.toRemove[0].id, "a1");
+});
+
+// -- Repair: Prevent Event-Assignment Deletion Before/After Admin Users
+// Load Failure. Real behavior proof for the state-machine functions that
+// gate Save/syncEventAccess on a confirmed, current assignment load --
+// pending, stale, and failed loads must never be readable as "no
+// assignments" (which would plan every real assignment for removal via
+// planEventAccessSync above).
+
+test("isAssignedEventsReadyForSave: Save is blocked while an existing admin's assignment load is loading or has errored", () => {
+  assert.equal(isAssignedEventsReadyForSave(true, "loading"), false);
+  assert.equal(isAssignedEventsReadyForSave(true, "error"), false);
+  assert.equal(isAssignedEventsReadyForSave(true, "idle"), false);
+});
+
+test("isAssignedEventsReadyForSave: Save is permitted once an existing admin's assignment load has resolved to ready", () => {
+  assert.equal(isAssignedEventsReadyForSave(true, "ready"), true);
+});
+
+test("isAssignedEventsReadyForSave: a brand-new admin (no selected admin) is always ready -- it has no prior assignment load to await", () => {
+  assert.equal(isAssignedEventsReadyForSave(false, "idle"), true);
+  assert.equal(isAssignedEventsReadyForSave(false, "loading"), true);
+  assert.equal(isAssignedEventsReadyForSave(false, "error"), true);
+  assert.equal(isAssignedEventsReadyForSave(false, "ready"), true);
+});
+
+test("resolveAssignedEventsLoadOutcome: a failed load resolves to a distinct 'error' status, never silently substituting a ready/empty result", () => {
+  assert.equal(resolveAssignedEventsLoadOutcome(1, 1, "error"), "error");
+});
+
+test("resolveAssignedEventsLoadOutcome: a matching, successful load resolves to 'ready' -- permitting normal event-assignment synchronization", () => {
+  assert.equal(resolveAssignedEventsLoadOutcome(1, 1, "success"), "ready");
+});
+
+test("resolveAssignedEventsLoadOutcome: a stale result (superseded by a newer requestId) resolves to null and must not be applied -- it cannot authorize Save for a newly selected admin nor report success/failure for the old one", () => {
+  // requestId 1 was issued for the previously selected admin; by the time
+  // it resolves, a newer selection has already bumped the live requestId
+  // to 2 (e.g. via beginAssignedEventsLoad). Its outcome, whatever it was,
+  // must be discarded.
+  const staleRequestId = 1;
+  const liveRequestId = beginAssignedEventsLoad(staleRequestId);
+  assert.equal(resolveAssignedEventsLoadOutcome(staleRequestId, liveRequestId, "success"), null);
+  assert.equal(resolveAssignedEventsLoadOutcome(staleRequestId, liveRequestId, "error"), null);
+});
+
+test("beginAssignedEventsLoad: each call issues a strictly increasing requestId, so an older in-flight load can never be mistaken for the current one", () => {
+  let requestId = 0;
+  requestId = beginAssignedEventsLoad(requestId);
+  assert.equal(requestId, 1);
+  const capturedForOldLoad = requestId;
+  requestId = beginAssignedEventsLoad(requestId);
+  assert.equal(requestId, 2);
+  assert.notEqual(capturedForOldLoad, requestId);
+});
+
+test("regression: the source no longer clears or substitutes [] for assignedEventIds/currentAssignments on a failed load -- loadAssignedEvents sets a distinct 'error' status instead and returns null without touching either", () => {
+  assert.equal(/setAssignedEventIds\(\[\]\); setCurrentAssignments\(\[\]\); return \[\];/.test(source), false);
+  const fnIdx = source.indexOf("async function loadAssignedEvents(adminUserId: string): Promise<string[] | null> {");
+  const fnBody = source.slice(fnIdx, source.indexOf("\n  }", fnIdx));
+  assert.match(fnBody, /if \(outcomeStatus === "error"\) \{\s*\n\s*setAssignedEventsStatus\("error"\);\s*\n\s*return null;\s*\n\s*\}/);
+  assert.equal(/setAssignedEventIds\(\[\]\)/.test(fnBody), false);
+  assert.equal(/setCurrentAssignments\(\[\]\)/.test(fnBody), false);
+});
+
+test("regression: a stale loadAssignedEvents resolution is discarded before touching any state -- the outcomeStatus null branch returns before any setAssignedEventIds/setCurrentAssignments/setAssignedEventsStatus call", () => {
+  const fnIdx = source.indexOf("async function loadAssignedEvents(adminUserId: string): Promise<string[] | null> {");
+  const fnBody = source.slice(fnIdx, source.indexOf("\n  }", fnIdx));
+  assert.match(fnBody, /if \(outcomeStatus === null\) \{ return null; \}/);
+  const staleGuardIdx = fnBody.indexOf("if (outcomeStatus === null)");
+  const firstStateWriteIdx = fnBody.indexOf("setCurrentAssignments(assignments)");
+  assert.ok(staleGuardIdx > -1 && firstStateWriteIdx > staleGuardIdx, "the stale-result guard must run before any state is written");
+});
+
+test("Save is gated on isAssignedEventsReadyForSave both in handleSave (defense in depth) and on the Save/Create button's disabled prop", () => {
+  assert.match(
+    source,
+    /if \(!isAssignedEventsReadyForSave\(!!selectedAdminId, assignedEventsStatus\)\) \{/,
+  );
+  assert.match(
+    source,
+    /disabled=\{!isAssignedEventsReadyForSave\(!!selectedAdminId, assignedEventsStatus\)\}/,
+  );
+});
+
+test("a failed or loading assignment load surfaces a distinct, visible Alert in the Event Access section -- not a silent block", () => {
+  assert.match(source, /assignedEventsStatus === "error"[\s\S]{0,120}<Alert tone="danger">/);
+  assert.match(source, /assignedEventsStatus === "loading"[\s\S]{0,120}<Alert tone="info">/);
+});
+
+test("regression: a failed assignment load can never reach syncEventAccess/planEventAccessSync -- handleSave returns before upsertAdminUser/syncEventAccess whenever isAssignedEventsReadyForSave is false", () => {
+  const fnIdx = source.indexOf("async function handleSave() {");
+  const guardIdx = source.indexOf("if (!isAssignedEventsReadyForSave(", fnIdx);
+  const returnIdx = source.indexOf("return;", guardIdx);
+  const syncCallIdx = source.indexOf("await syncEventAccess(", fnIdx);
+  assert.ok(guardIdx > fnIdx && returnIdx > guardIdx && syncCallIdx > returnIdx, "the readiness guard and its return must precede the syncEventAccess call");
+});
+
+test("existing Super Admin roster-preservation behavior remains intact after the repair: no group-based force-empty, no auto-clear on group change", () => {
+  assert.equal(/group === "super_admin" \? new Set<string>\(\) : new Set\(eventIds\)/.test(source), false);
+  assert.equal(/if \(nextGroup === "super_admin"\)/.test(source), false);
+  const plan = planEventAccessSync("super_admin", ["event-a"], [{ id: "a1", event_id: "event-a", role: "event_admin" }]);
+  assert.deepEqual(plan.toRemove, []);
+});
+
+test("planEventAccessSync: non-super-admin add/remove/reprofile behavior is completely unchanged", () => {
+  const currentAssignments = [
+    { id: "a1", event_id: "event-a", role: "checkin" },
+    { id: "a2", event_id: "event-b", role: "parking" },
+  ];
+  const plan = planEventAccessSync("event_admin", ["event-a", "event-c"], currentAssignments);
+  assert.equal(plan.targetProfile, "event_admin");
+  assert.deepEqual(plan.toRemove.map((a) => a.id), ["a2"]);
+  assert.deepEqual(plan.toAdd, ["event-c"]);
+  assert.deepEqual(plan.toReprofile.map((a) => a.id), ["a1"]);
 });

@@ -102,7 +102,7 @@ function getPresetPermissions(group: PrivilegeGroup): AdminPermissions {
   }
 }
 
-function getEventAccessRole(privilegeGroup: PrivilegeGroup) {
+export function getEventAccessRole(privilegeGroup: PrivilegeGroup) {
   switch (privilegeGroup) {
     case "super_admin": return "event_admin";
     case "event_admin": return "event_admin";
@@ -246,6 +246,76 @@ export function pickInitialEventId(
   return orderedEvents[0].id;
 }
 
+export type AssignedEventsStatus = "idle" | "loading" | "ready" | "error";
+
+// Called synchronously right before starting a new assignment load (an
+// existing admin was selected, a brand-new admin was started, or the
+// post-save refresh runs). Returns the requestId this particular load must
+// present back to resolveAssignedEventsLoadOutcome for its result to be
+// accepted -- any older, still-in-flight load whose captured requestId no
+// longer matches the live one is stale and must be silently discarded, so
+// it can never overwrite a since-selected admin's state or mark it ready.
+export function beginAssignedEventsLoad(previousRequestId: number): number {
+  return previousRequestId + 1;
+}
+
+// Called when a load resolves. `latestRequestId` is read (from a ref, in
+// the component) at resolution time -- if it no longer equals the
+// `requestId` this load was given, a newer load has since started and this
+// result must not be applied at all: not to assignedEventIds/
+// currentAssignments (never cleared, never substituted with []) and not to
+// assignedEventsStatus. Returns null for that stale case; otherwise the
+// status the caller should set.
+export function resolveAssignedEventsLoadOutcome(
+  requestId: number,
+  latestRequestId: number,
+  outcome: "success" | "error",
+): AssignedEventsStatus | null {
+  if (requestId !== latestRequestId) { return null; }
+  return outcome === "success" ? "ready" : "error";
+}
+
+// Whether Save (and therefore syncEventAccess) may run for the current
+// selection. A brand-new admin (hasSelectedAdmin false) has no prior
+// assignment load to await, so it is always ready. An existing admin must
+// have a confirmed "ready" status -- "loading" and "error" both block Save,
+// since either would otherwise be read as "this admin has no assignments"
+// and plan every real assignment for removal.
+export function isAssignedEventsReadyForSave(hasSelectedAdmin: boolean, status: AssignedEventsStatus): boolean {
+  return !hasSelectedAdmin || status === "ready";
+}
+
+export type EventAccessAssignment = { id: string; event_id: string; role: string | null };
+
+// Pure diff of an admin's current admin_event_access rows against the
+// dialog's desired event-id set. No privilege-group special case: a
+// Super Admin's existing/desired assignments are preserved exactly like
+// any other admin's -- platform-wide access already covers everything, so
+// this plan is never forced to empty just because group is "super_admin".
+// A retained assignment is reprofiled only if its stored role no longer
+// matches the group's canonical profile (e.g. a group change), which for
+// "super_admin" is "event_admin" -- the same explicit, canonical Event
+// Admin profile Event Staff uses.
+export function planEventAccessSync(
+  group: PrivilegeGroup,
+  eventIds: string[],
+  currentAssignments: EventAccessAssignment[],
+): {
+  targetProfile: string;
+  toRemove: EventAccessAssignment[];
+  toAdd: string[];
+  toReprofile: EventAccessAssignment[];
+} {
+  const targetProfile = getEventAccessRole(group);
+  const wantEventIds = new Set(eventIds);
+
+  const toRemove = currentAssignments.filter((a) => !wantEventIds.has(a.event_id));
+  const toAdd = Array.from(wantEventIds).filter((eventId) => !currentAssignments.some((a) => a.event_id === eventId));
+  const toReprofile = currentAssignments.filter((a) => wantEventIds.has(a.event_id) && a.role !== targetProfile);
+
+  return { targetProfile, toRemove, toAdd, toReprofile };
+}
+
 export default function AdminUsersPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_admins">
@@ -272,6 +342,16 @@ function AdminUsersPageInner() {
   const [permissions, setPermissions] = useState<AdminPermissions>(getPresetPermissions(defaultGroup));
   const [assignedEventIds, setAssignedEventIds] = useState<string[]>([]);
   const [currentAssignments, setCurrentAssignments] = useState<Array<{ id: string; event_id: string; role: string | null }>>([]);
+  // Tracks whether assignedEventIds/currentAssignments are a confirmed,
+  // current snapshot for the exact selected admin -- see
+  // isAssignedEventsReadyForSave for what may act on each status.
+  const [assignedEventsStatus, setAssignedEventsStatus] = useState<AssignedEventsStatus>("idle");
+  // The live requestId every load's outcome is checked against -- see
+  // beginAssignedEventsLoad/resolveAssignedEventsLoadOutcome. A ref because
+  // it must be read synchronously at load-resolution time, not through a
+  // React state update. Same generation-guard shape as Event Staff's own
+  // useAdminWorkingEventScope (captureGeneration/isCurrent).
+  const assignedEventsRequestIdRef = useRef(0);
   const [saveStatus, setSaveStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const [password, setPassword] = useState("");
@@ -367,14 +447,20 @@ function AdminUsersPageInner() {
       // startNewAdmin() already reset these synchronously; this only
       // guards a future call site that transitions selectedAdminId to ""
       // some other way. selectedEventId itself is set synchronously by
-      // openNewAdminDialog and is intentionally left alone here.
+      // openNewAdminDialog and is intentionally left alone here. A new
+      // admin has no prior assignment load to await -- [] is genuinely its
+      // desired set, not a stand-in for "not loaded yet" -- so it is
+      // immediately "ready" (Save must not be blocked for it).
+      assignedEventsRequestIdRef.current = beginAssignedEventsLoad(assignedEventsRequestIdRef.current);
       setAssignedEventIds([]);
       setCurrentAssignments([]);
+      setAssignedEventsStatus("ready");
       return;
     }
 
     setSelectedEventId("");
     void loadAssignedEvents(selectedAdminId).then((assignedIds) => {
+      if (assignedIds === null) { return; }
       setSelectedEventId(pickInitialEventId(orderedEventsRef.current, assignedIds));
     });
   }, [selectedAdminId]);
@@ -388,13 +474,34 @@ function AdminUsersPageInner() {
   // so a caller that needs the just-loaded value synchronously -- the
   // effect above -- doesn't have to read back a not-yet-committed React
   // state value.
-  async function loadAssignedEvents(adminUserId: string): Promise<string[]> {
+  // Returns the freshly loaded event ids, or null when this call's result
+  // must not be applied -- either it failed (assignedEventsStatus is set to
+  // "error" instead, and assignedEventIds/currentAssignments are left
+  // exactly as they were: never cleared, never substituted with []) or it
+  // was superseded by a newer call (a stale in-flight load for a
+  // previously selected admin resolving after a new selection already
+  // started its own, newer-requestId load -- it must not overwrite that
+  // newer admin's state or mark it ready).
+  async function loadAssignedEvents(adminUserId: string): Promise<string[] | null> {
+    const requestId = beginAssignedEventsLoad(assignedEventsRequestIdRef.current);
+    assignedEventsRequestIdRef.current = requestId;
+    setAssignedEventsStatus("loading");
     const { data, error } = await supabase.from("admin_event_access").select("id,event_id,role").eq("admin_user_id", adminUserId);
-    if (error) { setAssignedEventIds([]); setCurrentAssignments([]); return []; }
+    const outcomeStatus = resolveAssignedEventsLoadOutcome(
+      requestId,
+      assignedEventsRequestIdRef.current,
+      error ? "error" : "success",
+    );
+    if (outcomeStatus === null) { return null; }
+    if (outcomeStatus === "error") {
+      setAssignedEventsStatus("error");
+      return null;
+    }
     const assignments = (data || []) as Array<{ id: string; event_id: string; role: string | null }>;
     setCurrentAssignments(assignments);
     const assignedIds = assignments.map((row) => row.event_id);
     setAssignedEventIds(assignedIds);
+    setAssignedEventsStatus(outcomeStatus);
     return assignedIds;
   }
 
@@ -405,8 +512,14 @@ function AdminUsersPageInner() {
     setIsActive(true);
     setPrivilegeGroup(defaultGroup);
     setPermissions(getPresetPermissions(defaultGroup));
+    // Invalidate any still-in-flight load for a previously selected admin
+    // (e.g. New clicked again while already on "new admin", so the
+    // selectedAdminId effect below won't re-fire) and mark this brand-new
+    // admin ready immediately -- it has no prior load to await.
+    assignedEventsRequestIdRef.current = beginAssignedEventsLoad(assignedEventsRequestIdRef.current);
     setAssignedEventIds([]);
     setCurrentAssignments([]);
+    setAssignedEventsStatus("ready");
     setPassword("");
     setSaveStatus("");
     setResetStatus("");
@@ -439,7 +552,10 @@ function AdminUsersPageInner() {
   function handlePrivilegeGroupChange(nextGroup: PrivilegeGroup) {
     setPrivilegeGroup(nextGroup);
     setPermissions(getPresetPermissions(nextGroup));
-    if (nextGroup === "super_admin") { setAssignedEventIds([]); }
+    // Existing event assignments are never auto-cleared by a group change,
+    // Super Admin included -- they are an explicit responsibility/roster
+    // record, independent of platform-wide access, and are otherwise only
+    // changed by an operator's own Event Staff/checkbox action.
   }
 
   function toggleAssignedEvent(eventId: string) {
@@ -503,13 +619,8 @@ function AdminUsersPageInner() {
   // assignments whose profile no longer matches the (possibly just
   // changed) privilege group. Nothing is touched that doesn't need to be.
   async function syncEventAccess(adminUserId: string, group: PrivilegeGroup, eventIds: string[]) {
-    const targetProfile = getEventAccessRole(group);
-    const wantEventIds = group === "super_admin" ? new Set<string>() : new Set(eventIds);
+    const { targetProfile, toRemove, toAdd, toReprofile } = planEventAccessSync(group, eventIds, currentAssignments);
     const errors: string[] = [];
-
-    const toRemove = currentAssignments.filter((a) => !wantEventIds.has(a.event_id));
-    const toAdd = Array.from(wantEventIds).filter((eventId) => !currentAssignments.some((a) => a.event_id === eventId));
-    const toReprofile = currentAssignments.filter((a) => wantEventIds.has(a.event_id) && a.role !== targetProfile);
 
     for (const assignment of toRemove) {
       const { error } = await supabase.rpc("remove_event_authority_assignment", { p_assignment_id: assignment.id });
@@ -560,6 +671,19 @@ function AdminUsersPageInner() {
   }
 
   async function handleSave() {
+    // An existing admin's event assignments must be a confirmed, current
+    // snapshot before Save can run syncEventAccess against them -- pending,
+    // stale, or failed must never be read as "this admin has no
+    // assignments" (that would plan every real assignment for removal). A
+    // brand-new admin has no prior load to await, so it is always "ready".
+    if (!isAssignedEventsReadyForSave(!!selectedAdminId, assignedEventsStatus)) {
+      setSaveStatus(
+        assignedEventsStatus === "error"
+          ? "Could not load this admin's existing event assignments. Reselect the admin to retry before saving."
+          : "Still loading this admin's existing event assignments. Please wait before saving.",
+      );
+      return;
+    }
     setSaving(true);
     try {
       setSaveStatus("Saving...");
@@ -710,7 +834,12 @@ function AdminUsersPageInner() {
         footer={
           <>
             <AppButton onClick={closeAdminDialog}>Cancel</AppButton>
-            <AppButton variant="primary" onClick={() => void handleSave()} loading={saving}>
+            <AppButton
+              variant="primary"
+              onClick={() => void handleSave()}
+              loading={saving}
+              disabled={!isAssignedEventsReadyForSave(!!selectedAdminId, assignedEventsStatus)}
+            >
               {selectedAdminId ? "Save Changes" : "Create Admin User"}
             </AppButton>
           </>
@@ -814,10 +943,23 @@ function AdminUsersPageInner() {
           <div>
             <strong>Event Access</strong>
             <p className="app-subtle-text" style={{ marginTop: "var(--space-1)", marginBottom: "var(--space-5)" }}>
-              Super Admin automatically has access to all events. For other admins, choose an Event below to view or change its access.
+              Super Admin automatically has access to all events, independent of any explicit assignment. For other admins, choose an Event below to view or change its access.
             </p>
+            {selectedAdminId && assignedEventsStatus === "error" ? (
+              <div style={{ marginBottom: "var(--space-5)" }}>
+                <Alert tone="danger">
+                  Could not load this admin&apos;s existing event assignments. Save is disabled until this reloads successfully -- reselect the admin to retry.
+                </Alert>
+              </div>
+            ) : selectedAdminId && assignedEventsStatus === "loading" ? (
+              <div style={{ marginBottom: "var(--space-5)" }}>
+                <Alert tone="info">Loading this admin&apos;s existing event assignments...</Alert>
+              </div>
+            ) : null}
             {privilegeGroup === "super_admin" ? (
-              <Alert tone="neutral">Super Admin automatically has access to all events.</Alert>
+              <Alert tone="neutral">
+                Super Admin platform-wide access is automatic and does not depend on this. Any existing or new explicit Event Staff assignment for this admin is retained for event responsibility and roster purposes, and is added or changed from Event Staff.
+              </Alert>
             ) : orderedEvents.length === 0 ? (
               <EmptyState message="No events found." />
             ) : (

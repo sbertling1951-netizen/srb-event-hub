@@ -117,6 +117,57 @@ function profileLabel(catalog: ProfileCatalogEntry[], key: string): string {
   );
 }
 
+// Pure, presentation-independent candidate-list filter for "Add Existing
+// Admin". Super Admins are included here (Production Preflight confirmed
+// the governed RPC and admin_event_access schema carry no privilege_group
+// check) -- only is_active and not-already-assigned are real constraints.
+export function filterAvailableAdmins(
+  adminUsers: AdminUserRow[],
+  assignedAdminIds: Set<string>,
+): AdminUserRow[] {
+  return adminUsers.filter((a) => a.is_active && !assignedAdminIds.has(a.id));
+}
+
+// Pure mapping from the governed list_event_authority_assignments RPC rows
+// (joined with the admin_users read) to this page's StaffRow shape. A
+// Super Admin target simply carries privilegeGroup "super_admin" through
+// like any other admin -- the roster does not special-case it.
+export function buildStaffRows(
+  assignmentRows: AssignmentRow[],
+  adminUsers: AdminUserRow[],
+): StaffRow[] {
+  const adminById = new Map(adminUsers.map((row) => [row.id, row]));
+  return assignmentRows.map((a) => {
+    const adminUser = adminById.get(a.target_admin_user_id);
+    return {
+      accessId: a.assignment_id,
+      adminUserId: a.target_admin_user_id,
+      eventId: a.event_id,
+      email: a.target_email || adminUser?.email || "Unknown admin",
+      displayName: a.target_display_name || adminUser?.display_name || "",
+      privilegeGroup: adminUser?.privilege_group || null,
+      canonicalProfile: a.canonical_profile,
+      canGovern: a.can_govern,
+      // Explicit grants are the authoritative current state -- never
+      // synthesized from the profile's defaults. Zero grants means the
+      // set below is empty, and it is displayed as exactly that.
+      explicitGrantKeys: new Set(a.explicit_grants.map((g) => g.task_key)),
+      pendingProfileChoice: a.canonical_profile,
+    };
+  });
+}
+
+// A Super Admin candidate may only be added as the canonical Event Admin
+// profile -- their roster role is a responsibility/roster record, not a
+// permission grant (platform authority already covers everything). Any
+// other candidate keeps the profile the operator actually chose.
+export function resolveAssignableProfile(
+  candidate: { privilege_group: string | null } | null | undefined,
+  requestedProfile: CanonicalProfile,
+): CanonicalProfile {
+  return candidate?.privilege_group === "super_admin" ? "event_admin" : requestedProfile;
+}
+
 function formatDateRange(startDate: string | null | undefined, endDate: string | null | undefined) {
   if (!startDate && !endDate) { return ""; }
   if (startDate && endDate) { return `${startDate} – ${endDate}`; }
@@ -327,29 +378,10 @@ function EventStaffPageInner() {
       const assignmentRows = (assignmentsData || []) as AssignmentRow[];
       const catalogRows = (catalogData || []) as ProfileCatalogEntry[];
 
-      const adminById = new Map(adminUsers.map((row) => [row.id, row]));
-
-      const mergedRows: StaffRow[] = assignmentRows.map((a) => {
-        const adminUser = adminById.get(a.target_admin_user_id);
-        return {
-          accessId: a.assignment_id,
-          adminUserId: a.target_admin_user_id,
-          eventId: a.event_id,
-          email: a.target_email || adminUser?.email || "Unknown admin",
-          displayName: a.target_display_name || adminUser?.display_name || "",
-          privilegeGroup: adminUser?.privilege_group || null,
-          canonicalProfile: a.canonical_profile,
-          canGovern: a.can_govern,
-          // Explicit grants are the authoritative current state -- never
-          // synthesized from the profile's defaults. Zero grants means the
-          // set below is empty, and it is displayed as exactly that.
-          explicitGrantKeys: new Set(a.explicit_grants.map((g) => g.task_key)),
-          pendingProfileChoice: a.canonical_profile,
-        };
-      });
+      const mergedRows: StaffRow[] = buildStaffRows(assignmentRows, adminUsers);
 
       const assignedAdminIds = new Set(mergedRows.map((row) => row.adminUserId));
-      const available = adminUsers.filter((a) => a.is_active && a.privilege_group !== "super_admin" && !assignedAdminIds.has(a.id));
+      const available = filterAvailableAdmins(adminUsers, assignedAdminIds);
 
       setEvent(eventRow);
       setEvents(allEvents);
@@ -394,10 +426,12 @@ function EventStaffPageInner() {
       setAdding(true);
       setError(null);
       setStatus("Adding event staff...");
+      const selectedCandidate = availableAdmins.find((a) => a.id === newAdminUserId) || null;
+      const profileToAssign = resolveAssignableProfile(selectedCandidate, newProfile);
       const { error: rpcError } = await supabase.rpc("create_event_authority_assignment", {
         p_target_admin_user_id: newAdminUserId,
         p_event_id: event.id,
-        p_profile_key: newProfile,
+        p_profile_key: profileToAssign,
       });
       if (rpcError) { throw new Error(describeRpcError(rpcError)); }
       setNewAdminUserId(""); setNewProfile("view_only");
@@ -503,6 +537,9 @@ function EventStaffPageInner() {
   }
 
   const dateRange = formatDateRange(event?.start_date, event?.end_date);
+  const selectedNewAdmin = availableAdmins.find((a) => a.id === newAdminUserId) || null;
+  const isSuperAdminCandidate = selectedNewAdmin?.privilege_group === "super_admin";
+  const newProfileValue = resolveAssignableProfile(selectedNewAdmin, newProfile);
 
   return (
     <div style={{ padding: "var(--space-6)", display: "grid", gap: "var(--space-4)" }}>
@@ -573,19 +610,26 @@ function EventStaffPageInner() {
               )}
             </Field>
 
-            <Field label="Canonical Profile">
+            <Field
+              label="Canonical Profile"
+              help={isSuperAdminCandidate ? "Super Admin can only be added as Event Admin -- a responsibility/roster record, since platform access is already automatic." : undefined}
+            >
               {(controlProps) => (
                 <Select
                   {...controlProps}
-                  value={newProfile}
+                  value={newProfileValue}
                   onChange={(e) => setNewProfile(e.target.value as CanonicalProfile)}
-                  disabled={adding || profileCatalog.length === 0}
+                  disabled={adding || profileCatalog.length === 0 || isSuperAdminCandidate}
                 >
                   {/* Governed, tier-filtered: an Event Admin delegate is
                       offered only content/checkin/parking/view_only here. */}
-                  {profileCatalog.map((p) => (
-                    <option key={p.profile_key} value={p.profile_key}>{p.display_name}</option>
-                  ))}
+                  {isSuperAdminCandidate ? (
+                    <option value="event_admin">{profileLabel(profileCatalog, "event_admin")}</option>
+                  ) : (
+                    profileCatalog.map((p) => (
+                      <option key={p.profile_key} value={p.profile_key}>{p.display_name}</option>
+                    ))
+                  )}
                 </Select>
               )}
             </Field>
@@ -609,7 +653,7 @@ function EventStaffPageInner() {
         titleStyle={{ marginBottom: "var(--space-1)" }}
       >
         <p className="app-subtle-text" style={{ marginTop: 0, marginBottom: "var(--space-4)" }}>
-          {rows.length} assignment{rows.length === 1 ? "" : "s"} for this event. Super Admins are not listed here because they automatically have access to all events.
+          {rows.length} assignment{rows.length === 1 ? "" : "s"} for this event. Super Admin platform-wide access is automatic and independent of this list -- a Super Admin can also be added here to record an explicit Event Admin responsibility for this event.
         </p>
 
         {loading ? (

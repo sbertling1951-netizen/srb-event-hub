@@ -3,7 +3,12 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { eventStaffStatusTone } from "@/app/admin/event-staff/page";
+import {
+  buildStaffRows,
+  eventStaffStatusTone,
+  filterAvailableAdmins,
+  resolveAssignableProfile,
+} from "@/app/admin/event-staff/page";
 
 // Focused tests for the Admin Batch 2 Central UI Standard migration of
 // Event Staff. Run with:
@@ -202,4 +207,118 @@ test("eventStaffStatusTone classifies confirmation/loading/authority-denial text
   assert.equal(eventStaffStatusTone("Choose an admin user to add."), "danger");
 
   assert.equal(eventStaffStatusTone("2 assignments for this event."), "neutral");
+});
+
+// -- Preserve Super Admin Event-Staff Roles Without Changing Platform
+// Authority: real behavior proof for filterAvailableAdmins, buildStaffRows,
+// and resolveAssignableProfile -- the exact functions loadPage/
+// handleAddStaff now call, not a source-regex proxy for them.
+
+const ACTIVE_SUPER_ADMIN = { id: "sa-1", email: "sa@example.com", display_name: "Sam Admin", is_active: true, privilege_group: "super_admin" as const };
+const ACTIVE_EVENT_ADMIN = { id: "ea-1", email: "ea@example.com", display_name: "Eve Admin", is_active: true, privilege_group: "event_admin" as const };
+const INACTIVE_SUPER_ADMIN = { id: "sa-2", email: "sa2@example.com", display_name: "Retired Admin", is_active: false, privilege_group: "super_admin" as const };
+
+test("filterAvailableAdmins: an active, unassigned Super Admin appears in the candidate list -- the privilege_group exclusion is gone", () => {
+  const available = filterAvailableAdmins([ACTIVE_SUPER_ADMIN, ACTIVE_EVENT_ADMIN], new Set());
+  assert.deepEqual(available.map((a) => a.id).sort(), ["ea-1", "sa-1"]);
+});
+
+test("filterAvailableAdmins: once assigned, that same Super Admin is excluded from the candidate list -- duplicate-assignment protection still applies to Super Admins", () => {
+  const available = filterAvailableAdmins([ACTIVE_SUPER_ADMIN, ACTIVE_EVENT_ADMIN], new Set(["sa-1"]));
+  assert.deepEqual(available.map((a) => a.id), ["ea-1"]);
+});
+
+test("filterAvailableAdmins: an inactive Super Admin is still excluded -- is_active remains a real filter, unaffected by removing the privilege_group check", () => {
+  const available = filterAvailableAdmins([INACTIVE_SUPER_ADMIN, ACTIVE_EVENT_ADMIN], new Set());
+  assert.deepEqual(available.map((a) => a.id), ["ea-1"]);
+});
+
+test("resolveAssignableProfile: a Super Admin candidate is always assigned the canonical event_admin profile, regardless of what the operator's Select still holds", () => {
+  assert.equal(resolveAssignableProfile(ACTIVE_SUPER_ADMIN, "view_only"), "event_admin");
+  assert.equal(resolveAssignableProfile(ACTIVE_SUPER_ADMIN, "content"), "event_admin");
+});
+
+test("resolveAssignableProfile: a non-Super-Admin candidate keeps the operator's chosen profile unchanged -- no forced coercion", () => {
+  assert.equal(resolveAssignableProfile(ACTIVE_EVENT_ADMIN, "checkin"), "checkin");
+  assert.equal(resolveAssignableProfile(null, "view_only"), "view_only");
+  assert.equal(resolveAssignableProfile(undefined, "parking"), "parking");
+});
+
+test("buildStaffRows: a Super Admin holding an explicit event_admin assignment renders in the roster with privilegeGroup super_admin and canonicalProfile event_admin -- both truths visible on one row", () => {
+  const assignmentRows = [
+    {
+      assignment_id: "assign-1",
+      event_id: "event-a",
+      tenant_id: "tenant-1",
+      target_admin_user_id: "sa-1",
+      target_display_name: "Sam Admin",
+      target_email: "sa@example.com",
+      canonical_profile: "event_admin" as const,
+      assignment_created_at: "2026-01-01T00:00:00Z",
+      explicit_grants: [],
+      can_govern: true,
+    },
+  ];
+  const rows = buildStaffRows(assignmentRows, [ACTIVE_SUPER_ADMIN]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].adminUserId, "sa-1");
+  assert.equal(rows[0].privilegeGroup, "super_admin");
+  assert.equal(rows[0].canonicalProfile, "event_admin");
+  assert.equal(rows[0].pendingProfileChoice, "event_admin");
+});
+
+test("buildStaffRows: self-elevation/delegation/profile fields (canGovern, explicitGrantKeys) pass through unchanged for a Super Admin row, exactly as for any other admin", () => {
+  const assignmentRows = [
+    {
+      assignment_id: "assign-2",
+      event_id: "event-b",
+      tenant_id: "tenant-1",
+      target_admin_user_id: "sa-1",
+      target_display_name: null,
+      target_email: null,
+      canonical_profile: "event_admin" as const,
+      assignment_created_at: "2026-01-01T00:00:00Z",
+      explicit_grants: [{ task_key: "task.x", granted_at: "2026-01-01T00:00:00Z", grant_source: "profile_materialization", source_profile_key: "event_admin", granted_by_admin_user_id: "actor-1" }],
+      can_govern: false,
+    },
+  ];
+  const rows = buildStaffRows(assignmentRows, [ACTIVE_SUPER_ADMIN]);
+  assert.equal(rows[0].canGovern, false);
+  assert.deepEqual(Array.from(rows[0].explicitGrantKeys), ["task.x"]);
+  // No target admin_users row found -- falls back to the assignment's own
+  // target_email/target_display_name exactly as before, unaffected by the
+  // Super Admin inclusion.
+  const orphanRows = buildStaffRows(assignmentRows, []);
+  assert.equal(orphanRows[0].email, "Unknown admin");
+});
+
+test("the misleading 'Super Admins are not listed here' copy is gone, replaced by wording that states both truths: automatic platform-wide access, and an explicit roster row is possible", () => {
+  assert.equal(/Super Admins are not listed here/.test(PAGE_SOURCE), false);
+  assert.match(PAGE_SOURCE, /Super Admin platform-wide access is automatic and independent of this list/);
+});
+
+test("the Add Existing Admin profile picker locks to Event Admin for a Super Admin candidate, with an explanatory help message -- it does not silently let another profile be sent", () => {
+  assert.match(PAGE_SOURCE, /const isSuperAdminCandidate = selectedNewAdmin\?\.privilege_group === "super_admin";/);
+  assert.match(PAGE_SOURCE, /const newProfileValue = resolveAssignableProfile\(selectedNewAdmin, newProfile\);/);
+  assert.match(PAGE_SOURCE, /disabled=\{adding \|\| profileCatalog\.length === 0 \|\| isSuperAdminCandidate\}/);
+  assert.match(
+    PAGE_SOURCE,
+    /const profileToAssign = resolveAssignableProfile\(selectedCandidate, newProfile\);/,
+  );
+  assert.match(PAGE_SOURCE, /p_profile_key: profileToAssign,/);
+});
+
+test("no migration, RPC, resolver, or navigation file was touched -- every governed RPC name is unchanged and adminNav is not imported here", () => {
+  for (const rpc of [
+    "list_event_authority_assignments",
+    "list_event_authority_profile_catalog",
+    "create_event_authority_assignment",
+    "change_event_authority_profile",
+    "grant_event_authority_task",
+    "revoke_event_authority_task",
+    "remove_event_authority_assignment",
+  ]) {
+    assert.ok(PAGE_SOURCE.includes(rpc), `Event Staff must retain ${rpc}`);
+  }
+  assert.equal(/adminNav/.test(PAGE_SOURCE), false);
 });
