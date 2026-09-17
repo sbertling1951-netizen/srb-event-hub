@@ -13,6 +13,7 @@ import { AgendaImportReviewWorkspace } from "@/components/admin/agenda/AgendaImp
 import AgendaTemplatePanel from "@/components/admin/agenda/AgendaTemplatePanel";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { getAdminNavItemChildren } from "@/components/shell/navigation/adminNav";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 import { Alert } from "@/components/ui/Alert";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
@@ -25,6 +26,7 @@ import { PageSection } from "@/components/ui/PageSection";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
 import { checkAdminEventTaskAuthority } from "@/lib/adminTaskAuthority";
+import type { AdminTenantAuthorityResult } from "@/lib/adminTenantAuthority";
 import {
   getCurrentAdminEvent,
   useAdminWorkingEventScope,
@@ -40,7 +42,7 @@ import {
   recoverAgendaImportRun,
   stageGovernedAgendaImport,
 } from "@/lib/agendaImportOrchestration";
-import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import { type AdminAccessResult, canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import type { ImportRunLifecycleStatus } from "@/lib/importLifecycleOrchestration";
 import { buildImportsHref } from "@/lib/importTypeRouting";
 import { supabase } from "@/lib/supabase";
@@ -552,6 +554,52 @@ function buildAgendaCalendarBlocks(
   }));
 }
 
+/**
+ * Agenda parent workspace (Central Navigation Batch 2C) -- the same
+ * shared entry-area pattern already used by the Event, Attendees, and
+ * Maps workspaces. Links are exactly the canonical
+ * "agenda" nav item's own visible children (today, Agenda Categories
+ * only) -- derived from `getAdminNavItemChildren()`, never a second
+ * permission/visibility list of its own. The existing "Manage
+ * Categories" convenience button in the operational header above
+ * remains untouched -- the same "appears in both places" precedent the
+ * Event Workspace section already established (Add Event also has its
+ * own separate control alongside its canonical workspace entry).
+ *
+ * Exported (not merely a local closure of `AdminAgendaPageInner`) so the
+ * test file can render this exact production component with
+ * `renderToStaticMarkup`, passing already-resolved `admin`/
+ * `tenantAuthority` values directly -- the same values `useAdmin()`
+ * would otherwise supply -- and exercising the real
+ * `getAdminNavItemChildren()` call itself, not a precomputed or
+ * separately re-derived link list.
+ */
+export function AgendaWorkspaceSection({
+  admin,
+  tenantAuthority,
+}: {
+  admin: AdminAccessResult | null;
+  tenantAuthority: AdminTenantAuthorityResult | null;
+}) {
+  const agendaWorkspaceLinks = getAdminNavItemChildren(admin, tenantAuthority, "agenda");
+
+  if (agendaWorkspaceLinks.length === 0) {
+    return null;
+  }
+
+  return (
+    <PageSection variant="card" title="Agenda Workspace">
+      <FormActions>
+        {agendaWorkspaceLinks.map((link) => (
+          <AppLinkButton key={link.id} href={link.href} variant="default">
+            {link.label}
+          </AppLinkButton>
+        ))}
+      </FormActions>
+    </PageSection>
+  );
+}
+
 function AdminAgendaPageInner() {
   // Deep-link contract: the shared Imports Service Center's Agenda door
   // (/admin/imports?type=agenda) routes here with ?mode=import to open
@@ -561,7 +609,7 @@ function AdminAgendaPageInner() {
   // is still enforced exactly as before).
   const searchParams = useSearchParams();
   const initialAgendaMode: AgendaAdminMode = searchParams.get("mode") === "import" ? "import" : "items";
-  const { admin } = useAdmin();
+  const { admin, tenantAuthority } = useAdmin();
   const [activeEvent, setActiveEvent] = useState<ActiveEvent | null>(null);
   const [items, setItems] = useState<AgendaItem[]>([]);
   const [status, setStatus] = useState("Loading...");
@@ -2660,6 +2708,8 @@ function AdminAgendaPageInner() {
           <div className="app-subtle-text">Agenda version: {agendaVersion}</div>
         </div>
       </PageSection>
+
+      <AgendaWorkspaceSection admin={admin} tenantAuthority={tenantAuthority} />
 
       {error ? <Alert tone="danger">{error}</Alert> : null}
 

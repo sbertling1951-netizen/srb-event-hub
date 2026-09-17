@@ -4,10 +4,13 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import Papa from "papaparse";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import * as XLSX from "xlsx";
 
 import {
   agendaItemFormsAreEqual,
+  AgendaWorkspaceSection,
   isStaleAgendaVersionError,
   mapAgendaRpcError,
 } from "@/app/admin/agenda/page";
@@ -16,6 +19,7 @@ import {
   interpretAgendaImportRow,
   parseAgendaWorkbookWorksheet,
 } from "@/lib/agendaImportContract";
+import type { AdminAccessResult } from "@/lib/getCurrentAdminAccess";
 import { AGENDA_IMPORT_TEMPLATE_CONTRACT } from "@/lib/importTemplateContract";
 
 // Focused tests for the Admin Agenda governed UI cutover (Agenda
@@ -1222,4 +1226,133 @@ test("Agenda offers a reciprocal contextual link into the shared Imports Service
 test("Agenda's own Import Agenda tab still directly renders AgendaImportPanel -- the shared door does not replace the domain's existing entry point", () => {
   assert.match(PAGE_SOURCE, /<AgendaImportPanel/);
   assert.match(PAGE_SOURCE, /agendaMode=\{agendaMode\}/);
+});
+
+// ---- Central Navigation Batch 2C: the Agenda Workspace entry area. ----
+// This file's primary proof is a real render of the actual production
+// `AgendaWorkspaceSection` component (exported from page.tsx) via
+// react-dom/server's renderToStaticMarkup -- the same runtime pattern
+// already established for the Maps workspace (app/admin/map-admin/page.test.tsx).
+// Every scenario below passes only already-resolved admin/tenantAuthority
+// inputs and calls the REAL, unmodified
+// getAdminNavItemChildren(admin, tenantAuthority, "agenda") inside that
+// real component -- no copied nav list, no separately recomputed expected
+// link set, and no source regex is the primary proof of any behavior.
+// Rendered via React.createElement (not JSX) since this file is .ts, not
+// .tsx.
+
+function buildAgendaTestAdmin(overrides: Partial<AdminAccessResult> = {}): AdminAccessResult {
+  return {
+    adminUser: {
+      id: "admin-1",
+      email: "admin@example.com",
+      display_name: "Admin",
+      is_active: true,
+      privilege_group: "event_admin",
+      user_id: "user-1",
+    },
+    eventAccessRows: [],
+    permissionKeys: [],
+    permissionMap: {},
+    rolePermissions: [],
+    eventPermissionKeys: [],
+    privilegeGroup: "event_admin",
+    isSuperAdmin: false,
+    email: "admin@example.com",
+    display_name: "Admin",
+    privilege_group: "event_admin",
+    eventIds: [],
+    event_ids: [],
+    ...overrides,
+  };
+}
+
+test("an admin with Agenda management authority renders the Agenda Workspace section with a real, visible Agenda Categories link", () => {
+  const admin = buildAgendaTestAdmin({ permissionMap: { can_manage_agenda: true } });
+  const html = renderToStaticMarkup(
+    createElement(AgendaWorkspaceSection, { admin, tenantAuthority: null }),
+  );
+
+  assert.match(html, /<a class="app-button" href="\/admin\/agenda\/categories">Agenda Categories<\/a>/);
+  assert.match(html, /Agenda Workspace/);
+});
+
+test("an access input with no visible Agenda child renders no Agenda Workspace markup at all", () => {
+  const noAccessAdmin = buildAgendaTestAdmin({ permissionMap: {} });
+  const html = renderToStaticMarkup(
+    createElement(AgendaWorkspaceSection, { admin: noAccessAdmin, tenantAuthority: null }),
+  );
+  assert.equal(html, "");
+
+  const nullAdminHtml = renderToStaticMarkup(
+    createElement(AgendaWorkspaceSection, { admin: null, tenantAuthority: null }),
+  );
+  assert.equal(nullAdminHtml, "");
+});
+
+// ---- Secondary source-level defense only -- not the primary proof of
+// any behavior above, which is established by the renders themselves. ----
+
+test("the production component calls the real getAdminNavItemChildren('agenda') itself -- the test never passes precomputed links in", () => {
+  assert.match(PAGE_SOURCE, /import \{ getAdminNavItemChildren \} from "@\/components\/shell\/navigation\/adminNav";/);
+  assert.match(PAGE_SOURCE, /export function AgendaWorkspaceSection\(/);
+  assert.match(
+    PAGE_SOURCE,
+    /const agendaWorkspaceLinks = getAdminNavItemChildren\(admin, tenantAuthority, "agenda"\);/,
+  );
+  // AgendaWorkspaceSection's own props are admin/tenantAuthority only --
+  // no `links`/`items` prop exists for a caller (or a test) to inject a
+  // precomputed list instead of the real projection.
+  const componentSignature = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("export function AgendaWorkspaceSection("),
+    PAGE_SOURCE.indexOf(") {", PAGE_SOURCE.indexOf("export function AgendaWorkspaceSection(")),
+  );
+  assert.doesNotMatch(componentSignature, /links|items/);
+});
+
+test("AdminAgendaPageInner renders the exact extracted component, passing only admin/tenantAuthority from useAdmin() -- no duplicate rendering path", () => {
+  assert.match(PAGE_SOURCE, /const \{ admin, tenantAuthority \} = useAdmin\(\);/);
+  assert.match(PAGE_SOURCE, /<AgendaWorkspaceSection admin=\{admin\} tenantAuthority=\{tenantAuthority\} \/>/);
+  assert.equal((PAGE_SOURCE.match(/<PageSection variant="card" title="Agenda Workspace">/g) || []).length, 1);
+});
+
+test("no hardcoded Agenda Categories href or second permission/visibility map is introduced by the workspace section itself", () => {
+  const sectionStart = PAGE_SOURCE.indexOf("export function AgendaWorkspaceSection(");
+  const sectionEnd = PAGE_SOURCE.indexOf("\n}\n", sectionStart) + 3;
+  const sectionSource = PAGE_SOURCE.slice(sectionStart, sectionEnd);
+
+  assert.doesNotMatch(sectionSource, /href="\/admin\/agenda\/categories"/);
+  assert.doesNotMatch(sectionSource, /hasPermission|isSuperAdmin|permissionMap|privilege_group/);
+  // The section maps agendaWorkspaceLinks directly -- no hardcoded
+  // destination list of its own.
+  assert.match(sectionSource, /\{agendaWorkspaceLinks\.map\(\(link\) => \(/);
+});
+
+test("the pre-existing hardcoded 'Manage Categories' operational button is untouched -- this batch adds the canonical entry area, it does not remove or alter existing Agenda workflow", () => {
+  assert.match(PAGE_SOURCE, /window\.location\.href = "\/admin\/agenda\/categories";/);
+  assert.match(PAGE_SOURCE, />\s*Manage Categories\s*</);
+});
+
+test("the Agenda Workspace section renders only when at least one link is visible -- never an empty dead section", () => {
+  assert.match(PAGE_SOURCE, /if \(agendaWorkspaceLinks\.length === 0\) \{\s*\n\s*return null;\s*\n\s*\}/);
+});
+
+test("the Agenda Workspace entry area uses only established shared primitives -- PageSection, FormActions, AppLinkButton", () => {
+  const sectionStart = PAGE_SOURCE.indexOf("export function AgendaWorkspaceSection(");
+  const sectionEnd = PAGE_SOURCE.indexOf("\n}\n", sectionStart) + 3;
+  const sectionSource = PAGE_SOURCE.slice(sectionStart, sectionEnd);
+
+  assert.match(sectionSource, /<PageSection variant="card" title="Agenda Workspace">/);
+  assert.match(sectionSource, /<FormActions>/);
+  assert.match(sectionSource, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="default">/);
+});
+
+test("the bare route guard, shell adapter, title/subtitle, and back target are preserved unchanged", () => {
+  assert.match(PAGE_SOURCE, /<AdminRouteGuard>/);
+  assert.match(
+    PAGE_SOURCE,
+    /<AdminShellAdapter\s*\n\s*pageTitle="Admin Agenda"\s*\n\s*backTarget=\{\{ href: "\/admin\/dashboard", label: "Dashboard" \}\}\s*\n\s*>/,
+  );
+  assert.equal((PAGE_SOURCE.match(/<AdminRouteGuard/g) || []).length, 1);
+  assert.equal((PAGE_SOURCE.match(/<AdminShellAdapter/g) || []).length, 1);
 });
