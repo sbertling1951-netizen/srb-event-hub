@@ -15,7 +15,6 @@ import {
   type ValidationRule,
 } from "@/app/admin/attendees/attendeesWorkflow";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import PageNavigation from "@/components/layout/PageNavigation";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 import { AppLinkButton } from "@/components/ui/AppButton";
@@ -316,7 +315,10 @@ function previewAttendeeImportRow(
 export default function AdminAttendeeImportsPage() {
   return (
     <AdminRouteGuard requiredTask="event.imports.manage">
-      <AdminShellAdapter pageTitle="Imports">
+      <AdminShellAdapter
+        pageTitle="Imports"
+        backTarget={{ href: "/admin/attendees", label: "Attendees" }}
+      >
         <AdminAttendeeImportsPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>
@@ -993,7 +995,6 @@ function AdminAttendeeImportsPageInner() {
 
   const selectedImportEvent =
     availableEvents.find((event) => event.id === selectedImportEventId) || null;
-  const pageTitle = "Attendee Imports";
 
   const eventChangedSinceLoad =
     !!rows.length &&
@@ -1398,13 +1399,6 @@ function AdminAttendeeImportsPageInner() {
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
-      <PageNavigation
-        homeHref="/admin/dashboard"
-        homeLabel="Dashboard"
-        parentHref="/admin/attendees"
-        parentLabel="Attendees"
-      />
-
       {importType === null ? (
         <ImportsLandingDoors />
       ) : importType === "agenda" ? (
@@ -1554,8 +1548,6 @@ function AdminAttendeeImportsPageInner() {
       </div>
 
       <div className="card" style={{ padding: 18 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 8 }}>{pageTitle}</h1>
-
         <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
           <div style={{ fontWeight: 600 }}>Target Event</div>
 

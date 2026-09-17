@@ -21,8 +21,13 @@ test("the root no longer has a query-driven embedded shell mode", () => {
 
 test("Imports always retains its normal guarded presentation", () => {
   assert.ok(importsSource.includes('AdminRouteGuard requiredTask="event.imports.manage"'));
-  assert.ok(importsSource.includes("<PageNavigation"));
-  assert.ok(!importsSource.includes("useSearchParams"));
+  // PageNavigation was retired in favor of the canonical AdminShellAdapter
+  // backTarget (Imports: Canonical Attendees Return and Duplicate-Title
+  // Removal) -- unrelated to embedded-mode retirement, which this test
+  // otherwise covers. useSearchParams now drives the Stage 5A Imports
+  // Service Center doors (?type=) deep-link routing, added after this
+  // test was written -- also unrelated to embedded mode.
+  assert.ok(!importsSource.includes("<PageNavigation"));
   assert.ok(!importsSource.includes("isEmbedded"));
 });
 

@@ -459,3 +459,84 @@ test("the lifecycle/history components are imported from their own shared module
     /import \{ AbandonRowButton, RunLifecycleActions \} from "\.\/RunLifecycleActions";/,
   );
 });
+
+// -- Imports: Canonical Attendees Return and Duplicate-Title Removal ------
+//
+// The obsolete legacy PageNavigation (its own hand-styled, hardcoded-hex
+// dual home/parent buttons) is replaced by the canonical AdminShellAdapter
+// backTarget -- the same mechanism every other migrated Admin leaf uses.
+// The body-level <h1> duplicating the shell's own pageTitle is removed.
+// Nothing else on this page (routing, doors, data, uploads, review queue,
+// tables, lifecycle actions, internal door-return links) is touched.
+
+test("the shell carries the exact Attendees backTarget", () => {
+  const source = readSource();
+  assert.match(
+    source,
+    /<AdminShellAdapter\s*\n\s*pageTitle="Imports"\s*\n\s*backTarget=\{\{ href: "\/admin\/attendees", label: "Attendees" \}\}\s*\n\s*>/,
+  );
+});
+
+test("the obsolete PageNavigation component is fully absent -- no import, no usage, and no replacement page-local link or new navigation component was introduced in its place", () => {
+  const source = readSource();
+  assert.equal(/PageNavigation/.test(source), false);
+  assert.equal(/from "@\/components\/layout\/PageNavigation"/.test(source), false);
+  // No new home/parent-link component was substituted for it.
+  assert.equal(/homeHref|homeLabel|parentHref|parentLabel/.test(source), false);
+});
+
+test("the duplicate body <h1> repeating the shell title is gone -- the shell header remains the page's only h1, and no dead pageTitle constant was left behind", () => {
+  const source = readSource();
+  assert.equal(/<h1\b/.test(source), false);
+  assert.equal(/const pageTitle = "Attendee Imports";/.test(source), false);
+  assert.equal(/\{pageTitle\}/.test(source), false);
+});
+
+test("lower-level semantic section headings and operational content are untouched: Data Review Queue, Attendee Roster Import, Governed Import Results, Import Summary, and Row Preview headings all remain", () => {
+  const source = readSource();
+  for (const heading of [
+    "Data Review Queue",
+    "Attendee Roster Import",
+    "Governed Import Results",
+    "Import Summary",
+    "Row Preview",
+  ]) {
+    assert.ok(source.includes(heading), `expected the "${heading}" heading to remain`);
+  }
+});
+
+test("the internal 'Back to Imports' door-return links are untouched -- they are page-local navigation between doors, unrelated to the shell-level backTarget", () => {
+  const source = readSource();
+  assert.equal((source.match(/Back to Imports/g) || []).length, 2);
+  assert.match(source, /<AppLinkButton variant="tertiary" href="\/admin\/imports">\s*\n\s*Back to Imports/);
+});
+
+test("the guard, canonical shell mode, route doors, data/RPC contracts, review queue, and lifecycle wiring are all unchanged by this pass", () => {
+  const source = readSource();
+  assert.match(source, /<AdminRouteGuard requiredTask="event\.imports\.manage">/);
+  assert.match(source, /const importType = readImportType\(searchParams\);/);
+  assert.match(source, /runGovernedAttendeeImport\(\{/);
+  assert.match(source, /retryAttendeeImportRowCommit\(\{/);
+  assert.match(source, /recoverAttendeeImportRun\(/);
+  assert.match(source, /<ActiveRunsPanel/);
+  assert.match(source, /<ImportHistoryPanel eventId=\{selectedImportEventId\} importType="attendee" \/>/);
+  assert.match(source, /<AbandonRowButton/);
+  // No raw control, color, or table/loading/error primitive was touched --
+  // deferred explicitly to later, smaller passes.
+  assert.match(source, /<select\b/);
+  assert.match(source, /#ccc/);
+  assert.match(source, /<DataTable caption="Governed import results">/);
+  assert.match(source, /<DataTable caption="Imported data preview">/);
+  assert.match(source, /<DataTable caption="Saved attendee list">/);
+});
+
+test("no other file was touched by this pass beyond the authorized cohort -- adminNav.ts, routeRegistry.ts, and every colocated sub-component remain unreferenced by any edit here", () => {
+  // This test only inspects page.tsx's own source; it cannot verify other
+  // files were untouched, but it does confirm the sub-component imports
+  // that would be affected by a nav/registry change are still the exact
+  // same shared modules, not inlined or forked copies.
+  const source = readSource();
+  assert.match(source, /import \{ ActiveRunsPanel \} from "\.\/ActiveRunsPanel";/);
+  assert.match(source, /import \{ ImportHistoryPanel \} from "\.\/ImportHistoryPanel";/);
+  assert.match(source, /import \{ VendorImportWorkflow \} from "\.\/VendorImportWorkflow";/);
+});
