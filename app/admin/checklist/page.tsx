@@ -90,7 +90,10 @@ export function previousChecklistStorageKeyForEvent(
 export default function AdminChecklistPage() {
   return (
     <AdminRouteGuard requiredPermission="can_view_admin_dashboard">
-      <AdminShellAdapter pageTitle="Pre-Rally Checklist">
+      <AdminShellAdapter
+        pageTitle="Pre-Event Checklist"
+        backTarget={{ href: "/admin/events", label: "Event Admin" }}
+      >
         <AdminChecklistPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>

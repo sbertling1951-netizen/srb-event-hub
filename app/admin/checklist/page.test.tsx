@@ -64,3 +64,39 @@ test("checklist items use the canonical Checkbox (native input, label-associated
   assert.match(PAGE_SOURCE, /<Checkbox\b/);
   assert.doesNotMatch(PAGE_SOURCE, /<input\s+type="checkbox"/);
 });
+
+// -- Title/return-navigation alignment: visible wording only. The
+// underlying localStorage key/schema/migration behavior (asserted above)
+// is keyed on "pre-rally-checklist" literals and is deliberately
+// untouched -- only the shell's displayed page title changes.
+
+test("the visible page title and shell pageTitle are exactly \"Pre-Event Checklist\", matching the canonical nav label", () => {
+  assert.match(PAGE_SOURCE, /<AdminShellAdapter\s*\n\s*pageTitle="Pre-Event Checklist"/);
+  assert.doesNotMatch(PAGE_SOURCE, /pageTitle="Pre-Rally Checklist"/);
+  assert.equal((PAGE_SOURCE.match(/<AdminShellAdapter/g) || []).length, 1);
+});
+
+test("the shell backTarget points to Event Admin (/admin/events)", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /backTarget=\{\{ href: "\/admin\/events", label: "Event Admin" \}\}/,
+  );
+});
+
+test("the original route guard is preserved exactly -- no task authority, no adminNav change, no second guard", () => {
+  assert.match(PAGE_SOURCE, /<AdminRouteGuard requiredPermission="can_view_admin_dashboard">/);
+  assert.equal((PAGE_SOURCE.match(/<AdminRouteGuard/g) || []).length, 1);
+  assert.doesNotMatch(PAGE_SOURCE, /requiredTask/);
+  assert.doesNotMatch(PAGE_SOURCE, /adminNav/);
+});
+
+test("localStorage keys/schema and the migrate-on-read source remain the literal pre-rally-checklist strings, unaffected by the visible title change", () => {
+  assert.equal(checklistStorageKeyForEvent("event-a"), "epicentrax-pre-rally-checklist-event-a");
+  assert.equal(previousChecklistStorageKeyForEvent("event-a"), "fcoc-pre-rally-checklist-event-a");
+});
+
+test("no workspace section, AdminReturnLink, or new loading/empty state primitive was introduced", () => {
+  assert.doesNotMatch(PAGE_SOURCE, /getAdminNavItemChildren/);
+  assert.doesNotMatch(PAGE_SOURCE, /AdminReturnLink/);
+  assert.doesNotMatch(PAGE_SOURCE, /LoadingState|EmptyState/);
+});
