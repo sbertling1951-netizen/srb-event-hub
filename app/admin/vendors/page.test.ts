@@ -77,16 +77,14 @@ test("Event context handling is unchanged: reads getCurrentAdminEvent and re-syn
   assert.equal(/setCurrentAdminEvent/.test(PAGE_SOURCE), false);
 });
 
-// -- Stage 5A: contextual action into the shared Imports Service Center --
+// -- Central UI Standardization: the former Stage 5A hand-built
+// "contextual Import Vendors" anchor (and every other unrelated legacy
+// shortcut in the old cross-domain quick-links hub) is deliberately
+// removed, not moved elsewhere, in favor of the single canonical
+// `VendorWorkspaceSection` derived from getAdminNavItemChildren(). See
+// app/admin/vendors/page.test.tsx for that replacement's own coverage.
 
-test("offers a contextual Import Vendors link to the shared Imports Service Center's Vendors door, carrying no authority of its own", () => {
-  assert.match(PAGE_SOURCE, /import\s*\{\s*buildImportsHref\s*\}\s*from\s*"@\/lib\/importTypeRouting"/);
-  assert.match(PAGE_SOURCE, /href=\{buildImportsHref\("vendors"\)\}/);
-});
-
-test("the Import Vendors link is a plain navigation anchor, not a button making an RPC/table call itself", () => {
-  const start = PAGE_SOURCE.indexOf('href={buildImportsHref("vendors")}');
-  assert.notEqual(start, -1);
-  const block = PAGE_SOURCE.slice(Math.max(0, start - 40), start + 200);
-  assert.match(block, /<a href=\{buildImportsHref\("vendors"\)\} className="admin-summary-link">/);
+test("the former hand-built Import Vendors anchor and its buildImportsHref import are fully removed, not moved elsewhere", () => {
+  assert.equal(/buildImportsHref/.test(PAGE_SOURCE), false);
+  assert.equal(/admin-summary-link/.test(PAGE_SOURCE), false);
 });

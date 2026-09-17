@@ -7,9 +7,10 @@ import VendorEventDecisionModal from "@/components/admin/VendorEventDecisionModa
 import VendorIntelligenceBadge from "@/components/admin/VendorIntelligenceBadge";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { getAdminNavItemChildren } from "@/components/shell/navigation/adminNav";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 import { Alert, type AlertTone } from "@/components/ui/Alert";
-import { AppButton } from "@/components/ui/AppButton";
+import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
@@ -22,12 +23,12 @@ import {
   type StatusBadgeTone,
 } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
+import type { AdminTenantAuthorityResult } from "@/lib/adminTenantAuthority";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
 } from "@/lib/adminWorkspaceContext";
-import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
-import { buildImportsHref } from "@/lib/importTypeRouting";
+import { type AdminAccessResult, canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 import {
   admitVendorForEvent,
@@ -168,6 +169,55 @@ export function vendorPageStatusTone(message: string): AlertTone {
 }
 
 
+/**
+ * Vendors parent workspace (Central UI Standardization) -- the same
+ * shared entry-area pattern already used by the Event, Attendees, Maps,
+ * Agenda, Photos, and Print workspaces. Replaces the former hand-built,
+ * cross-domain "Vendor Workspace" quick-links hub (Manage Vendors,
+ * Vendor Requests, Vendor User Access, Import Vendors, Nearby Services,
+ * Event Setup, Admin Dashboard -- all unconditional, none derived from
+ * the canonical nav model). Links are exactly the canonical "vendors"
+ * nav item's own visible children (today, Vendor Requests and Vendor
+ * Access) -- derived from `getAdminNavItemChildren()`, never a second
+ * permission/task-authority check or a copied list of its own. The
+ * unrelated legacy shortcuts (Import Vendors, Nearby Services, Event
+ * Setup, Admin Dashboard) are not part of the "vendors" nav subtree and
+ * are removed, not moved elsewhere.
+ *
+ * Exported (not merely a local closure of `AdminVendorsPageInner`) so
+ * the test file can render this exact production component with
+ * `renderToStaticMarkup`, passing already-resolved `admin`/
+ * `tenantAuthority` values directly -- the same values `useAdmin()`
+ * would otherwise supply -- and exercising the real
+ * `getAdminNavItemChildren()` call itself, not a precomputed or
+ * separately re-derived link list.
+ */
+export function VendorWorkspaceSection({
+  admin,
+  tenantAuthority,
+}: {
+  admin: AdminAccessResult | null;
+  tenantAuthority: AdminTenantAuthorityResult | null;
+}) {
+  const vendorWorkspaceLinks = getAdminNavItemChildren(admin, tenantAuthority, "vendors");
+
+  if (vendorWorkspaceLinks.length === 0) {
+    return null;
+  }
+
+  return (
+    <PageSection variant="card" title="Vendor Workspace">
+      <FormActions>
+        {vendorWorkspaceLinks.map((link) => (
+          <AppLinkButton key={link.id} href={link.href} variant="default">
+            {link.label}
+          </AppLinkButton>
+        ))}
+      </FormActions>
+    </PageSection>
+  );
+}
+
 function AdminVendorsPageInner() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [eventVendors, setEventVendors] = useState<EventVendor[]>([]);
@@ -197,7 +247,7 @@ function AdminVendorsPageInner() {
   // lib/adminWorkspaceContext.tsx's re-export) -- the same mechanism
   // every other governed Admin page uses. Never reimplemented here.
   const adminEvent = getCurrentAdminEvent();
-  const { admin } = useAdmin();
+  const { admin, tenantAuthority } = useAdmin();
   // Shell's own canonical compact-state signal (UI Phase 2/3) -- decides
   // desktop table vs. narrow-viewport list below, replacing what would
   // otherwise be a page-local resize listener.
@@ -839,13 +889,6 @@ function AdminVendorsPageInner() {
     );
   }
 
-  const quickLinksGridStyle: React.CSSProperties = {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
-    gap: "var(--space-6)",
-    minWidth: 0,
-  };
-
   return (
     <div style={{ display: "grid", gap: "var(--space-10)", minWidth: 0 }}>
       {error ? (
@@ -854,43 +897,7 @@ function AdminVendorsPageInner() {
         <Alert tone={vendorPageStatusTone(status)}>{status}</Alert>
       ) : null}
 
-      <section style={{ display: "grid", gap: "var(--space-4)" }}>
-        <PageHeader title="Vendor Workspace" headingLevel="h2" titleClassName="app-section-title" />
-        <div style={quickLinksGridStyle}>
-          <a href="/admin/vendors" className="admin-summary-link">
-            <div className="admin-summary-link-title">Manage Vendors</div>
-            <div className="admin-summary-link-description">Catalog identity and Event admission.</div>
-          </a>
-          <a href="/admin/vendor-requests" className="admin-summary-link">
-            <div className="admin-summary-link-title">Vendor Requests</div>
-            <div className="admin-summary-link-description">Triage member-submitted service requests.</div>
-          </a>
-          <a href="/admin/vendors/access" className="admin-summary-link">
-            <div className="admin-summary-link-title">Vendor User Access</div>
-            <div className="admin-summary-link-description">Invite and manage vendor portal logins.</div>
-          </a>
-          {/* Stage 5A contextual action into the shared Imports Service
-              Center's Vendors door -- navigation only, no authority.
-              Vendor canonical import execution is Stage 5B; the
-              destination truthfully shows it is not yet available. */}
-          <a href={buildImportsHref("vendors")} className="admin-summary-link">
-            <div className="admin-summary-link-title">Import Vendors</div>
-            <div className="admin-summary-link-description">Vendor import templates (execution: coming in a later stage).</div>
-          </a>
-          <a href="/admin/nearby" className="admin-summary-link">
-            <div className="admin-summary-link-title">Nearby Services</div>
-            <div className="admin-summary-link-description">Curate the reusable nearby-places library.</div>
-          </a>
-          <a href="/admin/events" className="admin-summary-link">
-            <div className="admin-summary-link-title">Event Setup</div>
-            <div className="admin-summary-link-description">Configure the working Event.</div>
-          </a>
-          <a href="/admin/dashboard" className="admin-summary-link">
-            <div className="admin-summary-link-title">Admin Dashboard</div>
-            <div className="admin-summary-link-description">Return to the operational launch point.</div>
-          </a>
-        </div>
-      </section>
+      <VendorWorkspaceSection admin={admin} tenantAuthority={tenantAuthority} />
 
       {adminEvent?.id && pendingApplications.length > 0 ? (
         <section style={{ display: "grid", gap: "var(--space-4)" }}>

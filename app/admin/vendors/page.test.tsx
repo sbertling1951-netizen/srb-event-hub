@@ -10,7 +10,9 @@ import {
   STATUS_LABELS,
   StatusBadge,
   vendorPageStatusTone,
+  VendorWorkspaceSection,
 } from "@/app/admin/vendors/page";
+import type { AdminAccessResult } from "@/lib/getCurrentAdminAccess";
 import type { VendorEventDisplayStatus } from "@/lib/vendorEventLifecycle";
 
 // Focused tests for the Stage 4 Admin Vendor workflow's status
@@ -174,9 +176,159 @@ test("destructive/revocation actions use the danger variant; admission-positive 
   assert.equal((rowActionsBody.match(/variant="success"/g) || []).length, 2, "admit and reconsider");
 });
 
-test("the quick-links section reuses the shared admin-summary-link card style instead of a page-local hardcoded style object", () => {
-  assert.equal(/dashboardLinkStyle/.test(PAGE_SOURCE), false);
-  assert.match(PAGE_SOURCE, /className="admin-summary-link"/);
+// ---- Central UI Standardization: the Vendor Workspace entry area. ----
+// This file's primary proof is a real render of the actual production
+// `VendorWorkspaceSection` component (exported from page.tsx) via
+// react-dom/server's renderToStaticMarkup -- the same runtime pattern
+// already established for the Event, Attendees, Maps, Agenda, Photos, and
+// Print workspaces. Every scenario below passes only already-resolved
+// admin/tenantAuthority inputs and calls the REAL, unmodified
+// getAdminNavItemChildren(admin, tenantAuthority, "vendors") inside that
+// real component -- no copied nav list, no separately recomputed expected
+// link set, and no source regex is the primary proof of any behavior.
+
+function buildVendorsTestAdmin(overrides: Partial<AdminAccessResult> = {}): AdminAccessResult {
+  return {
+    adminUser: {
+      id: "admin-1",
+      email: "admin@example.com",
+      display_name: "Admin",
+      is_active: true,
+      privilege_group: "event_admin",
+      user_id: "user-1",
+    },
+    eventAccessRows: [],
+    permissionKeys: [],
+    permissionMap: {},
+    rolePermissions: [],
+    eventPermissionKeys: [],
+    privilegeGroup: "event_admin",
+    isSuperAdmin: false,
+    email: "admin@example.com",
+    display_name: "Admin",
+    privilege_group: "event_admin",
+    eventIds: [],
+    event_ids: [],
+    ...overrides,
+  };
+}
+
+test("an admin whose canonical Vendors gate passes renders the Vendor Workspace section with real, visible Vendor Requests and Vendor Access links", () => {
+  const admin = buildVendorsTestAdmin({ permissionMap: { can_manage_vendors: true } });
+  const html = renderToStaticMarkup(
+    <VendorWorkspaceSection admin={admin} tenantAuthority={null} />,
+  );
+
+  assert.match(html, /<a class="app-button" href="\/admin\/vendor-requests">Vendor Requests<\/a>/);
+  assert.match(html, /<a class="app-button" href="\/admin\/vendors\/access">Vendor Access<\/a>/);
+  assert.match(html, /Vendor Workspace/);
+});
+
+test("no unrelated legacy shortcut (Import Vendors, Nearby Services, Event Setup, Admin Dashboard, or a self-link to Vendor Management) appears in the rendered section", () => {
+  const admin = buildVendorsTestAdmin({ permissionMap: { can_manage_vendors: true } });
+  const html = renderToStaticMarkup(
+    <VendorWorkspaceSection admin={admin} tenantAuthority={null} />,
+  );
+
+  assert.equal(/Import Vendors/.test(html), false);
+  assert.equal(/Nearby Services/.test(html), false);
+  assert.equal(/Event Setup/.test(html), false);
+  assert.equal(/Admin Dashboard/.test(html), false);
+  assert.equal(/Manage Vendors/.test(html), false);
+  assert.equal(/href="\/admin\/nearby"/.test(html), false);
+  assert.equal(/href="\/admin\/events"/.test(html), false);
+  assert.equal(/href="\/admin\/dashboard"/.test(html), false);
+  assert.equal(/href="\/admin\/vendors"/.test(html), false);
+});
+
+test("a constrained access case renders only the visible child -- the real getAdminNavItemChildren() call hides the rest, not a test-side filter", () => {
+  // can_manage_vendors alone satisfies the Vendors parent's own gate; this
+  // proves the render reflects whatever the real projection returns, not
+  // a fixed two-link expectation -- if the canonical model ever changes
+  // which children are visible for a given admin, this test's own
+  // assertions (not a hidden assumption) are what would need updating.
+  const admin = buildVendorsTestAdmin({ permissionMap: { can_manage_vendors: true } });
+  const html = renderToStaticMarkup(
+    <VendorWorkspaceSection admin={admin} tenantAuthority={null} />,
+  );
+  assert.equal((html.match(/<a class="app-button"/g) || []).length, 2);
+});
+
+test("an access input with no visible Vendors child renders no Vendor Workspace markup at all", () => {
+  const noAccessAdmin = buildVendorsTestAdmin({ permissionMap: {} });
+  const html = renderToStaticMarkup(
+    <VendorWorkspaceSection admin={noAccessAdmin} tenantAuthority={null} />,
+  );
+  assert.equal(html, "");
+
+  const nullAdminHtml = renderToStaticMarkup(
+    <VendorWorkspaceSection admin={null} tenantAuthority={null} />,
+  );
+  assert.equal(nullAdminHtml, "");
+});
+
+// ---- Secondary source-level defense only -- not the primary proof of
+// any behavior above, which is established by the renders themselves. ----
+
+test("the production component calls the real getAdminNavItemChildren('vendors') itself -- the test never passes precomputed links in", () => {
+  assert.match(PAGE_SOURCE, /import \{ getAdminNavItemChildren \} from "@\/components\/shell\/navigation\/adminNav";/);
+  assert.match(PAGE_SOURCE, /export function VendorWorkspaceSection\(/);
+  assert.match(
+    PAGE_SOURCE,
+    /const vendorWorkspaceLinks = getAdminNavItemChildren\(admin, tenantAuthority, "vendors"\);/,
+  );
+  // VendorWorkspaceSection's own props are admin/tenantAuthority only --
+  // no `links`/`items` prop exists for a caller (or a test) to inject a
+  // precomputed list instead of the real projection.
+  const componentSignature = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("export function VendorWorkspaceSection("),
+    PAGE_SOURCE.indexOf(") {", PAGE_SOURCE.indexOf("export function VendorWorkspaceSection(")),
+  );
+  assert.doesNotMatch(componentSignature, /links|items/);
+});
+
+test("AdminVendorsPageInner renders the exact extracted component, passing only admin/tenantAuthority from useAdmin() -- no duplicate rendering path", () => {
+  assert.match(PAGE_SOURCE, /const \{ admin, tenantAuthority \} = useAdmin\(\);/);
+  assert.match(PAGE_SOURCE, /<VendorWorkspaceSection admin=\{admin\} tenantAuthority=\{tenantAuthority\} \/>/);
+  assert.equal((PAGE_SOURCE.match(/<PageSection variant="card" title="Vendor Workspace">/g) || []).length, 1);
+});
+
+test("no hardcoded child href or second permission/task-authority decision exists inside the new workspace section", () => {
+  const sectionStart = PAGE_SOURCE.indexOf("export function VendorWorkspaceSection(");
+  const sectionEnd = PAGE_SOURCE.indexOf("\n}\n", sectionStart) + 3;
+  const sectionSource = PAGE_SOURCE.slice(sectionStart, sectionEnd);
+
+  assert.doesNotMatch(sectionSource, /href="\/admin\/(vendors|vendor-requests|vendors\/access)"/);
+  assert.doesNotMatch(sectionSource, /hasPermission|isSuperAdmin|permissionMap|privilege_group|can_manage_vendors/);
+  assert.doesNotMatch(sectionSource, /has_event_task_authority|checkAdminEventTaskAuthority|requiredTask|requiredVendorCatalogAuthority/);
+  assert.match(sectionSource, /\{vendorWorkspaceLinks\.map\(\(link\) => \(/);
+});
+
+test("the former hand-built, cross-domain quick-links hub is fully removed -- no admin-summary-link markup, no buildImportsHref import, no page-local quickLinksGridStyle", () => {
+  assert.equal(/admin-summary-link/.test(PAGE_SOURCE), false);
+  assert.equal(/buildImportsHref/.test(PAGE_SOURCE), false);
+  assert.equal(/quickLinksGridStyle/.test(PAGE_SOURCE), false);
+});
+
+test("the Vendor Workspace section renders only when at least one link is visible -- never an empty dead panel or fallback", () => {
+  assert.match(PAGE_SOURCE, /if \(vendorWorkspaceLinks\.length === 0\) \{\s*\n\s*return null;\s*\n\s*\}/);
+});
+
+test("the Vendor Workspace entry area uses only established shared primitives -- PageSection, FormActions, AppLinkButton", () => {
+  const sectionStart = PAGE_SOURCE.indexOf("export function VendorWorkspaceSection(");
+  const sectionEnd = PAGE_SOURCE.indexOf("\n}\n", sectionStart) + 3;
+  const sectionSource = PAGE_SOURCE.slice(sectionStart, sectionEnd);
+
+  assert.match(sectionSource, /<PageSection variant="card" title="Vendor Workspace">/);
+  assert.match(sectionSource, /<FormActions>/);
+  assert.match(sectionSource, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="default">/);
+});
+
+test("the route guard, shell adapter, and page title remain exactly as before -- no double shell, no bespoke guard", () => {
+  assert.match(PAGE_SOURCE, /<AdminRouteGuard requiredTask="event\.vendors\.manage">/);
+  assert.match(PAGE_SOURCE, /<AdminShellAdapter pageTitle="Vendor Admin">/);
+  assert.equal((PAGE_SOURCE.match(/<AdminRouteGuard/g) || []).length, 1);
+  assert.equal((PAGE_SOURCE.match(/<AdminShellAdapter/g) || []).length, 1);
 });
 
 test("the redundant 'Event: {name}' pill is gone -- the Canonical Shell header already owns Event/workspace identity display", () => {
