@@ -5,21 +5,26 @@ import { type CSSProperties, useCallback, useEffect, useRef, useState } from "re
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
-import { AppButton } from "@/components/ui/AppButton";
+import { getAdminNavItemChildren } from "@/components/shell/navigation/adminNav";
+import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Select, Textarea } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
 import { PageSection } from "@/components/ui/PageSection";
+import { useAdmin } from "@/lib/adminContext";
 import {
   clearAdminPhotoCacheForUser,
   getAdminPhotoSignedUrl,
   invalidateAdminPhotoCache,
   loadAdminPhotoSnapshot,
 } from "@/lib/adminPhotoCache";
+import type { AdminTenantAuthorityResult } from "@/lib/adminTenantAuthority";
 import {
   getCurrentAdminEvent,
   useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
+import type { AdminAccessResult } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
 export default function AdminPhotosPage() {
@@ -32,7 +37,53 @@ export default function AdminPhotosPage() {
   );
 }
 
+/**
+ * Photos parent workspace (Central Navigation Batch 2D) -- the same
+ * shared entry-area pattern already used by the Event, Attendees, Maps,
+ * and Agenda workspaces. Links are exactly the canonical "photos" nav
+ * item's own visible children (today, Photo Library and Slideshow) --
+ * derived from `getAdminNavItemChildren()`, never a second permission/
+ * visibility list of its own. The existing hardcoded "Launch Slideshow"
+ * and "Photo Library" buttons above remain untouched -- the same
+ * "appears in both places" precedent the Event Workspace section
+ * already established.
+ *
+ * Exported (not merely a local closure of `AdminPhotosPageInner`) so the
+ * test file can render this exact production component with
+ * `renderToStaticMarkup`, passing already-resolved `admin`/
+ * `tenantAuthority` values directly -- the same values `useAdmin()`
+ * would otherwise supply -- and exercising the real
+ * `getAdminNavItemChildren()` call itself, not a precomputed or
+ * separately re-derived link list.
+ */
+export function PhotosWorkspaceSection({
+  admin,
+  tenantAuthority,
+}: {
+  admin: AdminAccessResult | null;
+  tenantAuthority: AdminTenantAuthorityResult | null;
+}) {
+  const photosWorkspaceLinks = getAdminNavItemChildren(admin, tenantAuthority, "photos");
+
+  if (photosWorkspaceLinks.length === 0) {
+    return null;
+  }
+
+  return (
+    <PageSection variant="card" title="Photos Workspace">
+      <FormActions>
+        {photosWorkspaceLinks.map((link) => (
+          <AppLinkButton key={link.id} href={link.href} variant="default">
+            {link.label}
+          </AppLinkButton>
+        ))}
+      </FormActions>
+    </PageSection>
+  );
+}
+
 function AdminPhotosPageInner() {
+  const { admin, tenantAuthority } = useAdmin();
   const [pendingCount, setPendingCount] = useState(0);
   const [totalSubmitted, setTotalSubmitted] = useState(0);
   const [approvedCount, setApprovedCount] = useState(0);
@@ -345,6 +396,8 @@ function AdminPhotosPageInner() {
             Photo Library
           </Link>
         </div>
+
+        <PhotosWorkspaceSection admin={admin} tenantAuthority={tenantAuthority} />
 
         <PageSection variant="card" title={`${pendingCount} Remaining For Review`}>
           {photos.length === 0 ? (

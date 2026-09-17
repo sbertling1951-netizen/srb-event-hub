@@ -3,6 +3,12 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import { PhotosWorkspaceSection } from "@/app/admin/photos/page";
+import type { AdminAccessResult } from "@/lib/getCurrentAdminAccess";
+
 // Focused tests for the Photo/Media Authority Foundation Stage 2 Admin
 // Photos governed RPC cutover. Run with:
 //   npx tsx --test app/admin/photos/page.test.ts
@@ -161,4 +167,135 @@ test("the toast + undo interaction (5s auto-clear timer, undoData snapshot) is u
   assert.match(PAGE_SOURCE, /toastTimerRef\.current = setTimeout\(\(\) => \{/);
   assert.match(PAGE_SOURCE, /\}, 5000\);/);
   assert.match(PAGE_SOURCE, /<AppButton\s*\n\s*onClick=\{\(\) => void undoLastAction\(\)\}/);
+});
+
+// ---- Central Navigation Batch 2D: the Photos Workspace entry area. ----
+// This file's primary proof is a real render of the actual production
+// `PhotosWorkspaceSection` component (exported from page.tsx) via
+// react-dom/server's renderToStaticMarkup -- the same runtime pattern
+// already established for the Maps and Agenda workspaces
+// (app/admin/map-admin/page.test.tsx, app/admin/agenda/page.test.ts).
+// Every scenario below passes only already-resolved admin/tenantAuthority
+// inputs and calls the REAL, unmodified
+// getAdminNavItemChildren(admin, tenantAuthority, "photos") inside that
+// real component -- no copied nav list, no separately recomputed expected
+// link set, and no source regex is the primary proof of any behavior.
+// Rendered via React.createElement (not JSX) since this file is .ts, not
+// .tsx.
+
+function buildPhotosTestAdmin(overrides: Partial<AdminAccessResult> = {}): AdminAccessResult {
+  return {
+    adminUser: {
+      id: "admin-1",
+      email: "admin@example.com",
+      display_name: "Admin",
+      is_active: true,
+      privilege_group: "event_admin",
+      user_id: "user-1",
+    },
+    eventAccessRows: [],
+    permissionKeys: [],
+    permissionMap: {},
+    rolePermissions: [],
+    eventPermissionKeys: [],
+    privilegeGroup: "event_admin",
+    isSuperAdmin: false,
+    email: "admin@example.com",
+    display_name: "Admin",
+    privilege_group: "event_admin",
+    eventIds: [],
+    event_ids: [],
+    ...overrides,
+  };
+}
+
+test("an admin whose canonical Photos gate passes renders the Photos Workspace section with real, visible Photo Library and Slideshow links", () => {
+  const admin = buildPhotosTestAdmin({ permissionMap: { can_manage_reports: true } });
+  const html = renderToStaticMarkup(
+    createElement(PhotosWorkspaceSection, { admin, tenantAuthority: null }),
+  );
+
+  assert.match(html, /<a class="app-button" href="\/admin\/photo-library">Photo Library<\/a>/);
+  assert.match(html, /<a class="app-button" href="\/admin\/slideshow">Slideshow<\/a>/);
+  assert.match(html, /Photos Workspace/);
+});
+
+test("an access input with no visible Photos child renders no Photos Workspace markup at all", () => {
+  const noAccessAdmin = buildPhotosTestAdmin({ permissionMap: {} });
+  const html = renderToStaticMarkup(
+    createElement(PhotosWorkspaceSection, { admin: noAccessAdmin, tenantAuthority: null }),
+  );
+  assert.equal(html, "");
+
+  const nullAdminHtml = renderToStaticMarkup(
+    createElement(PhotosWorkspaceSection, { admin: null, tenantAuthority: null }),
+  );
+  assert.equal(nullAdminHtml, "");
+});
+
+// ---- Secondary source-level defense only -- not the primary proof of
+// any behavior above, which is established by the renders themselves. ----
+
+test("the production component calls the real getAdminNavItemChildren('photos') itself -- the test never passes precomputed links in", () => {
+  assert.match(PAGE_SOURCE, /import \{ getAdminNavItemChildren \} from "@\/components\/shell\/navigation\/adminNav";/);
+  assert.match(PAGE_SOURCE, /export function PhotosWorkspaceSection\(/);
+  assert.match(
+    PAGE_SOURCE,
+    /const photosWorkspaceLinks = getAdminNavItemChildren\(admin, tenantAuthority, "photos"\);/,
+  );
+  // PhotosWorkspaceSection's own props are admin/tenantAuthority only --
+  // no `links`/`items` prop exists for a caller (or a test) to inject a
+  // precomputed list instead of the real projection.
+  const componentSignature = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("export function PhotosWorkspaceSection("),
+    PAGE_SOURCE.indexOf(") {", PAGE_SOURCE.indexOf("export function PhotosWorkspaceSection(")),
+  );
+  assert.doesNotMatch(componentSignature, /links|items/);
+});
+
+test("AdminPhotosPageInner renders the exact extracted component, passing only admin/tenantAuthority from useAdmin() -- no duplicate rendering path", () => {
+  assert.match(PAGE_SOURCE, /const \{ admin, tenantAuthority \} = useAdmin\(\);/);
+  assert.match(PAGE_SOURCE, /<PhotosWorkspaceSection admin=\{admin\} tenantAuthority=\{tenantAuthority\} \/>/);
+  assert.equal((PAGE_SOURCE.match(/<PageSection variant="card" title="Photos Workspace">/g) || []).length, 1);
+});
+
+test("no hardcoded child href or second permission/visibility decision exists inside the new workspace section", () => {
+  const sectionStart = PAGE_SOURCE.indexOf("export function PhotosWorkspaceSection(");
+  const sectionEnd = PAGE_SOURCE.indexOf("\n}\n", sectionStart) + 3;
+  const sectionSource = PAGE_SOURCE.slice(sectionStart, sectionEnd);
+
+  assert.doesNotMatch(sectionSource, /href="\/admin\/(photo-library|slideshow)"/);
+  assert.doesNotMatch(sectionSource, /hasPermission|isSuperAdmin|permissionMap|privilege_group|can_manage_reports/);
+  assert.doesNotMatch(sectionSource, /has_event_task_authority|checkAdminEventTaskAuthority|requiredTask/);
+  // The section maps photosWorkspaceLinks directly -- no hardcoded
+  // destination list of its own.
+  assert.match(sectionSource, /\{photosWorkspaceLinks\.map\(\(link\) => \(/);
+});
+
+test("the pre-existing hardcoded 'Launch Slideshow' and 'Photo Library' operational buttons are untouched -- the known unconditional Slideshow-link/task mismatch is neither hidden nor fixed here", () => {
+  assert.match(PAGE_SOURCE, /<Link href="\/admin\/slideshow" className="app-button">/);
+  assert.match(PAGE_SOURCE, /<Link href="\/admin\/photo-library" className="app-button">/);
+  assert.match(PAGE_SOURCE, />\s*Launch Slideshow\s*</);
+  assert.match(PAGE_SOURCE, />\s*Photo Library\s*</);
+});
+
+test("the Photos Workspace section renders only when at least one link is visible -- never an empty dead section", () => {
+  assert.match(PAGE_SOURCE, /if \(photosWorkspaceLinks\.length === 0\) \{\s*\n\s*return null;\s*\n\s*\}/);
+});
+
+test("the Photos Workspace entry area uses only established shared primitives -- PageSection, FormActions, AppLinkButton", () => {
+  const sectionStart = PAGE_SOURCE.indexOf("export function PhotosWorkspaceSection(");
+  const sectionEnd = PAGE_SOURCE.indexOf("\n}\n", sectionStart) + 3;
+  const sectionSource = PAGE_SOURCE.slice(sectionStart, sectionEnd);
+
+  assert.match(sectionSource, /<PageSection variant="card" title="Photos Workspace">/);
+  assert.match(sectionSource, /<FormActions>/);
+  assert.match(sectionSource, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="default">/);
+});
+
+test("the route guard, shell adapter, and page title remain exactly as before -- no double shell, no bespoke guard", () => {
+  assert.match(PAGE_SOURCE, /<AdminRouteGuard requiredTask="event\.photos\.manage">/);
+  assert.match(PAGE_SOURCE, /<AdminShellAdapter pageTitle="Admin Photos">/);
+  assert.equal((PAGE_SOURCE.match(/<AdminRouteGuard/g) || []).length, 1);
+  assert.equal((PAGE_SOURCE.match(/<AdminShellAdapter/g) || []).length, 1);
 });
