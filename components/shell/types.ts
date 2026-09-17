@@ -23,6 +23,20 @@ export type ShellNavItem = {
   icon?: string;
   /** A small, presentation-only count for an already-authorized work queue. */
   badgeCount?: number;
+  /**
+   * Optional nested items presented as this item's submenu (Stage: Central
+   * Navigation, shared nested-submenu extension). Omitted or empty means
+   * this item renders exactly as before -- a single flat link, no
+   * expand/collapse control. `item.href` always stays a real link to that
+   * item's own landing page; children are a *separate* accessible
+   * expand/collapse affordance layered on top, never a replacement for the
+   * parent's own destination. One level deep only -- a child's own
+   * `children` field, if ever populated, is not rendered by `ShellNav`.
+   * Backward compatible for every existing consumer (Member/Vendor/
+   * Organizer nav builders never set this field, so their output is
+   * byte-identical to before this field existed).
+   */
+  children?: ShellNavItem[];
 };
 
 export type ShellNavSection = {

@@ -327,6 +327,11 @@ test("Registry Provider Catalog uses the canonical Admin shell -- double-shell r
   assert.equal(resolveShellMode("/admin/registry-providers/history"), "legacy");
 });
 
+test("the new Admin workspace overview (/admin/admin) uses the canonical Admin shell exactly once -- no double shell", () => {
+  assert.equal(resolveShellMode("/admin/admin"), "canonical-admin");
+  assert.equal(resolveShellMode("/admin/admin/history"), "legacy");
+});
+
 /**
  * Defect-class regression proof (Admin only, per this repair's scope).
  *
@@ -387,12 +392,13 @@ test("every Admin page.tsx that actually renders AdminShellAdapter is classified
     adapterRoutes.push(routePath || "/admin");
   }
 
-  // Ground truth as of this repair: 39 Admin routes render their own
-  // AdminShellAdapter directly (verified by direct enumeration, not
-  // assumed) -- this pins the count so a route silently gaining or
-  // losing its adapter render is visible here too, not just a resolve()
-  // check on routes this file already knows to ask about.
-  assert.equal(adapterRoutes.length, 39, `expected 39 Admin routes rendering AdminShellAdapter, found ${adapterRoutes.length}: ${adapterRoutes.join(", ")}`);
+  // Ground truth as of Central Navigation Batch 1 (which added
+  // /admin/admin, the new Admin workspace overview): 40 Admin routes
+  // render their own AdminShellAdapter directly (verified by direct
+  // enumeration, not assumed) -- this pins the count so a route silently
+  // gaining or losing its adapter render is visible here too, not just a
+  // resolve() check on routes this file already knows to ask about.
+  assert.equal(adapterRoutes.length, 40, `expected 40 Admin routes rendering AdminShellAdapter, found ${adapterRoutes.length}: ${adapterRoutes.join(", ")}`);
 
   for (const routePath of adapterRoutes) {
     assert.equal(

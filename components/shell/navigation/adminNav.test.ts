@@ -4,17 +4,15 @@ import { test } from "node:test";
 import { buildAdminNavSections } from "@/components/shell/navigation/adminNav";
 import type { AdminAccessResult } from "@/lib/getCurrentAdminAccess";
 
-// Focused tests for the /admin/imports navigation-discoverability fix
-// (2026-08-22). Root cause: /admin/imports (née "Attendee Management")
-// was dropped from Sidebar.tsx's Admin nav array in commit 730252f
-// ("Add attendee management back links and clean sidebar navigation",
-// 2026-04-25) when four related tools were folded toward the new
-// consolidated /admin/attendees page; the cross-navigation that removal
-// implied never materialized, and the later canonical-shell nav model
-// (this file) faithfully reproduced Sidebar's already-gapped state
-// rather than reintroducing it. The route itself
-// (app/admin/imports/page.test.ts) was never affected -- only
-// discoverability was missing. Run with:
+// Central Navigation Batch 1: buildAdminNavSections() rebuilt around
+// Pap's approved plain-language Admin map -- one flat top-level list (no
+// "Operations"/"Content"/"Intelligence"/"Staff & Setup" section buckets),
+// with related destinations nested as `ShellNavItem.children`. Every
+// existing gate below is reused byte-for-byte from the prior flat model;
+// these tests re-prove each one under the new nested shape, plus cover
+// the four destinations (Validation Rules, Export, Reports, Vendor
+// Access) and the new Admin workspace parent that had no nav presence at
+// all before this batch. Run with:
 //   npx tsx --test components/shell/navigation/adminNav.test.ts
 
 function buildAdmin(overrides: Partial<AdminAccessResult> = {}): AdminAccessResult {
@@ -43,17 +41,39 @@ function buildAdmin(overrides: Partial<AdminAccessResult> = {}): AdminAccessResu
   };
 }
 
-function findItem(sections: ReturnType<typeof buildAdminNavSections>, id: string) {
+type Sections = ReturnType<typeof buildAdminNavSections>;
+
+/** Finds an item anywhere in the tree (top-level or nested one level), returning it plus its top-level owner's id (its own id, if it is itself top-level). */
+function findItem(sections: Sections, id: string): { item: Sections[number]["items"][number]; ownerId: string } | null {
   for (const section of sections) {
-    const item = section.items.find((i) => i.id === id);
-    if (item) {
-      return { item, section };
+    for (const item of section.items) {
+      if (item.id === id) {
+        return { item, ownerId: item.id };
+      }
+      for (const child of item.children ?? []) {
+        if (child.id === id) {
+          return { item: child, ownerId: item.id };
+        }
+      }
     }
   }
   return null;
 }
 
-test("only a Super Admin sees the canonical Tenant Administration navigation item", () => {
+function topLevelIds(sections: Sections): string[] {
+  return sections.flatMap((s) => s.items.map((i) => i.id));
+}
+
+test("the nav model is one flat, untitled top-level list -- no abstract section buckets", () => {
+  const admin = buildAdmin({ isSuperAdmin: true, privilege_group: "super_admin" });
+  const sections = buildAdminNavSections(admin, { status: "allowed" });
+
+  assert.equal(sections.length, 1);
+  assert.equal(sections[0].id, "admin");
+  assert.equal(sections[0].title, undefined);
+});
+
+test("only a Super Admin sees Tenant Administration, nested under the Admin workspace parent", () => {
   const superAdmin = buildAdmin({ isSuperAdmin: true });
   const tenantAdmin = buildAdmin({ permissionMap: { can_manage_admins: true } });
 
@@ -61,12 +81,12 @@ test("only a Super Admin sees the canonical Tenant Administration navigation ite
   assert.ok(found);
   assert.equal(found.item.label, "Tenant Administration");
   assert.equal(found.item.href, "/admin/tenants");
-  assert.equal(found.section.id, "admin");
+  assert.equal(found.ownerId, "admin-workspace");
   assert.equal(findItem(buildAdminNavSections(tenantAdmin), "tenants"), null);
   assert.equal(findItem(buildAdminNavSections(null), "tenants"), null);
 });
 
-test("only a Super Admin sees the Passport Refunds review entry", () => {
+test("only a Super Admin sees Passport Refunds, nested under the Admin workspace parent", () => {
   const superAdmin = buildAdmin({ isSuperAdmin: true });
   const tenantAdmin = buildAdmin({ permissionMap: { can_manage_admins: true } });
 
@@ -74,7 +94,7 @@ test("only a Super Admin sees the Passport Refunds review entry", () => {
   assert.ok(found);
   assert.equal(found.item.label, "Passport Refunds");
   assert.equal(found.item.href, "/admin/passport-refunds");
-  assert.equal(found.section.id, "admin");
+  assert.equal(found.ownerId, "admin-workspace");
   assert.equal(findItem(buildAdminNavSections(tenantAdmin), "passport-refunds"), null);
   assert.equal(findItem(buildAdminNavSections(null), "passport-refunds"), null);
 });
@@ -82,225 +102,289 @@ test("only a Super Admin sees the Passport Refunds review entry", () => {
 test("Passport Refunds shows a pending-approval count only for a Super Admin and only when nonzero", () => {
   const superAdmin = buildAdmin({ isSuperAdmin: true });
 
-  assert.equal(
-    findItem(buildAdminNavSections(superAdmin, null, 0), "passport-refunds")?.item.badgeCount,
-    undefined,
-  );
-  assert.equal(
-    findItem(buildAdminNavSections(superAdmin, null, 3), "passport-refunds")?.item.badgeCount,
-    3,
-  );
+  assert.equal(findItem(buildAdminNavSections(superAdmin, null, 0), "passport-refunds")?.item.badgeCount, undefined);
+  assert.equal(findItem(buildAdminNavSections(superAdmin, null, 3), "passport-refunds")?.item.badgeCount, 3);
   assert.equal(findItem(buildAdminNavSections(buildAdmin(), null, 3), "passport-refunds"), null);
 });
 
-test("canonical Tenant authority exposes Add Event without any working-Event access", () => {
+test("Admin Users and Permissions are nested under the Admin workspace parent, gated on can_manage_admins", () => {
+  const admin = buildAdmin({ permissionMap: { can_manage_admins: true } });
+  const workspace = findItem(buildAdminNavSections(admin), "admin-workspace");
+  assert.ok(workspace);
+  assert.equal(workspace.item.label, "Admin");
+  assert.equal(workspace.item.href, "/admin/admin");
+
+  const adminUsers = findItem(buildAdminNavSections(admin), "admin-users");
+  const permissions = findItem(buildAdminNavSections(admin), "permissions");
+  assert.equal(adminUsers?.ownerId, "admin-workspace");
+  assert.equal(permissions?.ownerId, "admin-workspace");
+});
+
+test("the Admin workspace parent itself disappears entirely when every one of its children is hidden -- a dead parent never renders", () => {
+  const noAdminAccess = buildAdmin({ permissionMap: {} });
+  assert.equal(findItem(buildAdminNavSections(noAdminAccess), "admin-workspace"), null);
+  assert.equal(findItem(buildAdminNavSections(noAdminAccess), "admin-users"), null);
+});
+
+test("canonical Tenant authority exposes Add Event, nested under the Event parent, without any working-Event access", () => {
   const zeroEventTenantAdmin = buildAdmin({
     eventAccessRows: [],
     eventIds: [],
     event_ids: [],
-    permissionMap: { can_view_admin_dashboard: true },
+    permissionMap: { can_manage_events: true },
   });
 
-  const found = findItem(
-    buildAdminNavSections(zeroEventTenantAdmin, { status: "allowed" }),
-    "add-event",
-  );
+  const found = findItem(buildAdminNavSections(zeroEventTenantAdmin, { status: "allowed" }), "add-event");
 
   assert.ok(found);
   assert.equal(found.item.label, "Add Event");
   assert.equal(found.item.href, "/admin/events/new");
-  assert.equal(found.section.id, "admin");
+  assert.equal(found.ownerId, "events");
 });
 
 test("Platform and single- or multi-Tenant administrators use the same canonical Add Event entry", () => {
   for (const admin of [
-    buildAdmin({ isSuperAdmin: true }),
-    buildAdmin({ eventIds: ["event-1"], event_ids: ["event-1"] }),
+    buildAdmin({ isSuperAdmin: true, permissionMap: { can_manage_events: true } }),
+    buildAdmin({ eventIds: ["event-1"], event_ids: ["event-1"], permissionMap: { can_manage_events: true } }),
     buildAdmin({
       eventIds: ["event-1", "event-2"],
       event_ids: ["event-1", "event-2"],
+      permissionMap: { can_manage_events: true },
     }),
   ]) {
-    const found = findItem(
-      buildAdminNavSections(admin, { status: "allowed" }),
-      "add-event",
-    );
+    const found = findItem(buildAdminNavSections(admin, { status: "allowed" }), "add-event");
     assert.equal(found?.item.href, "/admin/events/new");
   }
 });
 
 test("direct Event authority alone never exposes Add Event", () => {
   const directEventAdmin = buildAdmin({
-    eventAccessRows: [
-      {
-        id: "access-1",
-        event_id: "event-1",
-        admin_user_id: "admin-1",
-        role: "event_admin",
-      },
-    ],
+    eventAccessRows: [{ id: "access-1", event_id: "event-1", admin_user_id: "admin-1", role: "event_admin" }],
     eventIds: ["event-1"],
     event_ids: ["event-1"],
     permissionMap: { can_manage_events: true },
   });
 
   assert.ok(findItem(buildAdminNavSections(directEventAdmin), "events"));
-  assert.equal(
-    findItem(buildAdminNavSections(directEventAdmin), "add-event"),
-    null,
-  );
-  assert.equal(
-    findItem(
-      buildAdminNavSections(directEventAdmin, { status: "denied" }),
-      "add-event",
-    ),
-    null,
-  );
+  assert.equal(findItem(buildAdminNavSections(directEventAdmin), "add-event"), null);
+  assert.equal(findItem(buildAdminNavSections(directEventAdmin, { status: "denied" }), "add-event"), null);
 });
 
 test("unresolved and failed Tenant-authority checks fail closed to no Add Event entry", () => {
-  const admin = buildAdmin({ isSuperAdmin: true });
+  const admin = buildAdmin({ isSuperAdmin: true, permissionMap: { can_manage_events: true } });
 
   assert.equal(findItem(buildAdminNavSections(admin), "add-event"), null);
   assert.equal(
-    findItem(
-      buildAdminNavSections(admin, {
-        status: "check_failed",
-        message: "unavailable",
-      }),
-      "add-event",
-    ),
+    findItem(buildAdminNavSections(admin, { status: "check_failed", message: "unavailable" }), "add-event"),
     null,
   );
-  assert.equal(
-    findItem(buildAdminNavSections(null, { status: "allowed" }), "add-event"),
-    null,
-  );
+  assert.equal(findItem(buildAdminNavSections(null, { status: "allowed" }), "add-event"), null);
 });
 
-test("an admin granted can_manage_imports sees the Imports link, pointed at /admin/imports, in the Operations section", () => {
-  const admin = buildAdmin({ permissionMap: { can_manage_imports: true } });
+test("an admin granted can_manage_imports sees the Imports link, nested under Attendees", () => {
+  const admin = buildAdmin({ permissionMap: { can_manage_attendees: true, can_manage_imports: true } });
   const found = findItem(buildAdminNavSections(admin), "imports");
 
   assert.ok(found, "expected an 'imports' nav item to be present");
-  // Stage 5A: renamed from "Attendee Imports" now that /admin/imports is a
-  // shared Service Center for Attendee Roster, Agenda, and Vendors, not an
-  // Attendee-only tool.
   assert.equal(found!.item.label, "Imports");
   assert.equal(found!.item.href, "/admin/imports");
-  assert.equal(found!.section.id, "operations");
+  assert.equal(found!.ownerId, "attendees");
 });
 
 test("an admin without can_manage_imports (and no other permission) does not see the Imports link", () => {
   const admin = buildAdmin({ permissionMap: {} });
-  const found = findItem(buildAdminNavSections(admin), "imports");
-
-  assert.equal(found, null);
+  assert.equal(findItem(buildAdminNavSections(admin), "imports"), null);
 });
 
-test("granting an unrelated permission alone does not surface the Imports link -- it is not accidentally coupled to Attendees/Check-In/Parking visibility", () => {
+test("granting an unrelated permission alone does not surface the Imports link", () => {
   for (const key of ["can_manage_attendees", "can_manage_checkin", "can_manage_parking"]) {
     const admin = buildAdmin({ permissionMap: { [key]: true } });
-    const found = findItem(buildAdminNavSections(admin), "imports");
-    assert.equal(found, null, `granting only "${key}" must not surface the Imports link`);
+    assert.equal(findItem(buildAdminNavSections(admin), "imports"), null, `granting only "${key}" must not surface the Imports link`);
   }
 });
 
 test("a super admin sees the Imports link via the same isSuperAdmin bypass every other nav item already uses", () => {
   const admin = buildAdmin({ isSuperAdmin: true, permissionMap: {} });
   const found = findItem(buildAdminNavSections(admin), "imports");
-
   assert.ok(found, "expected super_admin to see the Imports link");
   assert.equal(found!.item.href, "/admin/imports");
 });
 
-test("a null admin (access not yet resolved) fails closed to no Imports link, same as every other item", () => {
-  const found = findItem(buildAdminNavSections(null), "imports");
-  assert.equal(found, null);
+test("a null admin (access not yet resolved) fails closed to no Imports link", () => {
+  assert.equal(findItem(buildAdminNavSections(null), "imports"), null);
 });
 
-test("granting can_manage_imports adds exactly one new item and leaves every other Operations item's visibility rule untouched", () => {
-  const baseline = buildAdminNavSections(
-    buildAdmin({
-      permissionMap: {
-        can_manage_attendees: true,
-        can_manage_checkin: true,
-        can_manage_parking: true,
-        can_manage_reports: true,
-        can_manage_vendors: true,
-      },
-    }),
-  );
-  const withImports = buildAdminNavSections(
-    buildAdmin({
-      permissionMap: {
-        can_manage_attendees: true,
-        can_manage_checkin: true,
-        can_manage_parking: true,
-        can_manage_reports: true,
-        can_manage_vendors: true,
-        can_manage_imports: true,
-      },
-    }),
-  );
+// ---- NEW destinations added by this batch: Validation Rules, Export,
+// Reports, Vendor Access -- none existed in the nav before. ----
 
-  const baselineOps = baseline.find((s) => s.id === "operations")!.items.map((i) => i.id);
-  const withImportsOps = withImports.find((s) => s.id === "operations")!.items.map((i) => i.id);
+test("Validation Rules is nested under Attendees, visible only to a Super Admin (task event.validation_rules.manage is manual-grant-only)", () => {
+  const superAdmin = buildAdmin({ isSuperAdmin: true });
+  const eventAdmin = buildAdmin({ permissionMap: { can_manage_attendees: true } });
 
-  assert.deepEqual(
-    withImportsOps.filter((id) => id !== "imports"),
-    baselineOps,
-    "adding can_manage_imports must not reorder or remove any existing Operations item",
-  );
-  assert.ok(withImportsOps.includes("imports"));
-  assert.equal(withImportsOps.length, baselineOps.length + 1);
+  const found = findItem(buildAdminNavSections(superAdmin), "validation-rules");
+  assert.ok(found);
+  assert.equal(found.item.href, "/admin/validation-rules");
+  assert.equal(found.ownerId, "attendees");
+  assert.equal(findItem(buildAdminNavSections(eventAdmin), "validation-rules"), null);
 });
 
-test("every other existing nav item and section is unchanged for a full-access admin -- the fix is additive only", () => {
-  // Engagement's section is gated directly on privilege_group ===
-  // "super_admin" (a documented, deliberate exception to the
-  // hasPermission() convention every other item uses), so both fields
-  // must be set to see the complete section list.
+test("Export and Reports are nested under Print, gated on the same can_manage_reports proxy as their Print Center parent", () => {
+  const admin = buildAdmin({ permissionMap: { can_manage_reports: true } });
+  const exportFound = findItem(buildAdminNavSections(admin), "export");
+  const reportsFound = findItem(buildAdminNavSections(admin), "reports");
+
+  assert.equal(exportFound?.item.href, "/admin/export");
+  assert.equal(exportFound?.ownerId, "print");
+  assert.equal(reportsFound?.item.href, "/admin/reports");
+  assert.equal(reportsFound?.ownerId, "print");
+
+  const noReports = buildAdmin({ permissionMap: {} });
+  assert.equal(findItem(buildAdminNavSections(noReports), "export"), null);
+  assert.equal(findItem(buildAdminNavSections(noReports), "reports"), null);
+});
+
+test("Vendor Access is nested under Vendors, gated on the same can_manage_vendors proxy as Vendor Requests", () => {
+  const admin = buildAdmin({ permissionMap: { can_manage_vendors: true } });
+  const found = findItem(buildAdminNavSections(admin), "vendors-access");
+  assert.equal(found?.item.href, "/admin/vendors/access");
+  assert.equal(found?.ownerId, "vendors");
+
+  const noVendors = buildAdmin({ permissionMap: {} });
+  assert.equal(findItem(buildAdminNavSections(noVendors), "vendors-access"), null);
+});
+
+// ---- Maps and Parking: Parking is a direct top-level item, deliberately
+// NOT nested under Maps, per Pap's approved map. ----
+
+test("Master Maps, Nearby, Nearby Settings, and Locations are nested under Maps with their exact existing gates", () => {
+  const admin = buildAdmin({ permissionMap: { can_manage_master_maps: true, can_manage_nearby: true, can_manage_locations: true } });
+  const withTenantAuthority = buildAdminNavSections(admin, { status: "allowed" });
+
+  assert.equal(findItem(withTenantAuthority, "master-maps")?.ownerId, "map-admin");
+  assert.equal(findItem(withTenantAuthority, "nearby")?.ownerId, "map-admin");
+  assert.equal(findItem(withTenantAuthority, "nearby-settings")?.ownerId, "map-admin");
+  assert.equal(findItem(withTenantAuthority, "locations")?.ownerId, "map-admin");
+
+  // Nearby Settings uses tenantAuthority, not can_manage_nearby -- the
+  // EXACT match to its own route guard, not a proxy.
+  const withoutTenantAuthority = buildAdminNavSections(admin, { status: "denied" });
+  assert.equal(findItem(withoutTenantAuthority, "nearby-settings"), null);
+  assert.ok(findItem(withoutTenantAuthority, "nearby"));
+});
+
+test("Parking is a direct top-level item, not nested under Maps", () => {
+  const admin = buildAdmin({ permissionMap: { can_manage_parking: true, can_manage_master_maps: true } });
+  const found = findItem(buildAdminNavSections(admin), "parking");
+  assert.ok(found);
+  assert.equal(found.ownerId, "parking", "Parking must be its own top-level item, not a child of any other item");
+  assert.equal(found.item.href, "/admin/parking");
+  assert.equal(found.item.children, undefined);
+});
+
+// ---- Photos, Agenda, Print, Vendors parents ----
+
+test("Photo Library and Slideshow are nested under Photos", () => {
+  const admin = buildAdmin({ permissionMap: { can_manage_reports: true } });
+  assert.equal(findItem(buildAdminNavSections(admin), "photo-library")?.ownerId, "photos");
+  assert.equal(findItem(buildAdminNavSections(admin), "slideshow")?.ownerId, "photos");
+});
+
+test("Agenda Categories is nested under Agenda", () => {
+  const admin = buildAdmin({ permissionMap: { can_manage_agenda: true } });
+  assert.equal(findItem(buildAdminNavSections(admin), "agenda-categories")?.ownerId, "agenda");
+});
+
+test("Print Settings is nested under Print", () => {
+  const admin = buildAdmin({ permissionMap: { can_manage_reports: true } });
+  assert.equal(findItem(buildAdminNavSections(admin), "print-settings")?.ownerId, "print");
+});
+
+test("Vendor Requests is nested under Vendors", () => {
+  const admin = buildAdmin({ permissionMap: { can_manage_vendors: true } });
+  assert.equal(findItem(buildAdminNavSections(admin), "vendor-requests")?.ownerId, "vendors");
+});
+
+test("a top-level parent renders as a plain leaf (no children) when its own gate passes but every child's independent gate fails", () => {
+  // can_manage_attendees alone satisfies Attendees' own OR-gate but none
+  // of its children's own, independent gates (can_manage_checkin,
+  // can_manage_imports, isSuperAdmin) -- proving the parent still renders
+  // as its own destination with no dead, empty submenu toggle.
+  const admin = buildAdmin({ permissionMap: { can_manage_attendees: true } });
+  const found = findItem(buildAdminNavSections(admin), "attendees");
+  assert.ok(found, "Attendees must still render as its own destination");
+  assert.equal(found!.item.children, undefined);
+});
+
+// ---- Full-access snapshot: proves every pre-existing nav item and every
+// new one is reachable somewhere in the tree, and the flat top-level
+// order matches Pap's approved map exactly. ----
+
+test("a full-access admin sees the complete approved top-level order and every destination somewhere in the tree", () => {
   const admin = buildAdmin({ isSuperAdmin: true, privilege_group: "super_admin" });
   const sections = buildAdminNavSections(admin, { status: "allowed" });
 
-  const sectionIds = sections.map((s) => s.id);
-  assert.deepEqual(sectionIds, ["admin", "operations", "content", "intelligence", "staff-setup"]);
-
-  const allItemIds = sections.flatMap((s) => s.items.map((i) => i.id));
-  for (const expectedId of [
+  assert.deepEqual(topLevelIds(sections), [
     "dashboard",
+    "admin-workspace",
     "events",
-    "add-event",
-    "admin-users",
-    "tenants",
-    "permissions",
     "attendees",
-    "checkin",
-    "parking",
-    "print",
-    "vendors",
     "agenda",
     "announcements",
-    "photos",
     "map-admin",
-    "engagement",
-    "event-staff",
+    "parking",
+    "photos",
+    "print",
+    "vendors",
+  ]);
+
+  for (const expectedId of [
+    "dashboard",
+    "admin-workspace",
+    "admin-users",
+    "permissions",
+    "tenants",
+    "registry-providers",
+    "passport-refunds",
+    "events",
+    "add-event",
     "checklist",
+    "event-staff",
+    "engagement",
+    "evaluations",
+    "attendees",
+    "checkin",
+    "imports",
+    "validation-rules",
+    "agenda",
+    "agenda-categories",
+    "announcements",
+    "map-admin",
+    "master-maps",
+    "nearby",
+    "nearby-settings",
+    "locations",
+    "parking",
+    "photos",
+    "photo-library",
+    "slideshow",
+    "print",
+    "print-settings",
+    "reports",
+    "export",
+    "vendors",
+    "vendor-requests",
+    "vendors-access",
   ]) {
-    assert.ok(allItemIds.includes(expectedId), `expected pre-existing nav item "${expectedId}" to still be present`);
+    assert.ok(findItem(sections, expectedId), `expected nav item "${expectedId}" to be present somewhere in the tree`);
   }
 });
 
-// ---- Event Staff nav visibility (downward delegation, 2026-09-18). ----
-// The Event Staff nav gate is a COARSE visibility HINT, never an
-// authorization boundary: can_manage_event_staff (the Event-Admin preset
-// hint) OR a canonical Tenant/Platform authority ("allowed"). The route's
-// own requiredEventStaffDelegationAuthority check is the real gate.
+// ---- Event Staff nav visibility (downward delegation, 2026-09-18) --
+// unchanged gate, now nested under Event. ----
 
-test("an Event Admin preset admin (can_manage_event_staff) sees Event Staff", () => {
-  const eventAdmin = buildAdmin({ permissionMap: { can_manage_event_staff: true } });
-  assert.ok(findItem(buildAdminNavSections(eventAdmin), "event-staff"));
+test("an Event Admin preset admin (can_manage_event_staff) sees Event Staff, nested under Event", () => {
+  const eventAdmin = buildAdmin({ permissionMap: { can_manage_events: true, can_manage_event_staff: true } });
+  assert.equal(findItem(buildAdminNavSections(eventAdmin), "event-staff")?.ownerId, "events");
 });
 
 test("a Super Admin sees Event Staff (via the isSuperAdmin hasPermission bypass)", () => {
@@ -312,23 +396,15 @@ test("a legitimate Tenant Admin with an unrelated legacy global privilege preset
   const oddPresetTenantAdmin = buildAdmin({
     privilege_group: "read_only",
     privilegeGroup: "read_only",
-    permissionMap: {},
+    permissionMap: { can_manage_events: true },
   });
-  // No preset hint...
   assert.equal(findItem(buildAdminNavSections(oddPresetTenantAdmin), "event-staff"), null);
-  // ...but canonical Tenant/Platform authority "allowed" reveals it.
-  assert.ok(
-    findItem(buildAdminNavSections(oddPresetTenantAdmin, { status: "allowed" }), "event-staff"),
-  );
+  assert.ok(findItem(buildAdminNavSections(oddPresetTenantAdmin, { status: "allowed" }), "event-staff"));
 });
 
 test("a subordinate-profile admin (no event-staff preset hint, no tenant authority) does NOT see Event Staff", () => {
   for (const group of ["checkin", "parking", "content_admin", "read_only"] as const) {
-    const subordinate = buildAdmin({
-      privilege_group: group,
-      privilegeGroup: group,
-      permissionMap: {},
-    });
+    const subordinate = buildAdmin({ privilege_group: group, privilegeGroup: group, permissionMap: { can_manage_events: true } });
     assert.equal(
       findItem(buildAdminNavSections(subordinate, { status: "denied" }), "event-staff"),
       null,
@@ -338,6 +414,6 @@ test("a subordinate-profile admin (no event-staff preset hint, no tenant authori
 });
 
 test("can_manage_admins alone no longer reveals Event Staff -- that legacy OR was removed", () => {
-  const adminsOnly = buildAdmin({ permissionMap: { can_manage_admins: true } });
+  const adminsOnly = buildAdmin({ permissionMap: { can_manage_admins: true, can_manage_events: true } });
   assert.equal(findItem(buildAdminNavSections(adminsOnly, { status: "denied" }), "event-staff"), null);
 });

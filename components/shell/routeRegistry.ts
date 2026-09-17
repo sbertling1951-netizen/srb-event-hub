@@ -130,6 +130,7 @@ const CANONICAL_MEMBER_PREFIXES: readonly string[] = [
   "/member/vendor-signup",
 ];
 const EXACT_CANONICAL_ADMIN_ROUTES: readonly string[] = [
+  "/admin/admin",
   "/admin/admin-users",
   "/admin/agenda",
   "/admin/agenda/categories",
