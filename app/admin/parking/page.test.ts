@@ -301,3 +301,82 @@ test("Parking renders the shared AdminReturnLink from its own URL params -- an e
   assert.match(SOURCE, /readAdminAttendeeTarget\(searchParams\)/);
   assert.equal(/history\.back\(\)|router\.back\(\)/.test(SOURCE), false);
 });
+
+// -- Central UI Standard: primitive-consistency pass (states + zoom
+// controls only) --------------------------------------------------------
+//
+// Confined to the initial-loading display, the empty-filtered-queue
+// display, and the hand-styled zoom-control row -- no other raw layout
+// container, map/marker/gesture/reconciliation code, data access,
+// filter, attendee action, confirmation dialog, or CSS is touched.
+
+test("the shell adapter's configuration (page title, contentMode, backTarget) and the bare-guard-to-task-authority migration remain exactly as before", () => {
+  assert.match(
+    SOURCE,
+    /<AdminShellAdapter\s*\n\s*pageTitle="Parking Admin"\s*\n\s*contentMode="full-bleed"\s*\n\s*backTarget=\{\{ href: "\/admin\/map-admin", label: "Map Admin" \}\}\s*\n\s*>/,
+  );
+  assert.equal((SOURCE.match(/<AdminShellAdapter/g) || []).length, 1);
+  assert.equal((SOURCE.match(/<AdminRouteGuard/g) || []).length, 1);
+  // No workspace section, no nav-model import, no second back-navigation
+  // mechanism was added alongside AdminReturnLink and the shell's own
+  // backTarget.
+  assert.equal(/getAdminNavItemChildren/.test(SOURCE), false);
+  assert.equal(/adminNav/.test(SOURCE), false);
+});
+
+test("the initial-loading display uses the shared LoadingState primitive, gated on the existing loading boolean -- the general post-load status Alert channel is otherwise unchanged", () => {
+  assert.match(SOURCE, /import \{ LoadingState \} from "@\/components\/ui\/LoadingState";/);
+  assert.match(
+    SOURCE,
+    /\{loading \? <LoadingState message=\{status\} \/> : <Alert tone="neutral">\{status\}<\/Alert>\}/,
+  );
+  // The same status/setLoading pairing this gate depends on is untouched.
+  assert.match(SOURCE, /const \[status, setStatus\] = useState\("Loading\.\.\."\);/);
+  assert.match(SOURCE, /setLoading\(true\);\s*\n\s*showStatus\("Loading\.\.\."\);/);
+});
+
+test("the empty-filtered-queue display uses the shared EmptyState primitive with the exact original message", () => {
+  assert.match(SOURCE, /import \{ EmptyState \} from "@\/components\/ui\/EmptyState";/);
+  assert.match(SOURCE, /<EmptyState message="No attendees match the current filters\." \/>/);
+  assert.equal(/<Alert tone="neutral">No attendees match the current filters\.<\/Alert>/.test(SOURCE), false);
+});
+
+test("the four zoom controls (Zoom out, Zoom in, Reset Zoom, Re-center Map) remain in the same order, each with its original handler and label, now inside the shared FormActions wrapper", () => {
+  assert.match(SOURCE, /import \{ FormActions \} from "@\/components\/ui\/FormActions";/);
+
+  const rowStart = SOURCE.indexOf("<FormActions>", SOURCE.indexOf("renderMarker={renderMarker}"));
+  assert.notEqual(rowStart, -1, "expected a FormActions-wrapped zoom-control row near the map canvas");
+  const rowEnd = SOURCE.indexOf("</FormActions>", rowStart);
+  const rowSource = SOURCE.slice(rowStart, rowEnd);
+
+  const buttons = [...rowSource.matchAll(/<AppButton variant="secondary" onClick=\{(\w+)\}(?: aria-label="([^"]+)")?>\s*\n\s*([^\n]+?)\s*\n\s*<\/AppButton>/g)];
+  assert.equal(buttons.length, 4, "expected exactly four zoom-control buttons");
+  assert.deepEqual(
+    buttons.map((m) => m[1]),
+    ["zoomOut", "zoomIn", "resetZoom", "recenterMap"],
+    "handlers must remain in their original order",
+  );
+  assert.equal(buttons[0][2], "Zoom out");
+  assert.equal(buttons[1][2], "Zoom in");
+  assert.equal(buttons[0][3], "−");
+  assert.equal(buttons[1][3], "+");
+  assert.equal(buttons[2][3], "Reset Zoom");
+  assert.equal(buttons[3][3], "Re-center Map");
+});
+
+test("no hand-styled zoom-control row remains -- the former raw flex/gap/flexWrap div around the zoom buttons is gone", () => {
+  assert.equal(
+    /display: "flex",\s*\n\s*gap: "var\(--space-2\)",\s*\n\s*flexWrap: "wrap",\s*\n\s*marginTop: "var\(--space-3\)",\s*\n\s*flexShrink: 0,/.test(SOURCE),
+    false,
+  );
+});
+
+test("no other raw layout container, map/marker/gesture/reconciliation code, data access, filter, attendee action, or confirmation dialog was touched by this pass", () => {
+  // The map canvas invocation immediately preceding the zoom row is
+  // unchanged, proving this pass touched only the row itself.
+  assert.match(SOURCE, /onMarkerTap=\{handleMarkerTap\}\s*\n\s*renderMarker=\{renderMarker\}\s*\n\s*\/>/);
+  assert.match(SOURCE, /ConfirmDialog/);
+  assert.match(SOURCE, /assignAttendeeToSite/);
+  assert.match(SOURCE, /materialize_event_parking_site/);
+  assert.match(SOURCE, /record_site_placement/);
+});

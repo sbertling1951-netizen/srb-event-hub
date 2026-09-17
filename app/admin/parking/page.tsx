@@ -21,7 +21,10 @@ import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { ResponsiveList } from "@/components/ui/DataTable";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
+import { LoadingState } from "@/components/ui/LoadingState";
 import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
 import {
   SearchField,
@@ -1543,7 +1546,7 @@ function ParkingAdminPageInner() {
       </p>
 
       {visibleAttendees.length === 0 ? (
-        <Alert tone="neutral">No attendees match the current filters.</Alert>
+        <EmptyState message="No attendees match the current filters." />
       ) : (
         <ResponsiveList
           aria-label={isNarrow ? "Active check-in queue" : "Parking attendee queue"}
@@ -1636,7 +1639,7 @@ function ParkingAdminPageInner() {
 
       <div style={{ display: "grid", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}>
         <AdminReturnLink searchParams={searchParams} />
-        <Alert tone="neutral">{status}</Alert>
+        {loading ? <LoadingState message={status} /> : <Alert tone="neutral">{status}</Alert>}
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {selectionStale ? <Alert tone="warning">{selectionStale}</Alert> : null}
       </div>
@@ -1728,27 +1731,21 @@ function ParkingAdminPageInner() {
               renderMarker={renderMarker}
             />
           </div>
-          <div
-            style={{
-              display: "flex",
-              gap: "var(--space-2)",
-              flexWrap: "wrap",
-              marginTop: "var(--space-3)",
-              flexShrink: 0,
-            }}
-          >
-            <AppButton variant="secondary" onClick={zoomOut} aria-label="Zoom out">
-              −
-            </AppButton>
-            <AppButton variant="secondary" onClick={zoomIn} aria-label="Zoom in">
-              +
-            </AppButton>
-            <AppButton variant="secondary" onClick={resetZoom}>
-              Reset Zoom
-            </AppButton>
-            <AppButton variant="secondary" onClick={recenterMap}>
-              Re-center Map
-            </AppButton>
+          <div style={{ marginTop: "var(--space-3)", flexShrink: 0 }}>
+            <FormActions>
+              <AppButton variant="secondary" onClick={zoomOut} aria-label="Zoom out">
+                −
+              </AppButton>
+              <AppButton variant="secondary" onClick={zoomIn} aria-label="Zoom in">
+                +
+              </AppButton>
+              <AppButton variant="secondary" onClick={resetZoom}>
+                Reset Zoom
+              </AppButton>
+              <AppButton variant="secondary" onClick={recenterMap}>
+                Re-center Map
+              </AppButton>
+            </FormActions>
           </div>
         </div>
 
