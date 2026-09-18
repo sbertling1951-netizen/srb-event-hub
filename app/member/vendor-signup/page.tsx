@@ -525,16 +525,16 @@ function MemberVendorSignupInner() {
         ) : null}
       </PageSection>
 
-      <div
-        className="card"
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 12,
-          background: "white",
-          padding: 18,
-          display: "grid",
-          gap: 14,
-        }}
+      <PageSection
+        variant="card"
+        // borderRadius/padding are retained deliberately: `.card` resolves
+        // to 10px (--radius-medium), and 18px under
+        // @media (max-width: 899px), with 16px (--space-8) of padding, so
+        // dropping them would change this card at both breakpoints. `.card`
+        // also sets no display/gap, so the grid layout stays here too. Only
+        // border and background were exactly redundant with `.card`
+        // (1px solid #dddddd, #ffffff) and are now inherited from it.
+        style={{ borderRadius: 12, padding: 18, display: "grid", gap: 14 }}
       >
         <Field label="Vendor">
           {(controlProps) => (
@@ -788,18 +788,12 @@ function MemberVendorSignupInner() {
             Refresh
           </AppButton>
         </div>
-      </div>
+      </PageSection>
 
-      <div
-        className="card"
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 12,
-          background: "white",
-          padding: 18,
-          display: "grid",
-          gap: 12,
-        }}
+      <PageSection
+        variant="card"
+        // Same retention rationale as the request-form card above.
+        style={{ borderRadius: 12, padding: 18, display: "grid", gap: 12 }}
       >
         <h2 style={{ margin: 0 }}>My Vendor Requests</h2>
 
@@ -868,16 +862,11 @@ function MemberVendorSignupInner() {
                   ) : null}
 
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
+                    <AppButton
+                      variant={statusValue === "cancelled" ? "muted" : "danger"}
                       onClick={() => cancelRequest(request)}
                       disabled={
                         !cancelAllowed || cancellingRequestId === request.id
-                      }
-                      className={
-                        statusValue === "cancelled"
-                          ? "app-button app-button-muted"
-                          : "app-button app-button-danger"
                       }
                     >
                       {cancellingRequestId === request.id
@@ -885,14 +874,14 @@ function MemberVendorSignupInner() {
                         : statusValue === "cancelled"
                           ? "Cancelled"
                           : "Cancel Request"}
-                    </button>
+                    </AppButton>
                   </div>
                 </div>
               );
             })}
           </div>
         )}
-      </div>
+      </PageSection>
       <ConfirmDialog
         open={!!requestPendingCancel}
         title="Cancel Vendor Request"

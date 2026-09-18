@@ -8,6 +8,7 @@ import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapt
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Field, Textarea } from "@/components/ui/Field";
 import { LoadingState } from "@/components/ui/LoadingState";
 import {
   type DraftAnswer,
@@ -382,24 +383,24 @@ function MemberEvaluationPageInner() {
 
           {current.allow_comment && (
             <div style={{ marginTop: 20 }}>
-              <div className="font-medium" style={{ marginBottom: 6 }}>
-                Additional comments
-              </div>
-              <textarea
-                style={{ width: "100%" }}
-                className="block border rounded p-3"
-                rows={4}
-                disabled={readOnly}
-                value={draft.commentText}
-                onChange={(e) =>
-                  updateDraft(
-                    current.id,
-                    { ...draft, commentText: e.target.value },
-                    false,
-                  )
-                }
-                onBlur={() => saveQueue.enqueue(current.id, draftsRef.current[current.id] ?? draft)}
-              />
+              <Field label="Additional comments">
+                {(controlProps) => (
+                  <Textarea
+                    {...controlProps}
+                    rows={4}
+                    disabled={readOnly}
+                    value={draft.commentText}
+                    onChange={(e) =>
+                      updateDraft(
+                        current.id,
+                        { ...draft, commentText: e.target.value },
+                        false,
+                      )
+                    }
+                    onBlur={() => saveQueue.enqueue(current.id, draftsRef.current[current.id] ?? draft)}
+                  />
+                )}
+              </Field>
             </div>
           )}
         </section>
@@ -498,9 +499,7 @@ function QuestionInput({
 
   if (question.question_type === "free_text") {
     return (
-      <textarea
-        style={{ width: "100%" }}
-        className="block border rounded p-3"
+      <Textarea
         rows={7}
         disabled={disabled}
         value={draft.answerText}

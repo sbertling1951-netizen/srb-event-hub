@@ -80,7 +80,7 @@ test("the empty My Vendor Requests message uses the shared EmptyState, preservin
   );
 });
 
-test("Slice 1/2 leaves the request-card list and ConfirmDialog untouched", () => {
+test("Slice 1/2 leaves statusBadge and the ConfirmDialog cancellation flow untouched", () => {
   assert.match(SOURCE, /function statusBadge\(status: string\) \{/);
   assert.match(SOURCE, /<ConfirmDialog\s*\n\s*open=\{!!requestPendingCancel\}/);
 });
@@ -190,7 +190,7 @@ test("no raw <input>/<textarea> remains for the seven converted request-form fie
   assert.doesNotMatch(SOURCE, /<textarea\b/);
 });
 
-test("Slice 3 leaves Submit/Refresh, ConfirmDialog, Cancel, statusBadge, and the request cards untouched", () => {
+test("Slice 3 leaves Submit/Refresh, ConfirmDialog, the Cancel handler, statusBadge, and the request-card map untouched", () => {
   assert.match(SOURCE, /<AppButton\s*\n\s*variant="primary"\s*\n\s*onClick=\{\(\) => void submitRequest\(\)\}/);
   assert.match(SOURCE, /<AppButton\s*\n\s*variant="muted"\s*\n\s*onClick=\{\(\) => void loadPage\(\)\}/);
   assert.match(SOURCE, /<ConfirmDialog\s*\n\s*open=\{!!requestPendingCancel\}/);
@@ -209,5 +209,61 @@ test("Slice 1 leaves loadPage, request submit/cancel/confirm, and every vendor q
   assert.match(SOURCE, /fetch\(\s*\n\s*`\/api\/member\/vendor-requests\?/);
   assert.match(SOURCE, /fetch\("\/api\/member\/vendor-requests", \{\s*\n\s*method: "POST",/);
   assert.match(SOURCE, /fetch\("\/api\/member\/vendor-requests", \{\s*\n\s*method: "PATCH",/);
+  assert.equal((SOURCE.match(/backTarget=/g) || []).length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Presentation Slice 4: the raw Cancel button and the two remaining card
+// wrappers now use the shared AppButton/PageSection, with no change to the
+// cancellation flow, the vendor-detail panel, the action links, the request
+// lifecycle, or any query/payload/identity contract beneath them.
+// ---------------------------------------------------------------------------
+
+test("Cancel uses AppButton with the conditional muted/danger variant, preserving its disabled gate, handler, and three-way label", () => {
+  assert.match(
+    SOURCE,
+    /<AppButton\s*\n\s*variant=\{statusValue === "cancelled" \? "muted" : "danger"\}\s*\n\s*onClick=\{\(\) => cancelRequest\(request\)\}\s*\n\s*disabled=\{\s*\n\s*!cancelAllowed \|\| cancellingRequestId === request\.id\s*\n\s*\}\s*\n\s*>\s*\n\s*\{cancellingRequestId === request\.id\s*\n\s*\? "Cancelling\.\.\."\s*\n\s*: statusValue === "cancelled"\s*\n\s*\? "Cancelled"\s*\n\s*: "Cancel Request"\}\s*\n\s*<\/AppButton>/,
+  );
+  // No raw <button> remains anywhere on this page, and no loading/spinner
+  // or new mutation state was introduced for the cancel path.
+  assert.doesNotMatch(SOURCE, /<button\b/);
+  assert.doesNotMatch(SOURCE, /loading=/);
+});
+
+test("both remaining card wrappers use PageSection variant=\"card\", keeping their own 12px radius, 18px padding, grid, and original gaps", () => {
+  // `.card` resolves to 10px radius (18px under the 899px breakpoint) and
+  // 16px padding, and sets no display/gap -- so these four properties are
+  // retained, while border/background (1px solid #dddddd, #ffffff) were
+  // exactly redundant and are now inherited from `.card`.
+  assert.match(
+    SOURCE,
+    /<PageSection\s*\n\s*variant="card"\s*\n(?:\s*\/\/[^\n]*\n)*\s*style=\{\{ borderRadius: 12, padding: 18, display: "grid", gap: 14 \}\}\s*\n\s*>\s*\n\s*<Field label="Vendor">/,
+  );
+  assert.match(
+    SOURCE,
+    /<PageSection\s*\n\s*variant="card"\s*\n(?:\s*\/\/[^\n]*\n)*\s*style=\{\{ borderRadius: 12, padding: 18, display: "grid", gap: 12 \}\}\s*\n\s*>\s*\n\s*<h2 style=\{\{ margin: 0 \}\}>My Vendor Requests<\/h2>/,
+  );
+  // No hand-rolled card wrapper (className="card" + inline border/background)
+  // is left on this page.
+  assert.doesNotMatch(SOURCE, /className="card"/);
+  // PageSection's `title` prop is deliberately NOT used for the requests
+  // heading: it renders through PageHeader with no titleClassName, which
+  // would add UA-default h2 margins to a heading that sets margin: 0.
+  assert.doesNotMatch(SOURCE, /<PageSection[\s\S]{0,120}?title=/);
+});
+
+test("Slice 4 leaves the vendor-detail panel, the three vendor action links, and the governed cancellation flow untouched", () => {
+  // The nested vendor-detail panel is deliberately not a `.card`: its own
+  // #e5e7eb border, 10px radius, 12px padding and #fafafa fill differ from
+  // `.card` on every one of those properties.
+  assert.match(
+    SOURCE,
+    /border: "1px solid #e5e7eb",\s*\n\s*borderRadius: 10,\s*\n\s*padding: 12,\s*\n\s*background: "#fafafa",/,
+  );
+  assert.equal((SOURCE.match(/className="app-button"/g) || []).length, 3);
+  assert.match(SOURCE, /function cancelRequest\(request: MemberRequestRow\) \{/);
+  assert.match(SOURCE, /async function confirmCancelRequest\(\) \{/);
+  assert.match(SOURCE, /setRequestPendingCancel\(request\);/);
+  assert.match(SOURCE, /<ConfirmDialog\s*\n\s*open=\{!!requestPendingCancel\}/);
   assert.equal((SOURCE.match(/backTarget=/g) || []).length, 0);
 });

@@ -151,7 +151,7 @@ test("Previous, Next, and Submit use the shared AppButton with matching variants
   assert.doesNotMatch(PAGE, /<button\s*\n\s*className="app-button/);
 });
 
-test("Slice 1 leaves the governed RPCs, save queue, completion invariants, and question renderers untouched", () => {
+test("Slice 1 leaves the governed RPCs, save queue, completion invariants, and every question type's dispatch untouched", () => {
   assert.match(PAGE, /supabase\.rpc\("get_evaluation"/);
   assert.match(PAGE, /supabase\.rpc\("save_evaluation_answer"/);
   assert.match(PAGE, /supabase\.rpc\("submit_evaluation"/);
@@ -159,5 +159,76 @@ test("Slice 1 leaves the governed RPCs, save queue, completion invariants, and q
   assert.match(PAGE, /const readOnly = result\.preview_only === true;/);
   assert.match(PAGE, /question_type === "free_text"/);
   assert.match(PAGE, /question_type === "rating"/);
+  assert.doesNotMatch(PAGE, /backTarget=/);
+});
+
+// ---------------------------------------------------------------------------
+// Presentation Slice 2: the two remaining raw textareas now use the shared
+// Field/Textarea. Both previously carried `className="block border rounded
+// p-3"` -- four class names with NO definition anywhere in app/globals.css
+// (there is no Tailwind/PostCSS config in this project), and they sit
+// outside .app-card-section/.app-card-section-muted, so the only style
+// actually applied to them was the inline width: 100%. Adopting
+// `.app-control` is therefore a deliberate, accepted appearance change:
+// inherited font family, 15px body size, 10px padding, #cbd5e1 border,
+// 10px radius, border-box sizing, a real focus ring, and vertical-only
+// resize (desktop -- the 899px block already forced vertical on mobile).
+//
+// Not touched here: the missing accessible name on the free_text, rating,
+// yes_no and multi_select renderers. That gap predates this change, applies
+// to all four alike, and needs an id threaded across a component boundary
+// -- it is deliberately deferred to its own batch, and nothing below should
+// be read as accessibility remediation.
+// ---------------------------------------------------------------------------
+
+test("Additional comments uses Field + Textarea, preserving its label, rows, readOnly gate, value, and both save-timing bindings", () => {
+  assert.match(PAGE, /import \{ Field, Textarea \} from "@\/components\/ui\/Field";/);
+  assert.match(
+    PAGE,
+    /<div style=\{\{ marginTop: 20 \}\}>\s*\n\s*<Field label="Additional comments">\s*\n\s*\{\(controlProps\) => \(\s*\n\s*<Textarea\s*\n\s*\{\.\.\.controlProps\}\s*\n\s*rows=\{4\}\s*\n\s*disabled=\{readOnly\}\s*\n\s*value=\{draft\.commentText\}/,
+  );
+  // The comment edit stays non-immediate (false) and is committed to the
+  // serialized save queue on blur -- the debounce path, unchanged.
+  assert.match(
+    PAGE,
+    /\{ \.\.\.draft, commentText: e\.target\.value \},\s*\n\s*false,/,
+  );
+  assert.match(
+    PAGE,
+    /onBlur=\{\(\) => saveQueue\.enqueue\(current\.id, draftsRef\.current\[current\.id\] \?\? draft\)\}/,
+  );
+  // disabled stays on the control, not on Field: passing it to Field would
+  // add .app-field-disabled (opacity 0.7) to the label in admin preview.
+  assert.doesNotMatch(PAGE, /<Field label="Additional comments" disabled/);
+});
+
+test("the free-text answer uses a bare Textarea with no new visible label, preserving rows and both immediacy flags", () => {
+  assert.match(
+    PAGE,
+    /<Textarea\s*\n\s*rows=\{7\}\s*\n\s*disabled=\{disabled\}\s*\n\s*value=\{draft\.answerText\}\s*\n\s*onChange=\{\(e\) => onChange\(\{ \.\.\.draft, answerText: e\.target\.value \}, false\)\}\s*\n\s*onBlur=\{\(\) => onChange\(\{ \.\.\.draft, answerText: draft\.answerText \}, true\)\}\s*\n\s*\/>/,
+  );
+  // Its label context remains the question <h2> above it; no Field wrapper
+  // and no second visible label were introduced for it.
+  assert.equal((PAGE.match(/<Field\b/g) || []).length, 1);
+});
+
+test("the obsolete undefined utility classes and the redundant inline width are gone from these two controls", () => {
+  assert.doesNotMatch(PAGE, /<textarea\b/);
+  assert.doesNotMatch(PAGE, /block border rounded p-3/);
+  assert.doesNotMatch(PAGE, /style=\{\{ width: "100%" \}\}/);
+});
+
+test("Slice 2 leaves the other question renderers, the progress widget, the save queue, and the submit path untouched", () => {
+  // Rating/yes_no/multi_select keep their bespoke choice cards.
+  assert.match(PAGE, /const cardStyle = \(selected: boolean\): CSSProperties/);
+  assert.match(PAGE, /question_type === "rating"/);
+  assert.match(PAGE, /question_type === "yes_no"/);
+  assert.match(PAGE, /question_type === "multi_select"/);
+  // Progress bar geometry is untouched.
+  assert.match(PAGE, /width: `\$\{progress\}%`/);
+  assert.match(PAGE, /createSaveQueue/);
+  assert.match(PAGE, /flushPendingSaves/);
+  assert.match(PAGE, /const readOnly = result\.preview_only === true;/);
+  assert.match(PAGE, /supabase\.rpc\("submit_evaluation"/);
   assert.doesNotMatch(PAGE, /backTarget=/);
 });
