@@ -972,11 +972,11 @@ function MemberPhotosPageInner() {
                   }}
                   aria-label="View event photo"
                   style={{
-                    border: "1px solid #cbd5e1",
+                    border: "1px solid var(--color-border-strong)",
                     borderRadius: 8,
                     padding: 0,
                     overflow: "hidden",
-                    background: "#f8fafc",
+                    background: "var(--color-action-secondary)",
                     cursor: "pointer",
                     minWidth: 0,
                   }}
@@ -1055,9 +1055,9 @@ function MemberPhotosPageInner() {
                   Photo {(selectedPhotoIndex || 0) + 1} of{" "}
                   {approvedPhotos.length}
                 </strong>
-                <button type="button" onClick={closeViewer}>
+                <AppButton variant="secondary" onClick={closeViewer}>
                   Close
-                </button>
+                </AppButton>
               </div>
 
               <img
@@ -1098,20 +1098,20 @@ function MemberPhotosPageInner() {
                   marginTop: 16,
                 }}
               >
-                <button
-                  type="button"
+                <AppButton
+                  variant="secondary"
                   onClick={showPreviousPhoto}
                   disabled={approvedPhotos.length < 2}
                 >
                   Previous
-                </button>
-                <button
-                  type="button"
+                </AppButton>
+                <AppButton
+                  variant="secondary"
                   onClick={showNextPhoto}
                   disabled={approvedPhotos.length < 2}
                 >
                   Next
-                </button>
+                </AppButton>
                 {/* P0 Event-Photo Read-Surface Repair: original-file download
                     is limited to the photo's own contributor here (an
                     Event administrator's original-download authority is
@@ -1124,22 +1124,23 @@ function MemberPhotosPageInner() {
                     button renders. */}
                 {isOwnSelectedPhoto ? (
                   <>
-                    <button
-                      type="button"
+                    <AppButton
+                      variant="secondary"
                       onClick={() => void downloadPhoto(selectedPhoto)}
                       disabled={downloadingPhotoId !== null}
+                      loading={downloadingPhotoId === selectedPhoto.id}
                     >
                       {downloadingPhotoId === selectedPhoto.id
                         ? "Downloading..."
                         : "Download Photo"}
-                    </button>
+                    </AppButton>
                     {canSharePhoto ? (
-                      <button
-                        type="button"
+                      <AppButton
+                        variant="secondary"
                         onClick={() => void sharePhoto(selectedPhoto)}
                       >
                         Share Photo
-                      </button>
+                      </AppButton>
                     ) : null}
                   </>
                 ) : null}

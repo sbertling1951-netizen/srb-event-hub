@@ -259,3 +259,68 @@ test("deletePhoto retains its exact attendee check, pending-status guard, storag
     /setError\(err instanceof Error \? err\.message : "Could not delete photo\."\);\s*\n\s*\} finally \{\s*\n\s*setDeletingPhotoId\(null\);/,
   );
 });
+
+// ---------------------------------------------------------------------------
+// Presentation Slice 3: the Event Gallery tile keeps its raw image-button
+// shape (tokenized only), and every viewer-modal action button now uses the
+// shared AppButton, with no change to selection state, gestures, rendition
+// loading, or download/share functions beneath them.
+// ---------------------------------------------------------------------------
+
+test("the gallery tile stays a raw button (never AppButton), with only its border/background tokenized -- aria-label, handler, image, and sizing unchanged", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /<button\s*\n\s*key=\{photo\.id\}\s*\n\s*type="button"\s*\n\s*onClick=\{\(\) => \{\s*\n\s*setSelectedPhotoIndex\(index\);\s*\n\s*setViewerMessage\(""\);\s*\n\s*\}\}\s*\n\s*aria-label="View event photo"\s*\n\s*style=\{\{\s*\n\s*border: "1px solid var\(--color-border-strong\)",\s*\n\s*borderRadius: 8,\s*\n\s*padding: 0,\s*\n\s*overflow: "hidden",\s*\n\s*background: "var\(--color-action-secondary\)",\s*\n\s*cursor: "pointer",\s*\n\s*minWidth: 0,\s*\n\s*\}\}\s*\n\s*>/,
+  );
+  assert.doesNotMatch(
+    PAGE_SOURCE,
+    /<AppButton[^>]*aria-label="View event photo"/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /<img\s*\n\s*src=\{photo\.previewUrl \|\| ""\}\s*\n\s*alt="Event photo"\s*\n\s*style=\{\{\s*\n\s*display: "block",\s*\n\s*width: "100%",\s*\n\s*aspectRatio: "1 \/ 1",\s*\n\s*objectFit: "cover",\s*\n\s*\}\}\s*\n\s*\/>/,
+  );
+});
+
+test("Close, Previous, and Next use the shared AppButton, preserving their exact handlers, labels, and disabled gate", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /<AppButton variant="secondary" onClick=\{closeViewer\}>\s*\n\s*Close\s*\n\s*<\/AppButton>/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /<AppButton\s*\n\s*variant="secondary"\s*\n\s*onClick=\{showPreviousPhoto\}\s*\n\s*disabled=\{approvedPhotos\.length < 2\}\s*\n\s*>\s*\n\s*Previous\s*\n\s*<\/AppButton>/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /<AppButton\s*\n\s*variant="secondary"\s*\n\s*onClick=\{showNextPhoto\}\s*\n\s*disabled=\{approvedPhotos\.length < 2\}\s*\n\s*>\s*\n\s*Next\s*\n\s*<\/AppButton>/,
+  );
+});
+
+test("Download Photo uses the shared AppButton with its exact two-tier busy behavior: disabled while any download is in flight, the spinner and label swap only for the open photo", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /<AppButton\s*\n\s*variant="secondary"\s*\n\s*onClick=\{\(\) => void downloadPhoto\(selectedPhoto\)\}\s*\n\s*disabled=\{downloadingPhotoId !== null\}\s*\n\s*loading=\{downloadingPhotoId === selectedPhoto\.id\}\s*\n\s*>\s*\n\s*\{downloadingPhotoId === selectedPhoto\.id\s*\n\s*\? "Downloading\.\.\."\s*\n\s*: "Download Photo"\}\s*\n\s*<\/AppButton>/,
+  );
+});
+
+test("Share Photo uses the shared AppButton, preserving its exact handler and the canSharePhoto gate", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /\{canSharePhoto \? \(\s*\n\s*<AppButton\s*\n\s*variant="secondary"\s*\n\s*onClick=\{\(\) => void sharePhoto\(selectedPhoto\)\}\s*\n\s*>\s*\n\s*Share Photo\s*\n\s*<\/AppButton>\s*\n\s*\) : null\}/,
+  );
+});
+
+test("Slice 3 leaves selection state, gestures, rendition loading, and every viewer function untouched", () => {
+  assert.match(PAGE_SOURCE, /function closeViewer\(\) \{/);
+  assert.match(PAGE_SOURCE, /function showPreviousPhoto\(\) \{/);
+  assert.match(PAGE_SOURCE, /function showNextPhoto\(\) \{/);
+  assert.match(PAGE_SOURCE, /async function downloadPhoto\(photo: ApprovedPhoto\) \{/);
+  assert.match(PAGE_SOURCE, /async function sharePhoto\(photo: ApprovedPhoto\) \{/);
+  assert.match(PAGE_SOURCE, /function ensureGalleryViewUrl\(photo: ApprovedPhoto\)/);
+  assert.match(PAGE_SOURCE, /onTouchStart=\{\(event\) => \{/);
+  assert.match(PAGE_SOURCE, /onTouchEnd=\{\(event\) => \{/);
+  assert.match(PAGE_SOURCE, /role="dialog"/);
+  assert.match(PAGE_SOURCE, /aria-label="Event photo viewer"/);
+  assert.match(PAGE_SOURCE, /background: "#0f172a",/);
+});
