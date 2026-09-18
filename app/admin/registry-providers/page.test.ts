@@ -22,6 +22,14 @@ test("the workspace is guarded by exact Platform authority and uses the canonica
   );
 });
 
+test("the in-page heading is an h2, leaving the shell's own <h1> as the page's sole top-level heading", () => {
+  assert.match(
+    SOURCE,
+    /<PageHeader title="Registry Provider Catalog" headingLevel="h2" description="Platform-owned catalog curation\." \/>/,
+  );
+  assert.equal((SOURCE.match(/headingLevel="h1"/g) || []).length, 0);
+});
+
 test("the shell-level parent return target points to the Catalogs workspace, using the existing AdminShellAdapter backTarget mechanism", () => {
   assert.match(SOURCE, /backTarget=\{\{ href: "\/admin\/catalogs", label: "Catalogs" \}\}/);
   assert.equal((SOURCE.match(/backTarget=/g) || []).length, 1);

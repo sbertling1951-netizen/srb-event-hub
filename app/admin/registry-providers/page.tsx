@@ -209,7 +209,7 @@ function RegistryProviderCatalogWorkspace() {
 
   return (
     <Page style={{ maxWidth: 860, margin: "0 auto", display: "grid", gap: 16 }}>
-      <PageHeader title="Registry Provider Catalog" headingLevel="h1" description="Platform-owned catalog curation." />
+      <PageHeader title="Registry Provider Catalog" headingLevel="h2" description="Platform-owned catalog curation." />
       <Alert tone="info">{SCOPE_COPY}</Alert>
 
       {rowError ? <Alert tone="danger">{rowError}</Alert> : null}
