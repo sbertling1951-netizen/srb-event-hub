@@ -5,6 +5,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
+import { Alert } from "@/components/ui/Alert";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { PageSection } from "@/components/ui/PageSection";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { supabase } from "@/lib/supabase";
 
@@ -142,31 +146,29 @@ function MyAssignmentsInner() {
   return (
     <div style={{ display: "grid", gap: 14 }}>
       {!isReady || state.kind === "loading" ? (
-        <div style={cardStyle}>Loading your assignments...</div>
+        <LoadingState message="Loading your assignments..." />
       ) : state.kind === "no_event" ? (
-        <div style={cardStyle}>No event selected.</div>
+        <EmptyState message="No event selected." />
       ) : state.kind === "resolved" ? (
         state.assignments.length === 0 ? (
-          <div style={cardStyle}>
-            You don&apos;t have any active event duties.
-          </div>
+          <EmptyState message="You don't have any active event duties." />
         ) : (
           state.assignments.map((assignment) => (
-            <div key={assignment.id} style={cardStyle}>
+            <PageSection key={assignment.id} variant="card">
               <div style={{ fontWeight: 800, fontSize: 16, overflowWrap: "anywhere" }}>
                 {assignment.responsibilityLabel}
               </div>
               <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
                 Assigned {formatAttributedAt(assignment.attributedAt)}
               </div>
-            </div>
+            </PageSection>
           ))
         )
       ) : state.kind === "identity_unavailable" ? (
-        <div style={unavailableCardStyle}>
+        <Alert tone="neutral">
           Assignment information is not currently available for this
           participant.
-        </div>
+        </Alert>
       ) : state.kind === "invalid_session" ? (
         <div role="alert" style={invalidSessionCardStyle}>
           We couldn&apos;t verify your session for this event. Try returning
@@ -177,30 +179,14 @@ function MyAssignmentsInner() {
           or signing in again.
         </div>
       ) : (
-        <div role="alert" style={errorCardStyle}>
+        <Alert tone="danger">
           Something went wrong loading your assignments. Please try again
           later.
-        </div>
+        </Alert>
       )}
     </div>
   );
 }
-
-const cardStyle: React.CSSProperties = {
-  minWidth: 0,
-  padding: 16,
-  border: "1px solid #ddd",
-  borderRadius: 12,
-  background: "#fff",
-};
-
-const unavailableCardStyle: React.CSSProperties = {
-  padding: 16,
-  border: "1px solid #e2e8f0",
-  borderRadius: 12,
-  background: "#f8fafc",
-  color: "#475569",
-};
 
 const invalidSessionCardStyle: React.CSSProperties = {
   padding: 14,
@@ -208,14 +194,5 @@ const invalidSessionCardStyle: React.CSSProperties = {
   borderRadius: 12,
   background: "#fffbeb",
   color: "#78350f",
-  fontWeight: 600,
-};
-
-const errorCardStyle: React.CSSProperties = {
-  padding: 14,
-  border: "1px solid #fecaca",
-  borderRadius: 12,
-  background: "#fef2f2",
-  color: "#991b1b",
   fontWeight: 600,
 };
