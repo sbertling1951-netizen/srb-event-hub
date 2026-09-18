@@ -8,6 +8,7 @@ import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { Alert } from "@/components/ui/Alert";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
+import { Checkbox, Field, Input } from "@/components/ui/Field";
 import { PageSection } from "@/components/ui/PageSection";
 import { logEngagement } from "@/lib/engagement";
 import { preferredDisplayLine } from "@/lib/formatters";
@@ -546,16 +547,7 @@ function MemberCheckinPageInner() {
           )}
         </PageSection>
       ) : (
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 16,
-            display: "grid",
-            gap: 14,
-          }}
-        >
+        <PageSection variant="card" style={{ display: "grid", gap: 14 }}>
           <div>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>
               Coach / Household
@@ -587,21 +579,9 @@ function MemberCheckinPageInner() {
 
           {availableSlots > 0 ? (
             <div>
-              <Link
-                href="/member/participants"
-                style={{
-                  display: "inline-block",
-                  padding: "10px 14px",
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                  background: "#fff",
-                  textDecoration: "none",
-                  fontWeight: 600,
-                  color: "inherit",
-                }}
-              >
+              <AppLinkButton href="/member/participants" variant="secondary">
                 ➕👤 Add Participant
-              </Link>
+              </AppLinkButton>
             </div>
           ) : null}
 
@@ -619,31 +599,26 @@ function MemberCheckinPageInner() {
               </strong>
             </div>
 
-            <label>
-              <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>
-                What site are you parked in?
-              </div>
-              <input
-                value={siteReport}
-                onChange={(e) => setSiteReport(e.target.value.toUpperCase())}
-                placeholder="e.g. A12"
-                style={{ width: "100%", padding: 10 }}
-              />
-              <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-                Leave this blank if you don&apos;t know your site yet or
-                haven&apos;t parked. This tells us where you are -- it does
-                not assign or reserve a site.
-              </div>
-            </label>
+            <Field
+              label="What site are you parked in?"
+              help="Leave this blank if you don't know your site yet or haven't parked. This tells us where you are -- it does not assign or reserve a site."
+            >
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  value={siteReport}
+                  onChange={(e) => setSiteReport(e.target.value.toUpperCase())}
+                  placeholder="e.g. A12"
+                  style={{ width: "100%" }}
+                />
+              )}
+            </Field>
 
-            <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-              <input
-                type="checkbox"
-                checked={shareWithAttendees}
-                onChange={(e) => setShareWithAttendees(e.target.checked)}
-              />
-              Share my site / household details with other attendees
-            </label>
+            <Checkbox
+              label="Share my site / household details with other attendees"
+              checked={shareWithAttendees}
+              onChange={(e) => setShareWithAttendees(e.target.checked)}
+            />
 
             {requiresTemporaryCredentials ? (
               <div
@@ -659,24 +634,34 @@ function MemberCheckinPageInner() {
                   Re-enter your event code and the email address or mobile number
                   used for registration to save check-in.
                 </div>
-                <input
-                  type="text"
-                  value={temporaryEventCode}
-                  onChange={(event) => setTemporaryEventCode(event.target.value)}
-                  placeholder="Event code"
-                  autoComplete="off"
-                  style={{ width: "100%", minWidth: 0, padding: 10 }}
-                />
-                <input
-                  type="text"
-                  value={temporaryRegistrationIdentifier}
-                  onChange={(event) =>
-                    setTemporaryRegistrationIdentifier(event.target.value)
-                  }
-                  placeholder="Registration email or mobile number"
-                  autoComplete="off"
-                  style={{ width: "100%", minWidth: 0, padding: 10 }}
-                />
+                <Field label="Event code">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      type="text"
+                      value={temporaryEventCode}
+                      onChange={(event) => setTemporaryEventCode(event.target.value)}
+                      placeholder="Event code"
+                      autoComplete="off"
+                      style={{ width: "100%", minWidth: 0 }}
+                    />
+                  )}
+                </Field>
+                <Field label="Registration email or mobile number">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      type="text"
+                      value={temporaryRegistrationIdentifier}
+                      onChange={(event) =>
+                        setTemporaryRegistrationIdentifier(event.target.value)
+                      }
+                      placeholder="Registration email or mobile number"
+                      autoComplete="off"
+                      style={{ width: "100%", minWidth: 0 }}
+                    />
+                  )}
+                </Field>
               </div>
             ) : null}
           </div>
@@ -686,7 +671,7 @@ function MemberCheckinPageInner() {
               {saving ? "Saving..." : "Save"}
             </AppButton>
           </div>
-        </div>
+        </PageSection>
       )}
     </div>
   );

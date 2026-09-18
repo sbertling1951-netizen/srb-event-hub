@@ -89,9 +89,9 @@ test("the site field uses reporting terminology -- the primary prompt is the que
 
 test("supporting text tells the member blank is fine and that this is not an assignment", () => {
   const labelBlock = source.match(
-    /What site are you parked in\?[\s\S]*?<\/label>/,
+    /What site are you parked in\?[\s\S]*?<\/Field>/,
   )?.[0];
-  assert.ok(labelBlock, "expected the site-report label block");
+  assert.ok(labelBlock, "expected the site-report Field block");
   assert.match(labelBlock!, /blank/i);
   assert.match(labelBlock!, /does\s+not assign or reserve a site/i);
 });
@@ -272,10 +272,17 @@ test("Save uses the shared AppButton with the exact click handler, label swap, a
   assert.doesNotMatch(source, /<button\b/);
 });
 
-test("Slice 2 leaves the main Check-In panel untouched", () => {
+test("Slice 3 leaves coach/household display, the Confirmed-site line, and the temporary-credentials divider/heading/copy untouched", () => {
+  assert.match(source, /Coach \/ Household/);
+  assert.match(source, /Co-Pilot/);
   assert.match(source, /Confirmed site:/);
-  assert.match(source, /What site are you parked in\?/);
-  assert.match(source, /Share my site \/ household details with other attendees/);
+  assert.match(source, /color: "#334155"/);
+  assert.match(
+    source,
+    /borderTop: "1px solid #e2e8f0",\s*\n\s*paddingTop: 14,/,
+  );
+  assert.match(source, /<strong>Verify temporary event access<\/strong>/);
+  assert.match(source, /color: "#475569", fontSize: 14/);
 });
 
 test("the recovery/loading container uses PageSection with the exact muted-text token and preserved grid/gap layout", () => {
@@ -308,4 +315,71 @@ test("Slice 2 leaves every RPC, fetch, and data/authority contract unchanged", (
   assert.match(source, /fetch\("\/api\/member\/checkin"/);
   assert.match(source, /"set_member_attendee_sharing_preferences"/);
   assert.match(source, /hasArrived: !!attendee\.has_arrived/);
+});
+
+// ---------------------------------------------------------------------------
+// Presentation Slice 3: the main Check-In panel (attendee branch) now uses
+// the shared PageSection/AppLinkButton/Field/Input/Checkbox primitives, with
+// no change to loadPage, saveCheckin, or any RPC/fetch/data/authority
+// contract beneath them.
+// ---------------------------------------------------------------------------
+
+test("the main panel outer container uses PageSection with the preserved grid/gap layout", () => {
+  assert.match(
+    source,
+    /<PageSection variant="card" style=\{\{ display: "grid", gap: 14 \}\}>/,
+  );
+});
+
+test("Add Participant uses AppLinkButton with the exact href, label, emoji, and availableSlots gate", () => {
+  assert.match(
+    source,
+    /<AppLinkButton href="\/member\/participants" variant="secondary">\s*\n\s*➕👤 Add Participant\s*\n\s*<\/AppLinkButton>/,
+  );
+  assert.match(source, /\{availableSlots > 0 \? \(/);
+  assert.doesNotMatch(source, /border: "1px solid #cbd5e1",\s*\n\s*background: "#fff",\s*\n\s*textDecoration: "none",\s*\n\s*fontWeight: 600,\s*\n\s*color: "inherit",/);
+});
+
+test("the site-report control uses Field + Input, preserving the exact value, uppercase onChange transform, placeholder, and help copy", () => {
+  assert.match(source, /import \{ Checkbox, Field, Input \} from "@\/components\/ui\/Field";/);
+  assert.match(
+    source,
+    /<Field\s*\n\s*label="What site are you parked in\?"\s*\n\s*help="Leave this blank if you don't know your site yet or haven't parked\. This tells us where you are -- it does not assign or reserve a site\."\s*\n\s*>/,
+  );
+  assert.match(source, /value=\{siteReport\}/);
+  assert.match(source, /onChange=\{\(e\) => setSiteReport\(e\.target\.value\.toUpperCase\(\)\)\}/);
+  assert.match(source, /placeholder="e\.g\. A12"/);
+});
+
+test("the sharing control uses the shared Checkbox, preserving the exact label, checked state, and onChange behavior", () => {
+  assert.match(
+    source,
+    /<Checkbox\s*\n\s*label="Share my site \/ household details with other attendees"\s*\n\s*checked=\{shareWithAttendees\}\s*\n\s*onChange=\{\(e\) => setShareWithAttendees\(e\.target\.checked\)\}\s*\n\s*\/>/,
+  );
+});
+
+test("the two temporary-credentials inputs use Field + Input, preserving the exact gate, values, setters, placeholders, and autoComplete", () => {
+  assert.match(source, /\{requiresTemporaryCredentials \? \(/);
+  assert.match(source, /<Field label="Event code">/);
+  assert.match(source, /value=\{temporaryEventCode\}/);
+  assert.match(source, /onChange=\{\(event\) => setTemporaryEventCode\(event\.target\.value\)\}/);
+  assert.match(source, /<Field label="Registration email or mobile number">/);
+  assert.match(source, /value=\{temporaryRegistrationIdentifier\}/);
+  assert.match(
+    source,
+    /onChange=\{\(event\) =>\s*\n\s*setTemporaryRegistrationIdentifier\(event\.target\.value\)\s*\n\s*\}/,
+  );
+  assert.equal((source.match(/autoComplete="off"/g) || []).length, 2);
+  assert.doesNotMatch(source, /<input\b/);
+});
+
+test("Slice 3 leaves loadPage, saveCheckin, and every RPC/fetch/data/authority contract unchanged", () => {
+  assert.match(source, /supabase\.rpc\("get_my_attendee_record"/);
+  assert.match(source, /supabase\.rpc\(\s*\n?\s*"get_my_confirmed_site_placement"/);
+  assert.match(source, /"get_my_household_members"/);
+  assert.match(source, /fetch\("\/api\/member\/checkin"/);
+  assert.match(source, /"set_member_attendee_sharing_preferences"/);
+  assert.match(source, /hasArrived: !!attendee\.has_arrived/);
+  assert.match(source, /assignedSite: siteReport/);
+  assert.equal((source.match(/backTarget=/g) || []).length, 0);
 });
