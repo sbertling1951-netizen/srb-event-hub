@@ -1533,6 +1533,7 @@ export default function TenantAdministrationPage() {
       <AdminShellAdapter
         pageTitle="Tenant Administration"
         pageSubtitle="Govern Tenant lifecycle, metadata, access, and retained evidence"
+        backTarget={{ href: "/admin/admin", label: "Admin" }}
       >
         <TenantAdministrationWorkspace />
       </AdminShellAdapter>

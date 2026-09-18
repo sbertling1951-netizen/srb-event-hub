@@ -14,6 +14,15 @@ test("the canonical workspace is guarded by exact Platform authority and uses th
   assert.match(SOURCE, /<AdminShellAdapter\s*pageTitle="Tenant Administration"/);
 });
 
+// -- Central UI: Tenant Administration Parent Return -----------------------
+
+test("the shell carries the exact Admin backTarget, with pageTitle/pageSubtitle and the workspace child otherwise unchanged", () => {
+  assert.match(
+    SOURCE,
+    /<AdminShellAdapter\s*\n\s*pageTitle="Tenant Administration"\s*\n\s*pageSubtitle="Govern Tenant lifecycle, metadata, access, and retained evidence"\s*\n\s*backTarget=\{\{ href: "\/admin\/admin", label: "Admin" \}\}\s*\n\s*>\s*\n\s*<TenantAdministrationWorkspace \/>\s*\n\s*<\/AdminShellAdapter>/,
+  );
+});
+
 test("active and inactive Tenants come from the governed administrative list and selection loads every T3 detail read", () => {
   assert.match(SOURCE, /listTenantsForAdministration\(\)/);
   assert.match(SOURCE, /tenant\.is_active \? "Active" : "Inactive"/);
