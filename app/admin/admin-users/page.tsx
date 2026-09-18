@@ -319,7 +319,10 @@ export function planEventAccessSync(
 export default function AdminUsersPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_admins">
-      <AdminShellAdapter pageTitle="Admin Users">
+      <AdminShellAdapter
+        pageTitle="Admin Users"
+        backTarget={{ href: "/admin/admin", label: "Admin" }}
+      >
         <AdminUsersPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>

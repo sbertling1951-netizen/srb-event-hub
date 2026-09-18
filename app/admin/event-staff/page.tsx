@@ -542,7 +542,7 @@ function EventStaffPageInner() {
   const newProfileValue = resolveAssignableProfile(selectedNewAdmin, newProfile);
 
   return (
-    <div style={{ padding: "var(--space-6)", display: "grid", gap: "var(--space-4)" }}>
+    <div style={{ display: "grid", gap: "var(--space-4)", minWidth: 0 }}>
       <ConfirmDialog
         open={!!pendingRemoveRow}
         title="Remove Event Staff"
@@ -799,7 +799,10 @@ function EventStaffPageInner() {
 export default function EventStaffPage() {
   return (
     <AdminRouteGuard requiredEventStaffDelegationAuthority>
-      <AdminShellAdapter pageTitle="Event Staff">
+      <AdminShellAdapter
+        pageTitle="Event Staff"
+        backTarget={{ href: "/admin/events", label: "Event Admin" }}
+      >
         <EventStaffPageInner />
       </AdminShellAdapter>
     </AdminRouteGuard>

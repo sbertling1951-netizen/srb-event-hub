@@ -59,7 +59,7 @@ test("no hand-applied legacy style objects or app-button class strings remain", 
 });
 
 test("the page no longer renders a duplicate <h1> page title -- the shell's own pageTitle is the single source", () => {
-  assert.match(source, /<AdminShellAdapter pageTitle="Admin Users">/);
+  assert.match(source, /<AdminShellAdapter\s*\n\s*pageTitle="Admin Users"/);
   assert.equal(/<h1[\s>]/.test(source), false);
 });
 
@@ -734,4 +734,34 @@ test("planEventAccessSync: non-super-admin add/remove/reprofile behavior is comp
   assert.deepEqual(plan.toRemove.map((a) => a.id), ["a2"]);
   assert.deepEqual(plan.toAdd, ["event-c"]);
   assert.deepEqual(plan.toReprofile.map((a) => a.id), ["a1"]);
+});
+
+// -- Central UI: Admin Users + Event Staff Consistency --------------------
+
+test("the shell carries the exact Admin backTarget", () => {
+  assert.match(
+    source,
+    /<AdminShellAdapter\s*\n\s*pageTitle="Admin Users"\s*\n\s*backTarget=\{\{ href: "\/admin\/admin", label: "Admin" \}\}\s*\n\s*>/,
+  );
+});
+
+test("regression: guard, page title/content, and role-assignment/authority behavior are unchanged by the backTarget addition", () => {
+  assert.match(source, /<AdminRouteGuard requiredPermission="can_manage_admins">/);
+  assert.match(source, /pageTitle="Admin Users"/);
+  assert.equal((source.match(/pageTitle="Admin Users"/g) || []).length, 1);
+  // Super Admin inclusion, forced Event Admin profile, event-assignment
+  // persistence, async-load readiness, and Save blocking are all untouched.
+  assert.match(source, /export function getEventAccessRole\(privilegeGroup: PrivilegeGroup\)/);
+  assert.match(source, /case "super_admin": return "event_admin";/);
+  assert.match(source, /export function planEventAccessSync\(/);
+  assert.match(source, /export function isAssignedEventsReadyForSave\(/);
+  assert.match(source, /export function beginAssignedEventsLoad\(/);
+  assert.match(source, /export function resolveAssignedEventsLoadOutcome\(/);
+  // Governed API/RPC calls are byte-identical.
+  assert.match(source, /fetch\("\/api\/admins\/manage", \{/);
+  assert.match(source, /\.rpc\("remove_event_authority_assignment", \{ p_assignment_id: assignment\.id \}\)/);
+  assert.match(source, /\.rpc\("create_event_authority_assignment", \{/);
+  assert.match(source, /\.rpc\("change_event_authority_profile", \{/);
+  // Dialog wiring is unchanged.
+  assert.match(source, /<Dialog\s*\n\s*open=\{dialogOpen\}\s*\n\s*onClose=\{closeAdminDialog\}/);
 });

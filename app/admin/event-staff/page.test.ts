@@ -21,7 +21,7 @@ const PAGE_SOURCE = readFileSync(
 
 test("the route is gated by the canonical Event Staff delegation authority check, NOT the legacy client permission gate", () => {
   assert.match(PAGE_SOURCE, /<AdminRouteGuard requiredEventStaffDelegationAuthority>/);
-  assert.match(PAGE_SOURCE, /AdminShellAdapter pageTitle="Event Staff"/);
+  assert.match(PAGE_SOURCE, /AdminShellAdapter\s*\n\s*pageTitle="Event Staff"/);
   // The old legacy gates are gone entirely.
   assert.equal(/requiredPermission="can_manage_event_staff"/.test(PAGE_SOURCE), false);
   assert.equal(/can_manage_event_staff/.test(PAGE_SOURCE), false);
@@ -321,4 +321,43 @@ test("no migration, RPC, resolver, or navigation file was touched -- every gover
     assert.ok(PAGE_SOURCE.includes(rpc), `Event Staff must retain ${rpc}`);
   }
   assert.equal(/adminNav/.test(PAGE_SOURCE), false);
+});
+
+// -- Central UI: Admin Users + Event Staff Consistency --------------------
+
+test("the shell carries the exact Event Admin backTarget", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /<AdminShellAdapter\s*\n\s*pageTitle="Event Staff"\s*\n\s*backTarget=\{\{ href: "\/admin\/events", label: "Event Admin" \}\}\s*\n\s*>/,
+  );
+});
+
+test("the outer page wrapper is normalized -- redundant explicit padding removed, matching the sibling canonical-page convention (no explicit padding, shell supplies it)", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /<div style=\{\{ display: "grid", gap: "var\(--space-4\)", minWidth: 0 \}\}>/,
+  );
+  assert.equal(/padding: "var\(--space-6\)"/.test(PAGE_SOURCE), false);
+});
+
+test("regression: guard, page title/content, and role-assignment/authority/confirmation-dialog wiring are unchanged by the backTarget/wrapper normalization", () => {
+  assert.match(PAGE_SOURCE, /<AdminRouteGuard requiredEventStaffDelegationAuthority>/);
+  assert.match(PAGE_SOURCE, /pageTitle="Event Staff"/);
+  assert.equal((PAGE_SOURCE.match(/pageTitle="Event Staff"/g) || []).length, 1);
+  // Super Admin inclusion, forced Event Admin profile, and candidate
+  // filtering are all untouched.
+  assert.match(PAGE_SOURCE, /export function filterAvailableAdmins\(/);
+  assert.match(PAGE_SOURCE, /export function buildStaffRows\(/);
+  assert.match(PAGE_SOURCE, /export function resolveAssignableProfile\(/);
+  assert.match(
+    PAGE_SOURCE,
+    /return candidate\?\.privilege_group === "super_admin" \? "event_admin" : requestedProfile;/,
+  );
+  // Self-elevation/governance and the destructive-confirmation dialog are
+  // untouched.
+  assert.match(PAGE_SOURCE, /self-elevation is not permitted/);
+  assert.match(
+    PAGE_SOURCE,
+    /<ConfirmDialog\s*\n\s*open=\{!!pendingRemoveRow\}\s*\n\s*title="Remove Event Staff"/,
+  );
 });
