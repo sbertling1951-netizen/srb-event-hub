@@ -5,7 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
+import { Alert } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { LoadingState } from "@/components/ui/LoadingState";
 import {
   type DraftAnswer,
   draftFromStored,
@@ -261,7 +264,7 @@ function MemberEvaluationPageInner() {
   if (isInitializing || (!result && !loadError && isReady)) {
     return (
       <MemberShellAdapter pageTitle={pageTitle}>
-        <div style={{ padding: 24 }}>Loading evaluation…</div>
+        <LoadingState message="Loading evaluation…" />
       </MemberShellAdapter>
     );
   }
@@ -319,42 +322,20 @@ function MemberEvaluationPageInner() {
     >
       <div style={{ width: "100%", maxWidth: 760, margin: "0 auto" }}>
         {result.preview_only && (
-          <div
-            style={{
-              padding: "8px 12px",
-              marginBottom: 16,
-              borderRadius: 8,
-              background: "#fef3c7",
-              fontSize: 13,
-            }}
-          >
-            Admin preview — responses are not recorded.
-          </div>
+          <Alert tone="warning">Admin preview — responses are not recorded.</Alert>
         )}
 
         {saveError && (
-          <div
-            style={{
-              padding: "8px 12px",
-              marginBottom: 16,
-              borderRadius: 8,
-              background: "#fee2e2",
-              color: "#991b1b",
-              fontSize: 13,
-              display: "flex",
-              gap: 12,
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
+          <Alert
+            tone="danger"
+            action={
+              <AppButton variant="secondary" onClick={() => void flushPendingSaves()}>
+                Retry
+              </AppButton>
+            }
           >
-            <span>{saveError}</span>
-            <button
-              className="app-button app-button-muted"
-              onClick={() => void flushPendingSaves()}
-            >
-              Retry
-            </button>
-          </div>
+            {saveError}
+          </Alert>
         )}
 
         <div className="text-sm font-medium" style={{ marginBottom: 8 }}>
@@ -423,11 +404,7 @@ function MemberEvaluationPageInner() {
           )}
         </section>
 
-        {submitError && (
-          <div style={{ color: "#dc2626", marginTop: 16, fontSize: 14 }}>
-            {submitError}
-          </div>
-        )}
+        {submitError && <Alert tone="danger">{submitError}</Alert>}
 
         <div
           style={{
@@ -438,23 +415,23 @@ function MemberEvaluationPageInner() {
             marginTop: 24,
           }}
         >
-          <button
-            className="app-button app-button-muted"
+          <AppButton
+            variant="muted"
             onClick={() => goToStep(Math.max(0, step - 1))}
             disabled={step === 0}
           >
             ← Previous
-          </button>
+          </AppButton>
           {step < total - 1 ? (
-            <button
-              className="app-button app-button-primary"
+            <AppButton
+              variant="primary"
               onClick={() => goToStep(Math.min(total - 1, step + 1))}
             >
               Next →
-            </button>
+            </AppButton>
           ) : (
-            <button
-              className="app-button app-button-success"
+            <AppButton
+              variant="success"
               onClick={submit}
               disabled={submitting || result.preview_only === true}
             >
@@ -463,7 +440,7 @@ function MemberEvaluationPageInner() {
                 : hasSubmittedBefore
                   ? "Update Evaluation"
                   : "Submit Evaluation"}
-            </button>
+            </AppButton>
           )}
         </div>
 

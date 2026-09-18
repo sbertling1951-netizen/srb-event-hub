@@ -99,3 +99,65 @@ test("COMPLETION INVARIANT: the page trusts the server's is_complete and shows a
   // autosave never claims completion -- only submit sets it true
   assert.match(PAGE, /setServerComplete\(true\);\s*\n\s*setHasSubmittedBefore\(true\);/);
 });
+
+// ---------------------------------------------------------------------------
+// Presentation Slice 1: root loading, the admin-preview notice, saveError,
+// submitError, and the Previous/Next/Submit buttons now use the shared
+// LoadingState/Alert/AppButton primitives, with no change to the governed
+// RPCs, save queue, completion invariants, or question renderers beneath
+// them.
+// ---------------------------------------------------------------------------
+
+test("the root loading state uses the shared LoadingState, preserving its exact gate", () => {
+  assert.match(PAGE, /import \{ LoadingState \} from "@\/components\/ui\/LoadingState";/);
+  assert.match(
+    PAGE,
+    /if \(isInitializing \|\| \(!result && !loadError && isReady\)\) \{\s*\n\s*return \(\s*\n\s*<MemberShellAdapter pageTitle=\{pageTitle\}>\s*\n\s*<LoadingState message="Loading evaluation…" \/>/,
+  );
+});
+
+test("the admin-preview notice, saveError, and submitError use the shared Alert primitive, preserving their exact gates and copy", () => {
+  assert.match(PAGE, /import \{ Alert \} from "@\/components\/ui\/Alert";/);
+  assert.match(
+    PAGE,
+    /\{result\.preview_only && \(\s*\n\s*<Alert tone="warning">Admin preview — responses are not recorded\.<\/Alert>\s*\n\s*\)\}/,
+  );
+  assert.match(PAGE, /\{saveError && \(\s*\n\s*<Alert\s*\n\s*tone="danger"/);
+  assert.match(PAGE, /\{submitError && <Alert tone="danger">\{submitError\}<\/Alert>\}/);
+});
+
+test("saveError's Retry action is a secondary AppButton wired to the exact flushPendingSaves handler", () => {
+  assert.match(PAGE, /import \{ AppButton \} from "@\/components\/ui\/AppButton";/);
+  assert.match(
+    PAGE,
+    /action=\{\s*\n\s*<AppButton variant="secondary" onClick=\{\(\) => void flushPendingSaves\(\)\}>\s*\n\s*Retry\s*\n\s*<\/AppButton>\s*\n\s*\}/,
+  );
+  assert.match(PAGE, />\s*\n\s*\{saveError\}\s*\n\s*<\/Alert>/);
+});
+
+test("Previous, Next, and Submit use the shared AppButton with matching variants, preserving their exact handlers, disabled conditions, and label logic", () => {
+  assert.match(
+    PAGE,
+    /<AppButton\s*\n\s*variant="muted"\s*\n\s*onClick=\{\(\) => goToStep\(Math\.max\(0, step - 1\)\)\}\s*\n\s*disabled=\{step === 0\}\s*\n\s*>\s*\n\s*← Previous\s*\n\s*<\/AppButton>/,
+  );
+  assert.match(
+    PAGE,
+    /<AppButton\s*\n\s*variant="primary"\s*\n\s*onClick=\{\(\) => goToStep\(Math\.min\(total - 1, step \+ 1\)\)\}\s*\n\s*>\s*\n\s*Next →\s*\n\s*<\/AppButton>/,
+  );
+  assert.match(
+    PAGE,
+    /<AppButton\s*\n\s*variant="success"\s*\n\s*onClick=\{submit\}\s*\n\s*disabled=\{submitting \|\| result\.preview_only === true\}\s*\n\s*>\s*\n\s*\{submitting\s*\n\s*\? "Saving…"\s*\n\s*: hasSubmittedBefore\s*\n\s*\? "Update Evaluation"\s*\n\s*: "Submit Evaluation"\}\s*\n\s*<\/AppButton>/,
+  );
+  assert.doesNotMatch(PAGE, /<button\s*\n\s*className="app-button/);
+});
+
+test("Slice 1 leaves the governed RPCs, save queue, completion invariants, and question renderers untouched", () => {
+  assert.match(PAGE, /supabase\.rpc\("get_evaluation"/);
+  assert.match(PAGE, /supabase\.rpc\("save_evaluation_answer"/);
+  assert.match(PAGE, /supabase\.rpc\("submit_evaluation"/);
+  assert.match(PAGE, /createSaveQueue/);
+  assert.match(PAGE, /const readOnly = result\.preview_only === true;/);
+  assert.match(PAGE, /question_type === "free_text"/);
+  assert.match(PAGE, /question_type === "rating"/);
+  assert.doesNotMatch(PAGE, /backTarget=/);
+});
