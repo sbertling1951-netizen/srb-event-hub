@@ -416,17 +416,15 @@ function MyRequestsInner() {
         const requestStatus = request.request_status || "new";
 
         return (
-          <div
+          <PageSection
             key={request.id}
-            className="card"
-            style={{
-              padding: 16,
-              border: "1px solid #ddd",
-              borderRadius: 12,
-              background: "#fff",
-              display: "grid",
-              gap: 8,
-            }}
+            variant="card"
+            // borderRadius is retained deliberately: `.card` resolves to 10px
+            // (--radius-medium) and 18px under @media (max-width: 899px), so
+            // dropping it would change this card's corners at both
+            // breakpoints. padding/border/background were redundant with
+            // `.card` and are now inherited from it.
+            style={{ borderRadius: 12, display: "grid", gap: 8 }}
           >
             <div
               style={{
@@ -519,7 +517,7 @@ function MyRequestsInner() {
                 Undo Cancel
               </button>
             ) : null}
-          </div>
+          </PageSection>
         );
       })}
 

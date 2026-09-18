@@ -182,7 +182,14 @@ test("the empty-requests message uses the shared EmptyState, preserving its exac
   );
 });
 
-test("Slice 1 leaves request cards, statusBadgeStyle, Cancel/Undo, and every load/mutation/API/identity contract untouched", () => {
+test("each request card uses PageSection, keeping its key, grid layout, and its own 12px radius (.card resolves to 10px, and 18px under the 899px breakpoint)", () => {
+  assert.match(
+    SOURCE,
+    /<PageSection\s*\n\s*key=\{request\.id\}\s*\n\s*variant="card"\s*\n(?:\s*\/\/[^\n]*\n)*\s*style=\{\{ borderRadius: 12, display: "grid", gap: 8 \}\}\s*\n\s*>/,
+  );
+});
+
+test("Slice 1/2 leaves statusBadgeStyle, Cancel/Undo, and every load/mutation/API/identity contract untouched", () => {
   assert.match(SOURCE, /function statusBadgeStyle\(status: string\): React\.CSSProperties \{/);
   assert.match(SOURCE, /onClick=\{\(\) => void cancelRequest\(request\.id\)\}/);
   assert.match(SOURCE, /onClick=\{\(\) => void undoCancelRequest\(request\.id\)\}/);
