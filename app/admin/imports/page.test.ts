@@ -803,14 +803,120 @@ test("regression: RunLifecycleActions/AbandonRowButton props and callbacks, Data
   assert.match(source, /const summary = summarizeAttendeeImportRows\(importRunResult\.rows\);/);
 });
 
-test("regression: the boundary stops exactly at Governed Import Results -- Import Summary, Imported Data Preview, Saved Attendee List, and Row Preview remain their pre-Slice-3 hand-rolled cards, untouched", () => {
+test("regression: the boundary (as of Slice 3) stopped exactly at Governed Import Results -- Saved Attendee List and Row Preview remain their pre-Slice-4 hand-rolled cards, untouched by Slice 3", () => {
   const source = readSource();
-  assert.match(source, /<h2 style=\{\{ marginTop: 0, marginBottom: 12 \}\}>Import Summary<\/h2>/);
   assert.match(source, /<h2 style=\{\{ marginTop: 0, marginBottom: 6 \}\}>\s*\n\s*Saved Attendee List\s*\n\s*<\/h2>/);
   assert.match(source, /<h2 style=\{\{ marginTop: 0, marginBottom: 6 \}\}>Row Preview<\/h2>/);
-  // Untouched hex colors that remain outside this slice's boundary.
-  assert.match(source, /background: rows\.length \? "white" : "#f3f4f6"/);
-  assert.match(source, /border: "1px solid #bfdbfe"/);
+  // Untouched hex colors that remain outside the Slice 3/4 boundary.
   assert.match(source, /color: "#8a1f1f"/);
   assert.match(source, /color: "#166534"/);
+});
+
+// -- Central UI: Imports Interior, Slice 4 Import Summary -----------------
+//
+// Only the Import Summary card: its container/heading, preview-toggle
+// button, information banner, four metric-tile borders, and the preview's
+// "No file loaded yet." empty text. Every assertion above this point still
+// proves the guard/backTarget/routing/RPC/lifecycle/other-card contracts
+// are untouched; these prove the exact substitutions authorized for this
+// slice landed, and nothing outside this card was touched.
+
+test("Import Summary is a PageSection (title prop), not a hand-rolled <h2> card, preserving its existing child order", () => {
+  const source = readSource();
+  const sectionIdx = source.indexOf('<PageSection variant="card" title="Import Summary">');
+  assert.notEqual(sectionIdx, -1);
+  assert.equal(/<h2[^>]*>Import Summary<\/h2>/.test(source), false);
+
+  const savedListIdx = source.indexOf("Saved Attendee List", sectionIdx);
+  assert.notEqual(savedListIdx, -1);
+  const sectionBody = source.slice(sectionIdx, savedListIdx);
+  const toggleIdx = sectionBody.indexOf("Show Imported Data Preview");
+  const bannerIdx = sectionBody.indexOf("Imported data preview is shown below in its own section.");
+  const tilesIdx = sectionBody.indexOf("Rows Loaded");
+  // The h3 heading, not the toggle button's own "Imported Data Preview"
+  // label text (which appears earlier, embedded in "Show Imported Data
+  // Preview").
+  const previewIdx = sectionBody.indexOf("Imported Data Preview", tilesIdx);
+  assert.ok(
+    toggleIdx > -1 && bannerIdx > toggleIdx && tilesIdx > bannerIdx && previewIdx > tilesIdx,
+    "expected preview toggle, information banner, metric tiles, and the preview subsection in that exact order",
+  );
+});
+
+test("the preview-toggle control is the canonical AppButton (variant secondary), preserving its exact onClick, disabled expression, and Show/Hide label behavior", () => {
+  const source = readSource();
+  const sectionIdx = source.indexOf('<PageSection variant="card" title="Import Summary">');
+  const toggleBlockEnd = source.indexOf("</AppButton>", sectionIdx) + "</AppButton>".length;
+  const toggleBlock = source.slice(sectionIdx, toggleBlockEnd);
+  assert.equal(/<button\b/.test(toggleBlock), false);
+  assert.match(
+    toggleBlock,
+    /<AppButton\s*\n\s*variant="secondary"\s*\n\s*onClick=\{\(\) => setShowFullImportTable\(\(prev\) => !prev\)\}\s*\n\s*disabled=\{!rows\.length\}\s*\n\s*>\s*\n\s*\{showFullImportTable\s*\n\s*\? "Hide Imported Data Preview"\s*\n\s*: "Show Imported Data Preview"\}\s*\n\s*<\/AppButton>/,
+  );
+});
+
+test("the preview information banner is the shared Alert (tone info), preserving its exact showFullImportTable condition and text -- no hardcoded hex banner remains", () => {
+  const source = readSource();
+  assert.match(
+    source,
+    /\{showFullImportTable \? \(\s*\n\s*<div style=\{\{ marginBottom: 14 \}\}>\s*\n\s*<Alert tone="info">\s*\n\s*Imported data preview is shown below in its own section\.\s*\n\s*<\/Alert>\s*\n\s*<\/div>\s*\n\s*\) : null\}/,
+  );
+  assert.equal(/#bfdbfe|#eff6ff|#1d4ed8/.test(source), false);
+});
+
+test("all four Import Summary metric-tile borders use the border-default token, not the hardcoded hex value, preserving their exact labels and values", () => {
+  const source = readSource();
+  const sectionIdx = source.indexOf('<PageSection variant="card" title="Import Summary">');
+  const tilesGridEnd = source.indexOf("{showFullImportTable ? (\n          <div style={{ marginTop: 16 }}>", sectionIdx);
+  const tilesBody = source.slice(sectionIdx, tilesGridEnd);
+  assert.equal((tilesBody.match(/border: "1px solid var\(--color-border-default\)"/g) || []).length, 4);
+  assert.equal(/#ddd/.test(tilesBody), false);
+  assert.match(tilesBody, />Rows Loaded<\/div>\s*\n\s*<div style=\{\{ fontSize: 22, fontWeight: 800 \}\}>\{rows\.length\}<\/div>/);
+  assert.match(tilesBody, />Valid Rows<\/div>\s*\n\s*<div style=\{\{ fontSize: 22, fontWeight: 800 \}\}>\s*\n\s*\{validRows\.length\}/);
+  assert.match(tilesBody, />Activity Rows<\/div>\s*\n\s*<div style=\{\{ fontSize: 22, fontWeight: 800 \}\}>\{activityCount\}<\/div>/);
+  assert.match(tilesBody, />Detected Headers<\/div>\s*\n\s*<div style=\{\{ fontSize: 22, fontWeight: 800 \}\}>\s*\n\s*\{headers\.length\}/);
+});
+
+test("the preview's 'No file loaded yet.' text is the canonical EmptyState, preserving its exact !rows.length condition and text -- Row Preview's own separate, untouched 'No file loaded yet.' div (a different section, out of this slice's scope) is unaffected", () => {
+  const source = readSource();
+  assert.match(source, /\{!rows\.length \? \(\s*\n\s*<EmptyState message="No file loaded yet\." \/>\s*\n\s*\) : isCompact \? \(/);
+  // Exactly one EmptyState "No file loaded yet." exists (the preview's);
+  // Row Preview's own plain-div instance is untouched and still present.
+  assert.equal((source.match(/<EmptyState message="No file loaded yet\." \/>/g) || []).length, 1);
+  assert.equal((source.match(/<div style=\{\{ opacity: 0\.8 \}\}>No file loaded yet\.<\/div>/g) || []).length, 1);
+});
+
+test("regression: showFullImportTable state declaration, the Imported Data Preview <h3>, and the preview ResponsiveList/DataTable columns/captions/row keys/helpers are byte-identical", () => {
+  const source = readSource();
+  assert.match(source, /const \[showFullImportTable, setShowFullImportTable\] = useState\(false\);/);
+  assert.match(
+    source,
+    /<h3 style=\{\{ marginTop: 0, marginBottom: 12 \}\}>\s*\n\s*Imported Data Preview\s*\n\s*<\/h3>/,
+  );
+  assert.match(source, /<ResponsiveList aria-label="Imported data preview">/);
+  assert.match(source, /<DataTable caption="Imported data preview">/);
+  for (const column of [
+    "Row", "Entry ID", "Pilot", "Co-Pilot", "Email", "Phones",
+    "City / State", "Coach", "Share", "Volunteer", "First Timer",
+    "Activities", "Warnings",
+  ]) {
+    assert.ok(
+      source.includes(`<th scope="col" style={tableHeadStyle}>${column}</th>`),
+      `expected the "${column}" preview column header to remain`,
+    );
+  }
+  assert.match(source, /<tr key=\{row\.rowNumber\}>/);
+  assert.match(source, /<li key=\{row\.rowNumber\} className="responsive-list-item">/);
+  assert.match(source, /const sortedRows = useMemo\(/);
+});
+
+test("regression: guard, shell/backTarget, routing, lifecycle wiring, and Saved Attendee List/Row Preview downstream of this slice are all untouched", () => {
+  const source = readSource();
+  assert.match(source, /<AdminRouteGuard requiredTask="event\.imports\.manage">/);
+  assert.match(source, /backTarget=\{\{ href: "\/admin\/attendees", label: "Attendees" \}\}/);
+  assert.match(source, /<RunLifecycleActions/);
+  assert.match(source, /<AbandonRowButton/);
+  assert.match(source, /<ImportHistoryPanel eventId=\{selectedImportEventId\} importType="attendee" \/>/);
+  assert.match(source, /<DataTable caption="Saved attendee list">/);
+  assert.match(source, /<h2 style=\{\{ marginTop: 0, marginBottom: 6 \}\}>Row Preview<\/h2>/);
 });

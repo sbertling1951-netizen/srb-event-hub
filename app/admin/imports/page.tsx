@@ -1784,42 +1784,24 @@ function AdminAttendeeImportsPageInner() {
 
       {selectedImportEventId ? <ImportHistoryPanel eventId={selectedImportEventId} importType="attendee" /> : null}
 
-      <div className="card" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 12 }}>Import Summary</h2>
+      <PageSection variant="card" title="Import Summary">
         <div style={{ marginBottom: 14 }}>
-          <button
-            type="button"
+          <AppButton
+            variant="secondary"
             onClick={() => setShowFullImportTable((prev) => !prev)}
             disabled={!rows.length}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #ccc",
-              background: rows.length ? "white" : "#f3f4f6",
-              fontWeight: 700,
-              cursor: rows.length ? "pointer" : "default",
-              opacity: rows.length ? 1 : 0.7,
-            }}
           >
             {showFullImportTable
               ? "Hide Imported Data Preview"
               : "Show Imported Data Preview"}
-          </button>
+          </AppButton>
         </div>
 
         {showFullImportTable ? (
-          <div
-            style={{
-              marginBottom: 14,
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #bfdbfe",
-              background: "#eff6ff",
-              color: "#1d4ed8",
-              fontSize: 14,
-            }}
-          >
-            Imported data preview is shown below in its own section.
+          <div style={{ marginBottom: 14 }}>
+            <Alert tone="info">
+              Imported data preview is shown below in its own section.
+            </Alert>
           </div>
         ) : null}
 
@@ -1831,14 +1813,14 @@ function AdminAttendeeImportsPageInner() {
           }}
         >
           <div
-            style={{ padding: 12, border: "1px solid #ddd", borderRadius: 10 }}
+            style={{ padding: 12, border: "1px solid var(--color-border-default)", borderRadius: 10 }}
           >
             <div style={{ fontSize: 12, opacity: 0.7 }}>Rows Loaded</div>
             <div style={{ fontSize: 22, fontWeight: 800 }}>{rows.length}</div>
           </div>
 
           <div
-            style={{ padding: 12, border: "1px solid #ddd", borderRadius: 10 }}
+            style={{ padding: 12, border: "1px solid var(--color-border-default)", borderRadius: 10 }}
           >
             <div style={{ fontSize: 12, opacity: 0.7 }}>Valid Rows</div>
             <div style={{ fontSize: 22, fontWeight: 800 }}>
@@ -1847,14 +1829,14 @@ function AdminAttendeeImportsPageInner() {
           </div>
 
           <div
-            style={{ padding: 12, border: "1px solid #ddd", borderRadius: 10 }}
+            style={{ padding: 12, border: "1px solid var(--color-border-default)", borderRadius: 10 }}
           >
             <div style={{ fontSize: 12, opacity: 0.7 }}>Activity Rows</div>
             <div style={{ fontSize: 22, fontWeight: 800 }}>{activityCount}</div>
           </div>
 
           <div
-            style={{ padding: 12, border: "1px solid #ddd", borderRadius: 10 }}
+            style={{ padding: 12, border: "1px solid var(--color-border-default)", borderRadius: 10 }}
           >
             <div style={{ fontSize: 12, opacity: 0.7 }}>Detected Headers</div>
             <div style={{ fontSize: 22, fontWeight: 800 }}>
@@ -1870,7 +1852,7 @@ function AdminAttendeeImportsPageInner() {
             </h3>
 
             {!rows.length ? (
-              <div style={{ opacity: 0.8 }}>No file loaded yet.</div>
+              <EmptyState message="No file loaded yet." />
             ) : isCompact ? (
               <ResponsiveList aria-label="Imported data preview">
                 {sortedRows.map((row) => (
@@ -1953,7 +1935,7 @@ function AdminAttendeeImportsPageInner() {
             )}
           </div>
         ) : null}
-      </div>
+      </PageSection>
       <div className="card" style={{ padding: 18 }}>
         <div
           style={{
