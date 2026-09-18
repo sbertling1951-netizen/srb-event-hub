@@ -5,7 +5,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
+import { Alert } from "@/components/ui/Alert";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageSection } from "@/components/ui/PageSection";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { supabase } from "@/lib/supabase";
@@ -510,46 +513,15 @@ function MemberVendorSignupInner() {
 
   return (
     <div style={{ display: "grid", gap: 18, maxWidth: 920 }}>
-      <div
-        className="card"
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 12,
-          background: "white",
-          padding: 18,
-        }}
-      >
-        <div style={{ fontSize: 13, marginTop: 8 }}>{status}</div>
-        {error ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 10,
-              borderRadius: 8,
-              border: "1px solid #e2b4b4",
-              background: "#fff3f3",
-              color: "#8a1f1f",
-            }}
-          >
-            {error}
-          </div>
-        ) : null}
+      <PageSection variant="card">
+        {status && !error ? <Alert tone="info">{status}</Alert> : null}
+        {error ? <Alert tone="danger">{error}</Alert> : null}
         {submitted ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 12,
-              borderRadius: 8,
-              border: "1px solid #86efac",
-              background: "#f0fdf4",
-              color: "#166534",
-              fontWeight: 700,
-            }}
-          >
+          <Alert tone="success">
             Request submitted. The vendor or event team will follow up with you.
-          </div>
+          </Alert>
         ) : null}
-      </div>
+      </PageSection>
 
       <div
         className="card"
@@ -820,9 +792,7 @@ function MemberVendorSignupInner() {
         <h2 style={{ margin: 0 }}>My Vendor Requests</h2>
 
         {memberRequests.length === 0 ? (
-          <div style={{ fontSize: 14, color: "#666" }}>
-            You do not have any vendor requests for this event yet.
-          </div>
+          <EmptyState message="You do not have any vendor requests for this event yet." />
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             {memberRequests.map((request) => {

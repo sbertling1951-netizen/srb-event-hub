@@ -46,3 +46,57 @@ test("attendee identity for request submission comes from event_code/registratio
     /registrationIdentifier:\s*\n?\s*session\?\.attendee_email \|\| session\?\.attendee_phone \|\| null/,
   );
 });
+
+// ---------------------------------------------------------------------------
+// Presentation Slice 1: the status card and the empty request-list message
+// now use the shared PageSection/Alert/EmptyState primitives, with no
+// change to loadPage, request submit/cancel/confirm, vendor queries/RPCs/
+// API calls, or identity-evidence fields beneath them.
+// ---------------------------------------------------------------------------
+
+test("the status card uses PageSection, preserving the three status/error/submitted regions inside", () => {
+  assert.match(SOURCE, /import \{ PageSection \} from "@\/components\/ui\/PageSection";/);
+  assert.match(
+    SOURCE,
+    /<PageSection variant="card">\s*\n\s*\{status && !error \? <Alert tone="info">\{status\}<\/Alert> : null\}\s*\n\s*\{error \? <Alert tone="danger">\{error\}<\/Alert> : null\}\s*\n\s*\{submitted \? \(/,
+  );
+});
+
+test("status/error/submitted use the shared Alert primitive with the singular-failure-surface gate and exact copy", () => {
+  assert.match(SOURCE, /import \{ Alert \} from "@\/components\/ui\/Alert";/);
+  assert.match(SOURCE, /\{status && !error \? <Alert tone="info">\{status\}<\/Alert> : null\}/);
+  assert.match(SOURCE, /\{error \? <Alert tone="danger">\{error\}<\/Alert> : null\}/);
+  assert.match(
+    SOURCE,
+    /<Alert tone="success">\s*\n\s*Request submitted\. The vendor or event team will follow up with you\.\s*\n\s*<\/Alert>/,
+  );
+});
+
+test("the empty My Vendor Requests message uses the shared EmptyState, preserving its exact gate and copy", () => {
+  assert.match(SOURCE, /import \{ EmptyState \} from "@\/components\/ui\/EmptyState";/);
+  assert.match(
+    SOURCE,
+    /\{memberRequests\.length === 0 \? \(\s*\n\s*<EmptyState message="You do not have any vendor requests for this event yet\." \/>/,
+  );
+});
+
+test("Slice 1 leaves selects, inputs, action links/buttons, status badges, the request-card list, and ConfirmDialog untouched", () => {
+  assert.match(SOURCE, /<select\s*\n\s*value=\{selectedVendorId\}/);
+  assert.match(SOURCE, /<select\s*\n\s*value=\{preferredResponseMethod\}/);
+  assert.match(SOURCE, /className="app-button app-button-primary"/);
+  assert.match(SOURCE, /function statusBadge\(status: string\) \{/);
+  assert.match(SOURCE, /<ConfirmDialog\s*\n\s*open=\{!!requestPendingCancel\}/);
+});
+
+test("Slice 1 leaves loadPage, request submit/cancel/confirm, and every vendor query/RPC/API call unchanged", () => {
+  assert.match(SOURCE, /\.from\("vendors"\)/);
+  assert.match(SOURCE, /event_vendors!inner/);
+  assert.match(
+    SOURCE,
+    /supabase\.rpc\(\s*\n?\s*"resolve_attendee_visible_vendor_notices",\s*\n?\s*\{\s*p_event_id:\s*event\.id\s*\}/,
+  );
+  assert.match(SOURCE, /fetch\(\s*\n\s*`\/api\/member\/vendor-requests\?/);
+  assert.match(SOURCE, /fetch\("\/api\/member\/vendor-requests", \{\s*\n\s*method: "POST",/);
+  assert.match(SOURCE, /fetch\("\/api\/member\/vendor-requests", \{\s*\n\s*method: "PATCH",/);
+  assert.equal((SOURCE.match(/backTarget=/g) || []).length, 0);
+});
