@@ -5,6 +5,9 @@ import { useCallback, useEffect, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import ParticipantIdentityEditor from "@/components/participants/ParticipantIdentityEditor";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
+import { AppButton } from "@/components/ui/AppButton";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { PageSection } from "@/components/ui/PageSection";
 import { logEngagement } from "@/lib/engagement";
 import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
@@ -181,7 +184,7 @@ function ParticipantsPageInner() {
 
   return (
     <div className="space-y-4">
-      <div className="card">
+      <PageSection variant="card">
         <div className="app-section-title">Participant Accounts</div>
 
         <div className="app-card-section" style={{ textAlign: "center" }}>
@@ -238,7 +241,7 @@ function ParticipantsPageInner() {
                   : 0
               }%`,
               background: isOverCapacity
-                ? "#dc2626"
+                ? "var(--color-action-destructive)"
                 : hasKnownCapacity &&
                     registeredParticipantCount === capacity &&
                     (capacity as number) > 0
@@ -295,14 +298,14 @@ function ParticipantsPageInner() {
             </div>
           </div>
         </div>
-      </div>
+      </PageSection>
 
       {loading ? (
-        <div className="rounded-lg border p-4">Loading...</div>
+        <LoadingState message="Loading participants…" />
       ) : (
         <>
           {participants.map((participant) => (
-            <div key={participant.id} className="card">
+            <PageSection key={participant.id} variant="card">
               <div
                 style={{
                   display: "grid",
@@ -336,12 +339,12 @@ function ParticipantsPageInner() {
               {participant.email && (
                 <div className="text-sm text-gray-500">{participant.email}</div>
               )}
-            </div>
+            </PageSection>
           ))}
 
           {canMutateParticipantIdentity &&
             Array.from({ length: vacantSlots }).map((_, index) => (
-              <div key={`vacant-${index}`} className="card">
+              <PageSection key={`vacant-${index}`} variant="card">
                 <div className="font-semibold">Additional Attendee</div>
 
                 <div
@@ -363,15 +366,11 @@ function ParticipantsPageInner() {
                   className="app-card-section-muted"
                   style={{ marginTop: "0.75rem", textAlign: "center" }}
                 >
-                  <button
-                    type="button"
-                    className="app-button app-button-primary"
-                    onClick={() => setShowEditor(true)}
-                  >
+                  <AppButton variant="primary" onClick={() => setShowEditor(true)}>
                     + Add Participant
-                  </button>
+                  </AppButton>
                 </div>
-              </div>
+              </PageSection>
             ))}
 
           {!canMutateParticipantIdentity && (
