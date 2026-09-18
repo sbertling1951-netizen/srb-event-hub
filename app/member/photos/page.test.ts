@@ -122,3 +122,60 @@ test("Member Workspace Continuity: this identity-dependent page is under MemberR
     /export default function MemberPhotosPage\(\) \{[\s\S]{0,360}?<MemberRouteGuard>\s*\n\s*<MemberPhotosPageInner \/>\s*\n\s*<\/MemberRouteGuard>/,
   );
 });
+
+// ---------------------------------------------------------------------------
+// Presentation Slice 1: status/error, Refresh, and the two empty states now
+// use the shared Alert/AppButton/EmptyState primitives, with no change to
+// any upload/storage/RPC/lifecycle contract beneath them.
+// ---------------------------------------------------------------------------
+
+test("the page uses no back target, matching every other primary Member-nav page", () => {
+  assert.equal((PAGE_SOURCE.match(/backTarget=/g) || []).length, 0);
+});
+
+test("status/error use the shared Alert primitive, and the failure surface is singular (no duplicate status+error)", () => {
+  assert.match(PAGE_SOURCE, /import \{ Alert \} from "@\/components\/ui\/Alert";/);
+  assert.match(PAGE_SOURCE, /\{status && !error \? <Alert tone="info">\{status\}<\/Alert> : null\}/);
+  assert.match(PAGE_SOURCE, /\{error \? <Alert tone="danger">\{error\}<\/Alert> : null\}/);
+});
+
+test("Refresh uses the shared AppButton with the exact click handler, label swap, and loading-driven disabled behavior", () => {
+  assert.match(PAGE_SOURCE, /import \{ AppButton \} from "@\/components\/ui\/AppButton";/);
+  assert.match(
+    PAGE_SOURCE,
+    /<AppButton\s*\n\s*variant="secondary"\s*\n\s*loading=\{refreshing\}\s*\n\s*onClick=\{\(\) => void refreshUploads\(\)\}\s*\n\s*>\s*\n\s*\{refreshing \? "⟳ Refreshing\.\.\." : "↻ Refresh"\}\s*\n\s*<\/AppButton>/,
+  );
+});
+
+test("both empty states use the shared EmptyState primitive, preserving their exact gates and copy", () => {
+  assert.match(PAGE_SOURCE, /import \{ EmptyState \} from "@\/components\/ui\/EmptyState";/);
+  assert.match(
+    PAGE_SOURCE,
+    /\{uploads\.length === 0 \? \(\s*\n\s*<EmptyState message="No photos uploaded yet\." \/>/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /\{approvedPhotos\.length === 0 \? \(\s*\n\s*<EmptyState message="No approved event photos are available yet\." \/>/,
+  );
+});
+
+test("Slice 1 leaves the upload composer, progress widget, My Uploads cards/actions, gallery grid, and viewer modal untouched", () => {
+  assert.match(PAGE_SOURCE, /Batch Upload Caption \(optional\)/);
+  assert.match(PAGE_SOURCE, /Please keep this page open until all uploads complete\./);
+  assert.match(PAGE_SOURCE, /window\.confirm\("Delete this photo\?"\)/);
+  assert.match(PAGE_SOURCE, /aria-label="View event photo"/);
+  assert.match(PAGE_SOURCE, /aria-label="Event photo viewer"/);
+  assert.match(PAGE_SOURCE, /Download Photo/);
+  assert.match(PAGE_SOURCE, /Share Photo/);
+});
+
+test("Slice 1 leaves every load/upload/delete/download/share/rendition function and its storage/RPC/query calls unchanged", () => {
+  assert.match(PAGE_SOURCE, /async function loadUploads\(attendeeId: string\) \{/);
+  assert.match(PAGE_SOURCE, /async function loadApprovedPhotos\(eventId: string\) \{/);
+  assert.match(PAGE_SOURCE, /async function uploadPhoto\(file: File\) \{/);
+  assert.match(PAGE_SOURCE, /async function deletePhoto\(photo: UploadedPhoto\) \{/);
+  assert.match(PAGE_SOURCE, /async function downloadPhoto\(photo: ApprovedPhoto\) \{/);
+  assert.match(PAGE_SOURCE, /async function sharePhoto\(photo: ApprovedPhoto\) \{/);
+  assert.match(PAGE_SOURCE, /supabase\.storage\s*\n\s*\.from\("event-photos"\)/);
+  assert.match(PAGE_SOURCE, /activityType: "photos_view"/);
+});

@@ -4,6 +4,9 @@ import React, { useEffect, useRef, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
+import { Alert } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { logEngagement } from "@/lib/engagement";
 import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
@@ -742,11 +745,7 @@ function MemberPhotosPageInner() {
             })();
           }}
         />
-        {status && (
-          <div style={{ marginTop: 8, color: "#2563eb", fontWeight: 600 }}>
-            {status}
-          </div>
-        )}
+        {status && !error ? <Alert tone="info">{status}</Alert> : null}
 
         {uploading && (
           <div
@@ -801,7 +800,7 @@ function MemberPhotosPageInner() {
           </div>
         )}
 
-        {error && <div style={{ marginTop: 8, color: "red" }}>{error}</div>}
+        {error ? <Alert tone="danger">{error}</Alert> : null}
         <div style={{ marginTop: 20 }}>
           <div
             style={{
@@ -830,19 +829,17 @@ function MemberPhotosPageInner() {
               </div>
             </div>
 
-            <button
-              type="button"
-              disabled={refreshing}
-              onClick={() => {
-                void refreshUploads();
-              }}
+            <AppButton
+              variant="secondary"
+              loading={refreshing}
+              onClick={() => void refreshUploads()}
             >
               {refreshing ? "⟳ Refreshing..." : "↻ Refresh"}
-            </button>
+            </AppButton>
           </div>
 
           {uploads.length === 0 ? (
-            <p>No photos uploaded yet.</p>
+            <EmptyState message="No photos uploaded yet." />
           ) : (
             <div>
               {uploads.map((photo) => (
@@ -949,7 +946,7 @@ function MemberPhotosPageInner() {
           </p>
 
           {approvedPhotos.length === 0 ? (
-            <p>No approved event photos are available yet.</p>
+            <EmptyState message="No approved event photos are available yet." />
           ) : (
             <div
               style={{
