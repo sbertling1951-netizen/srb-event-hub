@@ -6,8 +6,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { Alert } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Field, Select } from "@/components/ui/Field";
 import { PageSection } from "@/components/ui/PageSection";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { memberIdentityRpcArgs } from "@/lib/memberSession";
@@ -534,28 +536,29 @@ function MemberVendorSignupInner() {
           gap: 14,
         }}
       >
-        <label>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>Vendor</div>
-          <select
-            value={selectedVendorId}
-            onChange={(e) => setSelectedVendorId(e.target.value)}
-            disabled={saving || !!vendorIdFromUrl}
-            style={{ width: "100%", padding: 10 }}
-          >
-            <option value="">Select vendor</option>
-            {vendors.map((vendor) => {
-              const noticeText = formatVendorNoticeDisplay(
-                vendor.currentNotice || null,
-              );
-              return (
-                <option key={vendor.id} value={vendor.id}>
-                  {vendor.business_name}
-                  {noticeText ? ` — ${noticeText}` : ""}
-                </option>
-              );
-            })}
-          </select>
-        </label>
+        <Field label="Vendor">
+          {(controlProps) => (
+            <Select
+              {...controlProps}
+              value={selectedVendorId}
+              onChange={(e) => setSelectedVendorId(e.target.value)}
+              disabled={saving || !!vendorIdFromUrl}
+            >
+              <option value="">Select vendor</option>
+              {vendors.map((vendor) => {
+                const noticeText = formatVendorNoticeDisplay(
+                  vendor.currentNotice || null,
+                );
+                return (
+                  <option key={vendor.id} value={vendor.id}>
+                    {vendor.business_name}
+                    {noticeText ? ` — ${noticeText}` : ""}
+                  </option>
+                );
+              })}
+            </Select>
+          )}
+        </Field>
 
         {selectedVendor ? (
           <div
@@ -729,21 +732,20 @@ function MemberVendorSignupInner() {
             />
           </label>
 
-          <label>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>
-              Preferred Response
-            </div>
-            <select
-              value={preferredResponseMethod}
-              onChange={(e) => setPreferredResponseMethod(e.target.value)}
-              style={{ width: "100%", padding: 10 }}
-            >
-              <option value="email">Email</option>
-              <option value="phone">Phone</option>
-              <option value="text">Text</option>
-              <option value="in_app">In-app request</option>
-            </select>
-          </label>
+          <Field label="Preferred Response">
+            {(controlProps) => (
+              <Select
+                {...controlProps}
+                value={preferredResponseMethod}
+                onChange={(e) => setPreferredResponseMethod(e.target.value)}
+              >
+                <option value="email">Email</option>
+                <option value="phone">Phone</option>
+                <option value="text">Text</option>
+                <option value="in_app">In-app request</option>
+              </Select>
+            )}
+          </Field>
         </div>
 
         <label>
@@ -758,23 +760,21 @@ function MemberVendorSignupInner() {
         </label>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button
-            type="button"
+          <AppButton
+            variant="primary"
             onClick={() => void submitRequest()}
             disabled={saving || vendors.length === 0}
-            className="app-button app-button-primary"
           >
             {saving ? "Submitting..." : "Submit Request"}
-          </button>
+          </AppButton>
 
-          <button
-            type="button"
+          <AppButton
+            variant="muted"
             onClick={() => void loadPage()}
             disabled={saving}
-            className="app-button app-button-muted"
           >
             Refresh
-          </button>
+          </AppButton>
         </div>
       </div>
 
