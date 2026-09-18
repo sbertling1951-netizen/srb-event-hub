@@ -6,7 +6,10 @@ import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Field, Textarea } from "@/components/ui/Field";
+import { PageSection } from "@/components/ui/PageSection";
 import { logEngagement } from "@/lib/engagement";
 import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
@@ -50,6 +53,9 @@ function MemberPhotosPageInner() {
   };
   const [uploads, setUploads] = useState<UploadedPhoto[]>([]);
   const [approvedPhotos, setApprovedPhotos] = useState<ApprovedPhoto[]>([]);
+  const [pendingDeletePhoto, setPendingDeletePhoto] =
+    useState<UploadedPhoto | null>(null);
+  const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(
     null,
   );
@@ -473,19 +479,17 @@ function MemberPhotosPageInner() {
       setStatus("");
     }
   }
+  // Confirmation now happens in the ConfirmDialog rendered from
+  // pendingDeletePhoto -- this function itself is the exact prior governed
+  // deletion path, called exactly once, only from that dialog's onConfirm.
   async function deletePhoto(photo: UploadedPhoto) {
-    const confirmed = window.confirm("Delete this photo?");
-
-    if (!confirmed) {
-      return;
-    }
-
     if (!attendeeId) {
       setError("No attendee found.");
       return;
     }
 
     try {
+      setDeletingPhotoId(photo.id);
       setError(null);
       if (photo.photo_status !== "pending") {
         setError(
@@ -518,6 +522,8 @@ function MemberPhotosPageInner() {
       console.error("photo delete error:", err);
 
       setError(err instanceof Error ? err.message : "Could not delete photo.");
+    } finally {
+      setDeletingPhotoId(null);
     }
   }
 
@@ -667,6 +673,27 @@ function MemberPhotosPageInner() {
     typeof navigator !== "undefined" && typeof navigator.share === "function";
   return (
     <MemberShellAdapter pageTitle="EpicentraX Photos">
+      <ConfirmDialog
+        open={pendingDeletePhoto !== null}
+        title="Delete photo"
+        message="Delete this photo?"
+        confirmLabel="Delete"
+        danger
+        busy={
+          pendingDeletePhoto !== null &&
+          deletingPhotoId === pendingDeletePhoto.id
+        }
+        onCancel={() => setPendingDeletePhoto(null)}
+        onConfirm={() => {
+          if (!pendingDeletePhoto) {
+            return;
+          }
+          const photo = pendingDeletePhoto;
+          setPendingDeletePhoto(null);
+          void deletePhoto(photo);
+        }}
+      />
+
       <div style={{ display: "grid", gap: 16, maxWidth: 1000, minWidth: 0 }}>
 
       <div>
@@ -679,38 +706,21 @@ function MemberPhotosPageInner() {
           Select one or more photos from your Photo Library or take a new photo.
         </div>
         <div style={{ marginBottom: 12 }}>
-          <label
-            style={{
-              display: "block",
-              fontWeight: 600,
-              marginBottom: 4,
-            }}
+          <Field
+            label="Batch Upload Caption (optional)"
+            help="Useful when uploading multiple photos from the same activity, meal, tour, or event."
           >
-            Batch Upload Caption (optional)
-          </label>
-          <textarea
-            value={memberCaption}
-            onChange={(e) => setMemberCaption(e.target.value)}
-            placeholder="This caption will be attached to every photo selected in this upload."
-            rows={3}
-            style={{
-              width: "100%",
-              minWidth: 0,
-              padding: 8,
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-            }}
-          />
-          <div
-            style={{
-              marginTop: 4,
-              fontSize: 12,
-              color: "#64748b",
-            }}
-          >
-            Useful when uploading multiple photos from the same activity, meal,
-            tour, or event.
-          </div>
+            {(controlProps) => (
+              <Textarea
+                {...controlProps}
+                value={memberCaption}
+                onChange={(e) => setMemberCaption(e.target.value)}
+                placeholder="This caption will be attached to every photo selected in this upload."
+                rows={3}
+                style={{ width: "100%", minWidth: 0 }}
+              />
+            )}
+          </Field>
         </div>
         <input
           type="file"
@@ -843,15 +853,10 @@ function MemberPhotosPageInner() {
           ) : (
             <div>
               {uploads.map((photo) => (
-                <div
+                <PageSection
                   key={photo.id}
-                  style={{
-                    border: "1px solid #ddd",
-                    borderRadius: 8,
-                    padding: 12,
-                    marginBottom: 8,
-                    minWidth: 0,
-                  }}
+                  variant="card"
+                  style={{ padding: 12, marginBottom: 8, minWidth: 0 }}
                 >
                   <div>
                     <strong>Status:</strong>{" "}
@@ -874,8 +879,8 @@ function MemberPhotosPageInner() {
                         flexWrap: "wrap",
                       }}
                     >
-                      <button
-                        type="button"
+                      <AppButton
+                        variant="secondary"
                         onClick={() => {
                           void (async () => {
                             const fullUrl = await ensureFullPhotoUrl(photo);
@@ -886,16 +891,17 @@ function MemberPhotosPageInner() {
                         }}
                       >
                         View
-                      </button>
+                      </AppButton>
                       {photo.photo_status === "pending" && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void deletePhoto(photo);
-                          }}
+                        <AppButton
+                          variant="danger"
+                          onClick={() => setPendingDeletePhoto(photo)}
+                          disabled={deletingPhotoId === photo.id}
                         >
-                          Delete
-                        </button>
+                          {deletingPhotoId === photo.id
+                            ? "Deleting..."
+                            : "Delete"}
+                        </AppButton>
                       )}
                     </div>
                     {(photo.previewUrl || photo.fullImageUrl) && (
@@ -933,7 +939,7 @@ function MemberPhotosPageInner() {
                       </>
                     )}
                   </>
-                </div>
+                </PageSection>
               ))}
             </div>
           )}

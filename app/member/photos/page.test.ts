@@ -159,10 +159,8 @@ test("both empty states use the shared EmptyState primitive, preserving their ex
   );
 });
 
-test("Slice 1 leaves the upload composer, progress widget, My Uploads cards/actions, gallery grid, and viewer modal untouched", () => {
-  assert.match(PAGE_SOURCE, /Batch Upload Caption \(optional\)/);
+test("Slice 1 leaves the upload progress widget, gallery grid, and viewer modal untouched", () => {
   assert.match(PAGE_SOURCE, /Please keep this page open until all uploads complete\./);
-  assert.match(PAGE_SOURCE, /window\.confirm\("Delete this photo\?"\)/);
   assert.match(PAGE_SOURCE, /aria-label="View event photo"/);
   assert.match(PAGE_SOURCE, /aria-label="Event photo viewer"/);
   assert.match(PAGE_SOURCE, /Download Photo/);
@@ -178,4 +176,86 @@ test("Slice 1 leaves every load/upload/delete/download/share/rendition function 
   assert.match(PAGE_SOURCE, /async function sharePhoto\(photo: ApprovedPhoto\) \{/);
   assert.match(PAGE_SOURCE, /supabase\.storage\s*\n\s*\.from\("event-photos"\)/);
   assert.match(PAGE_SOURCE, /activityType: "photos_view"/);
+});
+
+// ---------------------------------------------------------------------------
+// Presentation Slice 2: the upload composer's caption control and My
+// Uploads cards/actions now use the shared Field/Textarea/PageSection/
+// AppButton/ConfirmDialog primitives, with no change to upload lifecycle,
+// storage/table calls, or any other data/authority contract beneath them.
+// ---------------------------------------------------------------------------
+
+test("the caption control uses Field + Textarea, preserving the exact label, help copy, value, setter, placeholder, and rows", () => {
+  assert.match(PAGE_SOURCE, /import \{ Field, Textarea \} from "@\/components\/ui\/Field";/);
+  assert.match(
+    PAGE_SOURCE,
+    /<Field\s*\n\s*label="Batch Upload Caption \(optional\)"\s*\n\s*help="Useful when uploading multiple photos from the same activity, meal, tour, or event\."\s*\n\s*>/,
+  );
+  assert.match(PAGE_SOURCE, /value=\{memberCaption\}/);
+  assert.match(PAGE_SOURCE, /onChange=\{\(e\) => setMemberCaption\(e\.target\.value\)\}/);
+  assert.match(PAGE_SOURCE, /placeholder="This caption will be attached to every photo selected in this upload\."/);
+  assert.match(PAGE_SOURCE, /rows=\{3\}/);
+  assert.doesNotMatch(PAGE_SOURCE, /<textarea\b/);
+});
+
+test("View uses the shared AppButton, preserving its exact async handler body", () => {
+  assert.match(PAGE_SOURCE, /import \{ AppButton \} from "@\/components\/ui\/AppButton";/);
+  assert.match(
+    PAGE_SOURCE,
+    /<AppButton\s*\n\s*variant="secondary"\s*\n\s*onClick=\{\(\) => \{\s*\n\s*void \(async \(\) => \{\s*\n\s*const fullUrl = await ensureFullPhotoUrl\(photo\);\s*\n\s*if \(fullUrl\) \{\s*\n\s*window\.open\(fullUrl, "_blank"\);\s*\n\s*\}\s*\n\s*\}\)\(\);\s*\n\s*\}\}\s*\n\s*>\s*\n\s*View\s*\n\s*<\/AppButton>/,
+  );
+});
+
+test("each My Uploads card uses PageSection, preserving its key, order, padding, and inner content; the caption-preview box is untouched", () => {
+  assert.match(PAGE_SOURCE, /import \{ PageSection \} from "@\/components\/ui\/PageSection";/);
+  assert.match(
+    PAGE_SOURCE,
+    /<PageSection\s*\n\s*key=\{photo\.id\}\s*\n\s*variant="card"\s*\n\s*style=\{\{ padding: 12, marginBottom: 8, minWidth: 0 \}\}\s*\n\s*>/,
+  );
+  assert.match(PAGE_SOURCE, /background: "#f8fafc",\s*\n\s*border: "1px solid #cbd5e1",\s*\n\s*borderRadius: 8,\s*\n\s*color: "#334155",/);
+});
+
+test("Delete opens a shared danger ConfirmDialog instead of calling deletePhoto directly, with the pending-status gate and busy label preserved", () => {
+  assert.match(PAGE_SOURCE, /import ConfirmDialog from "@\/components\/ui\/ConfirmDialog";/);
+  assert.match(
+    PAGE_SOURCE,
+    /\{photo\.photo_status === "pending" && \(\s*\n\s*<AppButton\s*\n\s*variant="danger"\s*\n\s*onClick=\{\(\) => setPendingDeletePhoto\(photo\)\}\s*\n\s*disabled=\{deletingPhotoId === photo\.id\}\s*\n\s*>\s*\n\s*\{deletingPhotoId === photo\.id\s*\n\s*\? "Deleting\.\.\."\s*\n\s*: "Delete"\}\s*\n\s*<\/AppButton>\s*\n\s*\)\}/,
+  );
+  assert.doesNotMatch(PAGE_SOURCE, /window\.confirm/);
+  assert.doesNotMatch(PAGE_SOURCE, /onClick=\{\(\) => \{\s*\n\s*void deletePhoto\(photo\);\s*\n\s*\}\}/);
+});
+
+test("the ConfirmDialog is wired with pendingDeletePhoto/deletingPhotoId state, preserves the exact message text, confirms exactly once after closing, and cancels without deleting", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /const \[pendingDeletePhoto, setPendingDeletePhoto\] =\s*\n\s*useState<UploadedPhoto \| null>\(null\);/,
+  );
+  assert.match(PAGE_SOURCE, /const \[deletingPhotoId, setDeletingPhotoId\] = useState<string \| null>\(null\);/);
+  assert.match(
+    PAGE_SOURCE,
+    /<ConfirmDialog\s*\n\s*open=\{pendingDeletePhoto !== null\}\s*\n\s*title="Delete photo"\s*\n\s*message="Delete this photo\?"\s*\n\s*confirmLabel="Delete"\s*\n\s*danger\s*\n\s*busy=\{\s*\n\s*pendingDeletePhoto !== null &&\s*\n\s*deletingPhotoId === pendingDeletePhoto\.id\s*\n\s*\}\s*\n\s*onCancel=\{\(\) => setPendingDeletePhoto\(null\)\}\s*\n\s*onConfirm=\{\(\) => \{\s*\n\s*if \(!pendingDeletePhoto\) \{\s*\n\s*return;\s*\n\s*\}\s*\n\s*const photo = pendingDeletePhoto;\s*\n\s*setPendingDeletePhoto\(null\);\s*\n\s*void deletePhoto\(photo\);\s*\n\s*\}\}\s*\n\s*\/>/,
+  );
+  // onCancel clears pending state only -- it never itself calls deletePhoto.
+  assert.doesNotMatch(PAGE_SOURCE, /onCancel=\{\(\) => \{\s*\n?\s*void deletePhoto/);
+});
+
+test("deletePhoto retains its exact attendee check, pending-status guard, storage removal, table deletion, reload, status text, and error handling", () => {
+  assert.match(PAGE_SOURCE, /async function deletePhoto\(photo: UploadedPhoto\) \{\s*\n\s*if \(!attendeeId\) \{\s*\n\s*setError\("No attendee found\."\);/);
+  assert.match(
+    PAGE_SOURCE,
+    /if \(photo\.photo_status !== "pending"\) \{\s*\n\s*setError\(\s*\n\s*"This photo has already been reviewed and can no longer be deleted\.",/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /supabase\.storage\s*\n\s*\.from\("event-photos"\)\s*\n\s*\.remove\(\[photo\.storage_path\]\);/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /supabase\s*\n\s*\.from\("event_photos"\)\s*\n\s*\.delete\(\)\s*\n\s*\.eq\("id", photo\.id\);/,
+  );
+  assert.match(PAGE_SOURCE, /await loadUploads\(attendeeId\);\s*\n\s*\n\s*setStatus\("Photo deleted\."\);/);
+  assert.match(
+    PAGE_SOURCE,
+    /setError\(err instanceof Error \? err\.message : "Could not delete photo\."\);\s*\n\s*\} finally \{\s*\n\s*setDeletingPhotoId\(null\);/,
+  );
 });
