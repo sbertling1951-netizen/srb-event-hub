@@ -81,3 +81,50 @@ test("the public/compat Event pointer write is skipped when a real MemberSession
   );
   assert.match(SOURCE, /PUBLIC EVENT DISCOVERY/);
 });
+
+// ---------------------------------------------------------------------------
+// Presentation slice: status/error/empty states and the event-card wrapper
+// now use the shared Alert/PageSection/EmptyState/AppButton primitives, with
+// no change to the public discovery contract, the MemberSession-skip guard,
+// event_code: null, the /nearby navigation target, or the absence of
+// MemberRouteGuard/backTarget.
+// ---------------------------------------------------------------------------
+
+test("no MemberRouteGuard and no backTarget are present -- this remains public event discovery with the same shell title", () => {
+  assert.doesNotMatch(CODE, /MemberRouteGuard/);
+  assert.equal((SOURCE.match(/backTarget=/g) || []).length, 0);
+  assert.match(SOURCE, /<MemberShellAdapter pageTitle="Member Events">/);
+});
+
+test("status and error use the shared Alert primitive, with the danger Alert as the sole failure surface", () => {
+  assert.match(SOURCE, /import \{ Alert \} from "@\/components\/ui\/Alert";/);
+  assert.match(SOURCE, /\{status && !error \? <Alert tone="info">\{status\}<\/Alert> : null\}/);
+  assert.match(SOURCE, /\{error \? <Alert tone="danger">\{error\}<\/Alert> : null\}/);
+});
+
+test("event cards use PageSection, and the empty state uses EmptyState, preserving keys, order, and copy", () => {
+  assert.match(SOURCE, /import \{ PageSection \} from "@\/components\/ui\/PageSection";/);
+  assert.match(SOURCE, /import \{ EmptyState \} from "@\/components\/ui\/EmptyState";/);
+  assert.match(SOURCE, /<PageSection key=\{event\.id\} variant="card">/);
+  assert.match(
+    SOURCE,
+    /\{events\.length === 0 \? \(\s*\n\s*<EmptyState message="No member events available\." \/>/,
+  );
+});
+
+test("Select Event uses the shared secondary AppButton, preserving its exact label and handler", () => {
+  assert.match(SOURCE, /import \{ AppButton \} from "@\/components\/ui\/AppButton";/);
+  assert.match(
+    SOURCE,
+    /<AppButton\s*\n\s*variant="secondary"\s*\n\s*onClick=\{\(\) => handleSelectEvent\(event\)\}\s*\n\s*>\s*\n\s*Select Event\s*\n\s*<\/AppButton>/,
+  );
+  assert.doesNotMatch(SOURCE, /<button\b/);
+});
+
+test("the public discovery contract, selection guard, event_code, and /nearby navigation are all unchanged", () => {
+  assert.match(SOURCE, /supabase\.rpc\(\s*\n?\s*"get_public_discoverable_events",?\s*\n?\s*\)/);
+  assert.match(SOURCE, /router\.push\("\/nearby"\);/);
+  assert.match(SOURCE, /event\.venue_name/);
+  assert.match(SOURCE, /event\.location/);
+  assert.match(SOURCE, /formatDateRange\(event\.start_date, event\.end_date\)/);
+});

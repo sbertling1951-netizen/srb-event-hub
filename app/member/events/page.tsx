@@ -4,6 +4,10 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
+import { Alert } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageSection } from "@/components/ui/PageSection";
 import { setCurrentMemberEvent } from "@/lib/getCurrentMemberEvent";
 import { getMemberSession } from "@/lib/memberSession";
 import { supabase } from "@/lib/supabase";
@@ -96,49 +100,13 @@ export default function MemberEventsPage() {
       <div style={{ display: "grid", gap: 16, maxWidth: 760 }}>
         <p style={{ margin: 0 }}>Select an event to continue.</p>
 
-        {status ? (
-          <div
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 10,
-              background: "#f8f9fb",
-              padding: 14,
-              fontSize: 13,
-              color: "#555",
-            }}
-          >
-            {status}
-          </div>
-        ) : null}
+        {status && !error ? <Alert tone="info">{status}</Alert> : null}
 
-        {error ? (
-          <div
-            role="alert"
-            style={{
-              border: "1px solid #fecaca",
-              borderRadius: 10,
-              background: "#fef2f2",
-              color: "#991b1b",
-              padding: 14,
-              fontWeight: 700,
-            }}
-          >
-            {error}
-          </div>
-        ) : null}
+        {error ? <Alert tone="danger">{error}</Alert> : null}
 
         <div style={{ display: "grid", gap: 14 }}>
           {events.map((event) => (
-            <div
-              key={event.id}
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: 10,
-                background: "white",
-                padding: 16,
-                minWidth: 0,
-              }}
-            >
+            <PageSection key={event.id} variant="card">
               <div style={{ fontWeight: 700, fontSize: 18, overflowWrap: "anywhere" }}>
                 {event.name || "Untitled event"}
               </div>
@@ -160,36 +128,18 @@ export default function MemberEventsPage() {
               </div>
 
               <div style={{ marginTop: 12 }}>
-                <button
-                  type="button"
+                <AppButton
+                  variant="secondary"
                   onClick={() => handleSelectEvent(event)}
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 8,
-                    border: "1px solid #cbd5e1",
-                    background: "#fff",
-                    cursor: "pointer",
-                    fontWeight: 600,
-                  }}
                 >
                   Select Event
-                </button>
+                </AppButton>
               </div>
-            </div>
+            </PageSection>
           ))}
 
           {events.length === 0 ? (
-            <div
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: 10,
-                background: "white",
-                padding: 16,
-                color: "#666",
-              }}
-            >
-              No member events available.
-            </div>
+            <EmptyState message="No member events available." />
           ) : null}
         </div>
       </div>
