@@ -803,11 +803,10 @@ test("regression: RunLifecycleActions/AbandonRowButton props and callbacks, Data
   assert.match(source, /const summary = summarizeAttendeeImportRows\(importRunResult\.rows\);/);
 });
 
-test("regression: the boundary (as of Slice 3) stopped exactly at Governed Import Results -- Saved Attendee List and Row Preview remain their pre-Slice-4 hand-rolled cards, untouched by Slice 3", () => {
+test("regression: Row Preview remains its pre-Slice-5 hand-rolled card, untouched -- Saved Attendee List's own heading was converted by Slice 5 (see its own tests below)", () => {
   const source = readSource();
-  assert.match(source, /<h2 style=\{\{ marginTop: 0, marginBottom: 6 \}\}>\s*\n\s*Saved Attendee List\s*\n\s*<\/h2>/);
   assert.match(source, /<h2 style=\{\{ marginTop: 0, marginBottom: 6 \}\}>Row Preview<\/h2>/);
-  // Untouched hex colors that remain outside the Slice 3/4 boundary.
+  // Untouched hex colors that remain outside the Slice 3/4/5 boundary.
   assert.match(source, /color: "#8a1f1f"/);
   assert.match(source, /color: "#166534"/);
 });
@@ -919,4 +918,108 @@ test("regression: guard, shell/backTarget, routing, lifecycle wiring, and Saved 
   assert.match(source, /<ImportHistoryPanel eventId=\{selectedImportEventId\} importType="attendee" \/>/);
   assert.match(source, /<DataTable caption="Saved attendee list">/);
   assert.match(source, /<h2 style=\{\{ marginTop: 0, marginBottom: 6 \}\}>Row Preview<\/h2>/);
+});
+
+// -- Central UI: Imports Interior, Slice 5 Saved Attendee List ------------
+//
+// Only the Saved Attendee List card: its container/heading, "Rows to
+// Show" select, "Refresh Saved List" button, and loading/empty
+// presentation. Every assertion above this point still proves the
+// guard/backTarget/routing/RPC/lifecycle/other-card contracts are
+// untouched; these prove the exact substitutions authorized for this
+// slice landed, and nothing outside this card -- including Row Preview --
+// was touched.
+
+test("Saved Attendee List is a PageSection (title prop), not a hand-rolled <h2> card, preserving the attendee-count text, controls, and body in their existing order", () => {
+  const source = readSource();
+  const sectionIdx = source.indexOf('<PageSection variant="card" title="Saved Attendee List">');
+  assert.notEqual(sectionIdx, -1);
+  assert.equal(/<h2[^>]*>\s*\n?\s*Saved Attendee List\s*\n?\s*<\/h2>/.test(source), false);
+
+  const rowPreviewIdx = source.indexOf("Row Preview", sectionIdx);
+  const sectionBody = source.slice(sectionIdx, rowPreviewIdx);
+  const countIdx = sectionBody.indexOf("saved attendee");
+  const fieldIdx = sectionBody.indexOf('<Field label="Rows to Show">');
+  const refreshIdx = sectionBody.indexOf("Refresh Saved List");
+  const bodyIdx = sectionBody.indexOf("{loadingSavedAttendees ? (");
+  assert.ok(
+    countIdx > -1 && fieldIdx > countIdx && refreshIdx > fieldIdx && bodyIdx > refreshIdx,
+    "expected attendee-count text, Rows to Show Field, Refresh button, and the loading/empty/table body in that exact order",
+  );
+});
+
+test("the Rows to Show control is the canonical Field + Select, preserving its exact value, handler, literal union cast, and all four options in order", () => {
+  const source = readSource();
+  assert.match(source, /import \{ Field, Select \} from "@\/components\/ui\/Field";/);
+  const fieldIdx = source.indexOf('<Field label="Rows to Show">');
+  const fieldEnd = source.indexOf("</Field>", fieldIdx) + "</Field>".length;
+  const fieldBlock = source.slice(fieldIdx, fieldEnd);
+  assert.equal(/<select\b/.test(fieldBlock), false);
+  assert.match(
+    fieldBlock,
+    /<Select\s*\n\s*\{\.\.\.controlProps\}\s*\n\s*value=\{savedAttendeePageSize\}\s*\n\s*onChange=\{\(e\) =>\s*\n\s*setSavedAttendeePageSize\(\s*\n\s*e\.target\.value as "25" \| "50" \| "100" \| "all",\s*\n\s*\)\s*\n\s*\}\s*\n\s*>/,
+  );
+  const options = [...fieldBlock.matchAll(/<option value="([^"]+)">([^<]+)<\/option>/g)].map((m) => [m[1], m[2]]);
+  assert.deepEqual(options, [
+    ["25", "25"],
+    ["50", "50"],
+    ["100", "100"],
+    ["all", "Entire List"],
+  ]);
+});
+
+test("the Refresh Saved List control is the canonical AppButton (variant secondary), preserving its exact onClick and disabled expression", () => {
+  const source = readSource();
+  const buttonIdx = source.indexOf("Refresh Saved List");
+  const blockStart = source.lastIndexOf("<AppButton", buttonIdx);
+  const blockEnd = source.indexOf("</AppButton>", buttonIdx) + "</AppButton>".length;
+  const block = source.slice(blockStart, blockEnd);
+  assert.match(
+    block,
+    /<AppButton\s*\n\s*variant="secondary"\s*\n\s*onClick=\{\(\) => void loadSavedAttendees\(selectedImportEventId\)\}\s*\n\s*disabled=\{!selectedImportEventId \|\| loadingSavedAttendees\}\s*\n\s*>\s*\n\s*Refresh Saved List\s*\n\s*<\/AppButton>/,
+  );
+});
+
+test("the loading and empty presentations are the canonical LoadingState/EmptyState, preserving their exact conditions and text", () => {
+  const source = readSource();
+  assert.match(source, /import \{ LoadingState \} from "@\/components\/ui\/LoadingState";/);
+  assert.match(
+    source,
+    /\{loadingSavedAttendees \? \(\s*\n\s*<LoadingState message="Loading saved attendees\.\.\." \/>\s*\n\s*\) : savedAttendees\.length === 0 \? \(\s*\n\s*<EmptyState message="No saved attendees found for this event yet\." \/>\s*\n\s*\) : \(/,
+  );
+  assert.equal(/<div>Loading saved attendees\.\.\.<\/div>/.test(source), false);
+  assert.equal(/No saved attendees found for this event yet\.\s*\n\s*<\/div>/.test(source), false);
+});
+
+test("regression: loadSavedAttendees, savedAttendeePageSize/loadingSavedAttendees state, and the table/list columns/captions/row keys/helpers/visible-attendees are byte-identical", () => {
+  const source = readSource();
+  assert.match(source, /async function loadSavedAttendees\(eventId: string\) \{/);
+  assert.match(source, /const \[savedAttendeePageSize, setSavedAttendeePageSize\] = useState<\s*\n\s*"25" \| "50" \| "100" \| "all"\s*\n\s*>\("all"\);/);
+  assert.match(source, /const \[loadingSavedAttendees, setLoadingSavedAttendees\] = useState\(false\);/);
+  assert.match(source, /<ResponsiveList aria-label="Saved attendee list">/);
+  assert.match(source, /<DataTable caption="Saved attendee list">/);
+  for (const column of [
+    "Pilot", "Co-Pilot", "Email", "City / State", "Member #", "Site",
+    "Arrived", "First Timer", "Volunteer", "Source", "Event Scope", "Active",
+  ]) {
+    assert.ok(
+      source.includes(`<th scope="col" style={tableHeadStyle}>${column}</th>`),
+      `expected the "${column}" column header to remain`,
+    );
+  }
+  assert.match(source, /<tr key=\{row\.id\}>/);
+  assert.match(source, /<li key=\{row\.id\} className="responsive-list-item">/);
+  assert.match(source, /const visibleSavedAttendees = useMemo\(/);
+  assert.match(source, /Showing \{visibleSavedAttendees\.length\} of \{savedAttendees\.length\}/);
+});
+
+test("regression: Row Preview and its content are entirely untouched by this slice", () => {
+  const source = readSource();
+  const rowPreviewIdx = source.indexOf("<h2 style={{ marginTop: 0, marginBottom: 6 }}>Row Preview</h2>");
+  assert.notEqual(rowPreviewIdx, -1);
+  const rowPreviewBody = source.slice(rowPreviewIdx);
+  assert.match(rowPreviewBody, /<div style=\{\{ opacity: 0\.8 \}\}>No file loaded yet\.<\/div>/);
+  assert.match(rowPreviewBody, /color: "#8a1f1f"/);
+  assert.match(rowPreviewBody, /color: "#166534"/);
+  assert.match(rowPreviewBody, /importPreviewPageSize/);
 });

@@ -15,6 +15,8 @@ import { Alert, type AlertTone } from "@/components/ui/Alert";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Field, Select } from "@/components/ui/Field";
+import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -1936,7 +1938,7 @@ function AdminAttendeeImportsPageInner() {
           </div>
         ) : null}
       </PageSection>
-      <div className="card" style={{ padding: 18 }}>
+      <PageSection variant="card" title="Saved Attendee List">
         <div
           style={{
             display: "flex",
@@ -1948,9 +1950,6 @@ function AdminAttendeeImportsPageInner() {
           }}
         >
           <div>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>
-              Saved Attendee List
-            </h2>
             <div style={{ fontSize: 14, opacity: 0.8 }}>
               {savedAttendees.length} saved attendee
               {savedAttendees.length === 1 ? "" : "s"} for this event
@@ -1958,60 +1957,40 @@ function AdminAttendeeImportsPageInner() {
           </div>
 
           <div style={{ minWidth: 180 }}>
-            <label
-              style={{ display: "block", fontWeight: 600, marginBottom: 6 }}
-            >
-              Rows to Show
-            </label>
-            <select
-              value={savedAttendeePageSize}
-              onChange={(e) =>
-                setSavedAttendeePageSize(
-                  e.target.value as "25" | "50" | "100" | "all",
-                )
-              }
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #ccc",
-                background: "white",
-              }}
-            >
-              <option value="25">25</option>
-              <option value="50">50</option>
-              <option value="100">100</option>
-              <option value="all">Entire List</option>
-            </select>
+            <Field label="Rows to Show">
+              {(controlProps) => (
+                <Select
+                  {...controlProps}
+                  value={savedAttendeePageSize}
+                  onChange={(e) =>
+                    setSavedAttendeePageSize(
+                      e.target.value as "25" | "50" | "100" | "all",
+                    )
+                  }
+                >
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="all">Entire List</option>
+                </Select>
+              )}
+            </Field>
           </div>
           <div>
-            <button
-              type="button"
+            <AppButton
+              variant="secondary"
               onClick={() => void loadSavedAttendees(selectedImportEventId)}
               disabled={!selectedImportEventId || loadingSavedAttendees}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid #ccc",
-                background: "#ffffff",
-                color: "#111827",
-                WebkitTextFillColor: "#111827",
-                fontWeight: 700,
-                lineHeight: 1.2,
-                cursor: "pointer",
-              }}
             >
               Refresh Saved List
-            </button>
+            </AppButton>
           </div>
         </div>
 
         {loadingSavedAttendees ? (
-          <div>Loading saved attendees...</div>
+          <LoadingState message="Loading saved attendees..." />
         ) : savedAttendees.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>
-            No saved attendees found for this event yet.
-          </div>
+          <EmptyState message="No saved attendees found for this event yet." />
         ) : (
           <>
             <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 10 }}>
@@ -2095,7 +2074,7 @@ function AdminAttendeeImportsPageInner() {
             )}
           </>
         )}
-      </div>
+      </PageSection>
 
       <div className="card" style={{ padding: 18 }}>
         <div
