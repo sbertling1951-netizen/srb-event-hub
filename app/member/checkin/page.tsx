@@ -6,6 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
+import { Alert } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
 import { logEngagement } from "@/lib/engagement";
 import { preferredDisplayLine } from "@/lib/formatters";
 import { clearMemberLocalState } from "@/lib/memberAccountSession";
@@ -489,36 +491,9 @@ function MemberCheckinPageInner() {
 
   return (
     <div style={{ display: "grid", gap: 16, maxWidth: 760 }}>
-      {status ? (
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "#f8f9fb",
-            padding: 14,
-            fontSize: 13,
-            color: "#666",
-          }}
-        >
-          {status}
-        </div>
-      ) : null}
+      {status && !error ? <Alert tone="info">{status}</Alert> : null}
 
-      {error ? (
-        <div
-          role="alert"
-          style={{
-            border: "1px solid #fecaca",
-            background: "#fef2f2",
-            color: "#991b1b",
-            borderRadius: 10,
-            padding: 14,
-            fontWeight: 700,
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
 
       {!attendee ? (
         <div
@@ -738,21 +713,9 @@ function MemberCheckinPageInner() {
           </div>
 
           <div>
-            <button
-              type="button"
-              onClick={() => void saveCheckin()}
-              disabled={saving}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 8,
-                border: "1px solid #cbd5e1",
-                background: "#fff",
-                cursor: "pointer",
-                fontWeight: 600,
-              }}
-            >
+            <AppButton variant="primary" loading={saving} onClick={() => void saveCheckin()}>
               {saving ? "Saving..." : "Save"}
-            </button>
+            </AppButton>
           </div>
         </div>
       )}

@@ -243,3 +243,47 @@ test("loadPage resets the reauth flag on every run so it never sticks after reco
   const head = source.slice(loadPageStart, loadPageStart + 250);
   assert.match(head, /setNeedsReauth\(false\)/);
 });
+
+// ---------------------------------------------------------------------------
+// Presentation Slice 1: status/error boxes and the Save button now use the
+// shared Alert/AppButton primitives, with no change to any data/authority
+// logic beneath them.
+// ---------------------------------------------------------------------------
+
+test("the page is guarded by MemberRouteGuard and uses the canonical Member shell with no back target", () => {
+  assert.match(source, /<MemberRouteGuard>/);
+  assert.match(source, /<MemberShellAdapter pageTitle="My Check-In">/);
+  assert.equal((source.match(/backTarget=/g) || []).length, 0);
+});
+
+test("the status/error boxes use the shared Alert primitive, and the failure surface is singular (no duplicate status+error)", () => {
+  assert.match(source, /import \{ Alert \} from "@\/components\/ui\/Alert";/);
+  assert.match(source, /\{status && !error \? <Alert tone="info">\{status\}<\/Alert> : null\}/);
+  assert.match(source, /\{error \? <Alert tone="danger">\{error\}<\/Alert> : null\}/);
+});
+
+test("Save uses the shared AppButton with the exact click handler, label swap, and loading-driven disabled behavior", () => {
+  assert.match(source, /import \{ AppButton \} from "@\/components\/ui\/AppButton";/);
+  assert.match(
+    source,
+    /<AppButton variant="primary" loading=\{saving\} onClick=\{\(\) => void saveCheckin\(\)\}>\s*\n\s*\{saving \? "Saving\.\.\." : "Save"\}\s*\n\s*<\/AppButton>/,
+  );
+  assert.doesNotMatch(source, /<button\b/);
+});
+
+test("Slice 1 leaves the recovery/loading block and main Check-In panel untouched", () => {
+  assert.match(source, /needsReauth \?/);
+  assert.match(source, /needsRecovery \?/);
+  assert.match(source, /Confirmed site:/);
+  assert.match(source, /What site are you parked in\?/);
+  assert.match(source, /Share my site \/ household details with other attendees/);
+});
+
+test("Slice 1 leaves every RPC, fetch, and data/authority contract unchanged", () => {
+  assert.match(source, /supabase\.rpc\("get_my_attendee_record"/);
+  assert.match(source, /supabase\.rpc\(\s*\n?\s*"get_my_confirmed_site_placement"/);
+  assert.match(source, /"get_my_household_members"/);
+  assert.match(source, /fetch\("\/api\/member\/checkin"/);
+  assert.match(source, /"set_member_attendee_sharing_preferences"/);
+  assert.match(source, /hasArrived: !!attendee\.has_arrived/);
+});
