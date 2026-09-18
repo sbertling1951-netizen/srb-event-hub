@@ -80,3 +80,71 @@ test("this module makes no direct table read and calls only the two governed His
   assert.match(SOURCE, /listFinalizedImportRunHistory\(/);
   assert.match(SOURCE, /getFinalizedImportRunHistoryDetail\(/);
 });
+
+// -- Central UI: Imports Interior, Slice 2 Error States -------------------
+//
+// Both a history-list load failure and a run-detail-dialog load failure
+// previously rendered via EmptyState -- wrong for a real failure, distinct
+// from the panel's one genuine no-content case ("No finalized import runs
+// yet..."). Neither RPC round trip resolves under renderToStaticMarkup
+// (no Supabase mocking/jsdom in this repo, per this file's own header
+// comment), so the error branches are proven structurally against source,
+// matching the established precedent above; the two synchronously-
+// reachable branches (no Event selected, collapsed-by-default) remain
+// exercised by actually rendering the real production component.
+
+test("the history-list load failure renders through the shared Alert (tone danger) at its exact existing location, not EmptyState", () => {
+  const bodyStart = SOURCE.indexOf('<summary style={{ cursor: "pointer", fontWeight: 600 }}>Import History</summary>');
+  const bodyEnd = SOURCE.indexOf("{runs.length ? (", bodyStart);
+  const body = SOURCE.slice(bodyStart, bodyEnd);
+  assert.match(body, /\{error \? <Alert tone="danger">\{error\}<\/Alert> : null\}/);
+  assert.equal(/<EmptyState message=\{error\}/.test(body), false);
+});
+
+test("the run-detail dialog's load failure renders through the shared Alert (tone danger) at its exact existing location, not EmptyState", () => {
+  const dialogStart = SOURCE.indexOf("function RunDetailDialog");
+  const dialogEnd = SOURCE.indexOf("\nexport type ImportHistoryPanelProps");
+  const body = SOURCE.slice(dialogStart, dialogEnd);
+  assert.match(body, /\{loading \? <LoadingState message="Loading run detail\.\.\." \/> : null\}\s*\n\s*\{error \? <Alert tone="danger">\{error\}<\/Alert> : null\}/);
+  assert.equal(/<EmptyState message=\{error\}/.test(body), false);
+});
+
+test("exactly two danger Alerts exist (list load + detail dialog), Alert is imported, and no error is ever rendered through EmptyState anywhere in this file", () => {
+  assert.match(SOURCE, /import \{ Alert \} from "@\/components\/ui\/Alert";/);
+  assert.equal((SOURCE.match(/<Alert tone="danger">\{error\}<\/Alert>/g) || []).length, 2);
+  assert.equal(/<EmptyState message=\{error\}/.test(SOURCE), false);
+});
+
+test("the genuine no-content EmptyState (no finalized runs yet) keeps its exact prior message and import, unaffected by the error-path change", () => {
+  assert.match(SOURCE, /import \{ EmptyState \} from "@\/components\/ui\/EmptyState";/);
+  assert.match(
+    SOURCE,
+    /<EmptyState message="No finalized import runs yet for this door on this Event\." \/>/,
+  );
+  assert.equal((SOURCE.match(/<EmptyState\b/g) || []).length, 1);
+});
+
+test("loading, table, dialog, details/summary, status-badge, and Load More form-action behavior are all unchanged around the error-path edits", () => {
+  assert.match(SOURCE, /<details onToggle=\{/);
+  assert.match(SOURCE, /<DataTable caption="Finalized import run history">/);
+  assert.match(SOURCE, /<DataTable caption="Finalized run rows">/);
+  assert.match(SOURCE, /<Dialog\s*\n\s*open\s*\n\s*onClose=\{onClose\}/);
+  assert.match(SOURCE, /<StatusBadge tone=\{outcome\.tone\}>\{outcome\.label\}<\/StatusBadge>/);
+  assert.match(SOURCE, /<FormActions>\s*\n\s*<AppButton\s*\n\s*variant="secondary"\s*\n\s*loading=\{loading\}/);
+});
+
+test("the authority-denial silent-hide path and describeLifecycleError/RPC call sites are unchanged by the error-path edits", () => {
+  assert.match(SOURCE, /if \(isAuthorityDenial\(err\)\) \{\s*\n\s*setHidden\(true\);/);
+  assert.match(SOURCE, /if \(hidden\) \{\s*\n\s*return null;\s*\n\s*\}/);
+  assert.match(SOURCE, /setError\(describeLifecycleError\(err\)\)/g);
+  assert.equal((SOURCE.match(/describeLifecycleError\(err\)/g) || []).length, 2);
+});
+
+test("renders nothing when no Event is selected, and stays collapsed/unfetched until opened -- both real production component branches remain unaffected by the error-path change", () => {
+  const emptyHtml = renderToStaticMarkup(<ImportHistoryPanel eventId="" importType="attendee" />);
+  assert.equal(emptyHtml, "");
+
+  const collapsedHtml = renderToStaticMarkup(<ImportHistoryPanel eventId="event-1" importType="attendee" />);
+  assert.match(collapsedHtml, /<details[^>]*>/);
+  assert.equal(/<details[^>]*\sopen(=""|>|\s)/.test(collapsedHtml), false);
+});

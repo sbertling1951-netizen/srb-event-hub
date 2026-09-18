@@ -10,9 +10,9 @@
 // localStorage locator already does, never row/commit truth.
 import { useEffect, useState } from "react";
 
+import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import { DataTable } from "@/components/ui/DataTable";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
 import {
@@ -111,7 +111,7 @@ export function ActiveRunsPanel({
   }
 
   if (error) {
-    return <EmptyState message={error} />;
+    return <Alert tone="danger">{error}</Alert>;
   }
 
   if (!runs.length) {

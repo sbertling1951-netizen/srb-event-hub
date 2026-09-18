@@ -61,3 +61,40 @@ test("a door can receive the governed active-run count and disable creation of a
   assert.match(SOURCE, /onRunCountChanged\?\.\(matchingRuns\.length\)/);
   assert.match(SOURCE, /onRunCountChanged\?\.\(null\)/);
 });
+
+// -- Central UI: Imports Interior, Slice 2 Error States -------------------
+//
+// A fetch failure (listActiveImportRuns rejecting) previously rendered via
+// EmptyState -- a "there is nothing here" neutral presentation, wrong for
+// a real failure. discovery has no Supabase mocking/jsdom in this repo
+// (see this file's own header comment), so the error branch itself is
+// proven structurally against source, exactly like the RPC round trip
+// above; the "no Event selected" branch remains the one path exercised by
+// actually rendering the real production component.
+
+test("a fetch failure renders through the shared Alert (tone danger) at its exact existing location -- exactly once, and never through EmptyState", () => {
+  assert.match(SOURCE, /if \(error\) \{\s*\n\s*return <Alert tone="danger">\{error\}<\/Alert>;\s*\n\s*\}/);
+  assert.equal((SOURCE.match(/<Alert tone="danger">/g) || []).length, 1);
+  assert.equal(/<EmptyState/.test(SOURCE), false);
+  assert.match(SOURCE, /import \{ Alert \} from "@\/components\/ui\/Alert";/);
+});
+
+test("the now-fully-unused EmptyState import was removed -- this panel has no genuine no-content EmptyState case (zero active runs renders nothing, not an empty state)", () => {
+  assert.equal(/from "@\/components\/ui\/EmptyState"/.test(SOURCE), false);
+  assert.match(SOURCE, /if \(!runs\.length\) \{\s*\n\s*return null;\s*\n\s*\}/);
+});
+
+test("the error branch sits before the loading/table branches are reachable, and does not disturb them -- loading and the DataTable render exactly as before", () => {
+  assert.match(SOURCE, /if \(loading\) \{\s*\n\s*return <LoadingState message="Checking for active import runs\.\.\." \/>;\s*\n\s*\}/);
+  const errorIdx = SOURCE.indexOf("if (error) {");
+  const loadingIdx = SOURCE.indexOf("if (loading) {");
+  assert.ok(loadingIdx > -1 && loadingIdx < errorIdx, "loading is still checked before error, unchanged order");
+  assert.match(SOURCE, /<DataTable caption="Active import runs on this Event">/);
+});
+
+test("renders nothing when no Event is selected -- the real production component's one synchronously-reachable branch is unaffected by the error-path change", () => {
+  const html = renderToStaticMarkup(
+    <ActiveRunsPanel eventId="" importType="attendee" onResume={() => {}} />,
+  );
+  assert.equal(html, "");
+});

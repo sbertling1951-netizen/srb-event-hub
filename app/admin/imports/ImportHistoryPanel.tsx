@@ -11,6 +11,7 @@
 // alarming error for a normal authority boundary.
 import { useEffect, useState } from "react";
 
+import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import { DataTable } from "@/components/ui/DataTable";
 import { Dialog } from "@/components/ui/Dialog";
@@ -86,7 +87,7 @@ function RunDetailDialog({ runId, onClose }: { runId: string; onClose: () => voi
       footer={<AppButton onClick={onClose}>Close</AppButton>}
     >
       {loading ? <LoadingState message="Loading run detail..." /> : null}
-      {error ? <EmptyState message={error} /> : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
       {detail ? (
         <div style={{ display: "grid", gap: 12 }}>
           <div className="app-subtle-text" style={{ fontSize: 13 }}>
@@ -183,7 +184,7 @@ export function ImportHistoryPanel({ eventId, importType }: ImportHistoryPanelPr
         <summary style={{ cursor: "pointer", fontWeight: 600 }}>Import History</summary>
         <div style={{ marginTop: 12 }}>
           {loading && !runs.length ? <LoadingState message="Loading Import History..." /> : null}
-          {error ? <EmptyState message={error} /> : null}
+          {error ? <Alert tone="danger">{error}</Alert> : null}
           {!loading && loaded && !runs.length && !error ? (
             <EmptyState message="No finalized import runs yet for this door on this Event." />
           ) : null}
