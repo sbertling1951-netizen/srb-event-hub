@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
+import { Alert } from "@/components/ui/Alert";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageSection } from "@/components/ui/PageSection";
 import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
@@ -390,48 +393,21 @@ function MyRequestsInner() {
 
   return (
     <div style={{ display: "grid", gap: 14 }}>
-      <div
-        className="card"
-        style={{
-          padding: 16,
-          border: "1px solid #ddd",
-          borderRadius: 12,
-          background: "#fff",
-        }}
-      >
+      <PageSection variant="card">
         {session?.participant_name ? (
           <div style={{ fontSize: 14, color: "#555" }}>
             {session.participant_name}, here are your service requests.
           </div>
         ) : null}
-        {status ? (
-          <div style={{ marginTop: 6, fontSize: 14, color: "#555" }}>
-            {status}
-          </div>
-        ) : null}
+        {status && !error ? <Alert tone="info">{status}</Alert> : null}
 
-        {!loading && error ? (
-          <div
-            role="alert"
-            style={{
-              marginTop: 10,
-              padding: 12,
-              borderRadius: 10,
-              border: "1px solid #fecaca",
-              background: "#fef2f2",
-              color: "#991b1b",
-              fontWeight: 700,
-            }}
-          >
-            {error}
-          </div>
-        ) : null}
+        {!loading && error ? <Alert tone="danger">{error}</Alert> : null}
         {activeCount > 0 ? (
           <div style={{ marginTop: 6, fontWeight: 800 }}>
             Active requests: {activeCount}
           </div>
         ) : null}
-      </div>
+      </PageSection>
 
       {!loading && !error && requests.map((request) => {
         const vendor = Array.isArray(request.vendors)
@@ -548,17 +524,7 @@ function MyRequestsInner() {
       })}
 
       {!loading && !error && requests.length === 0 ? (
-        <div
-          className="card"
-          style={{
-            padding: 16,
-            border: "1px solid #ddd",
-            borderRadius: 12,
-            background: "#fff",
-          }}
-        >
-          No requests yet.
-        </div>
+        <EmptyState message="No requests yet." />
       ) : null}
     </div>
   );

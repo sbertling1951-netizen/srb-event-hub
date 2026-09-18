@@ -143,7 +143,53 @@ test("My Requests scopes reads and mutations to the resolved workspace Event and
 
 test("My Requests greeting is driven by canonical participant_name, so stale standalone browser values cannot override it", () => {
   assert.match(SOURCE, /session\?\.participant_name/);
-  assert.match(SOURCE, /session\.participant_name, here are your service requests/);
+  assert.match(SOURCE, /session\.participant_name\}, here are your service requests/);
   assert.doesNotMatch(SOURCE, /memberName/);
   assert.doesNotMatch(SOURCE, /memberEmail/);
+});
+
+// ---------------------------------------------------------------------------
+// Presentation Slice 1: the status card wrapper, status, error, and the
+// empty-requests message now use the shared PageSection/Alert/EmptyState
+// primitives, with no change to load/mutation/API/identity logic, the
+// exported mapping functions, statusMessage, activeCount, request cards, or
+// statusBadgeStyle beneath them.
+// ---------------------------------------------------------------------------
+
+test("the status card uses PageSection, preserving the greeting and active-count lines as plain text, in order", () => {
+  assert.match(SOURCE, /import \{ PageSection \} from "@\/components\/ui\/PageSection";/);
+  assert.match(
+    SOURCE,
+    /<PageSection variant="card">\s*\n\s*\{session\?\.participant_name \? \(\s*\n\s*<div style=\{\{ fontSize: 14, color: "#555" \}\}>\s*\n\s*\{session\.participant_name\}, here are your service requests\.\s*\n\s*<\/div>\s*\n\s*\) : null\}/,
+  );
+  assert.match(
+    SOURCE,
+    /\{activeCount > 0 \? \(\s*\n\s*<div style=\{\{ marginTop: 6, fontWeight: 800 \}\}>\s*\n\s*Active requests: \{activeCount\}\s*\n\s*<\/div>\s*\n\s*\) : null\}\s*\n\s*<\/PageSection>/,
+  );
+});
+
+test("status and error use the shared Alert primitive, preserving their exact gates and message", () => {
+  assert.match(SOURCE, /import \{ Alert \} from "@\/components\/ui\/Alert";/);
+  assert.match(SOURCE, /\{status && !error \? <Alert tone="info">\{status\}<\/Alert> : null\}/);
+  assert.match(SOURCE, /\{!loading && error \? <Alert tone="danger">\{error\}<\/Alert> : null\}/);
+});
+
+test("the empty-requests message uses the shared EmptyState, preserving its exact gate and copy", () => {
+  assert.match(SOURCE, /import \{ EmptyState \} from "@\/components\/ui\/EmptyState";/);
+  assert.match(
+    SOURCE,
+    /\{!loading && !error && requests\.length === 0 \? \(\s*\n\s*<EmptyState message="No requests yet\." \/>\s*\n\s*\) : null\}/,
+  );
+});
+
+test("Slice 1 leaves request cards, statusBadgeStyle, Cancel/Undo, and every load/mutation/API/identity contract untouched", () => {
+  assert.match(SOURCE, /function statusBadgeStyle\(status: string\): React\.CSSProperties \{/);
+  assert.match(SOURCE, /onClick=\{\(\) => void cancelRequest\(request\.id\)\}/);
+  assert.match(SOURCE, /onClick=\{\(\) => void undoCancelRequest\(request\.id\)\}/);
+  assert.match(SOURCE, /async function loadRequests\(\) => \{|const loadRequests = useCallback\(async \(\) => \{/);
+  assert.match(SOURCE, /fetch\(\s*\n\s*`\/api\/member\/vendor-requests\?/);
+  assert.match(SOURCE, /fetch\("\/api\/member\/vendor-requests", \{\s*\n\s*method: "PATCH",/);
+  assert.match(SOURCE, /function statusMessage\(status: string\) \{/);
+  assert.match(SOURCE, /const activeCount = useMemo\(\(\) => \{/);
+  assert.equal((SOURCE.match(/backTarget=/g) || []).length, 0);
 });
