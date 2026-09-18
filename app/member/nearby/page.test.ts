@@ -343,3 +343,50 @@ test("List view rendering is unchanged -- same cards, same openPlacePanel, same 
   assert.match(SOURCE, /onClick=\{\(\) => handleDirections\(place\)\}/);
   assert.match(SOURCE, /className="nearby-action-button nearby-action-button-danger"/);
 });
+
+// ---------------------------------------------------------------------------
+// Presentation cleanup: the two generic ad hoc leftovers (error banner and
+// the "No nearby places found" box) now use the shared Alert/EmptyState
+// primitives; Nearby's own custom design system (.nearby-* classes) is
+// otherwise completely untouched.
+// ---------------------------------------------------------------------------
+
+test("the error banner uses the shared Alert primitive, preserving its exact condition and message", () => {
+  assert.match(SOURCE, /import \{ Alert \} from "@\/components\/ui\/Alert";/);
+  assert.match(SOURCE, /\{error \? <Alert tone="danger">\{error\}<\/Alert> : null\}/);
+  assert.doesNotMatch(SOURCE, /nearby-error-banner/);
+});
+
+test("the empty-results box uses the shared EmptyState primitive, preserving its exact condition and copy", () => {
+  assert.match(SOURCE, /import \{ EmptyState \} from "@\/components\/ui\/EmptyState";/);
+  assert.match(
+    SOURCE,
+    /\{filteredPlaces\.length === 0 \? \(\s*\n\s*<EmptyState message="No nearby places found\." \/>\s*\n\s*\) : null\}/,
+  );
+});
+
+test("Nearby's custom design system (.nearby-* classes) is completely untouched by this cleanup", () => {
+  for (const className of [
+    "nearby-header-card",
+    "nearby-search-input",
+    "nearby-filter-controls",
+    "nearby-segmented-option",
+    "nearby-emergency-card",
+    "nearby-place-card",
+    "nearby-action-button",
+    "nearby-favorite-button",
+    "nearby-status-text",
+  ]) {
+    assert.match(SOURCE, new RegExp(className), `expected "${className}" to still be present`);
+  }
+  // status text keeps its own quiet, compact treatment -- not converted to Alert
+  assert.match(SOURCE, /\{status \? <div className="nearby-status-text">\{status\}<\/div> : null\}/);
+});
+
+test("no RPC/query/map/geolocation/filtering/session/engagement behavior was touched by this cleanup", () => {
+  assert.match(SOURCE, /supabase\.rpc\("resolve_effective_nearby_places"/);
+  assert.match(SOURCE, /supabase\s*\n?\s*\.rpc\("get_my_member_event_continuity_context"/);
+  assert.match(SOURCE, /activityType: "nearby_view"/);
+  assert.match(SOURCE, /const filteredPlaces = useMemo/);
+  assert.match(SOURCE, /function handleDirections\(place: Place, overridePreference\?: MapPreference\) \{/);
+});

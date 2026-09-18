@@ -7,7 +7,9 @@ import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { ObjectPanel } from "@/components/ObjectPanel";
 import { PreferredMapChooser } from "@/components/PreferredMapChooser";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
+import { Alert } from "@/components/ui/Alert";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Page } from "@/components/ui/Page";
 import { calculateDistanceMiles } from "@/lib/calculateDistanceMiles";
 import { copyTextToClipboard } from "@/lib/copyTextToClipboard";
@@ -764,11 +766,7 @@ function NearbyPageInner() {
           </div>
         </div>
         {status ? <div className="nearby-status-text">{status}</div> : null}
-        {error ? (
-          <div role="alert" className="nearby-error-banner">
-            {error}
-          </div>
-        ) : null}
+        {error ? <Alert tone="danger">{error}</Alert> : null}
       </div>
       {/* Preferred map chooser: reachable from the top "Preferred Map..."
           control above and from the Object Panel's "Change preferred map"
@@ -1140,7 +1138,7 @@ function NearbyPageInner() {
               </div>
             ))}
             {filteredPlaces.length === 0 ? (
-              <div className="card">No nearby places found.</div>
+              <EmptyState message="No nearby places found." />
             ) : null}
           </div>
         </>
