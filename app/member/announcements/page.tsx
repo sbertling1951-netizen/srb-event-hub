@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
+import { Alert } from "@/components/ui/Alert";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageSection } from "@/components/ui/PageSection";
 import { logEngagement } from "@/lib/engagement";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { supabase } from "@/lib/supabase";
@@ -227,38 +230,20 @@ function MemberAnnouncementsPageInner() {
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      {status ? (
-        <div className="card" style={{ padding: 18 }}>
-          {status}
-        </div>
-      ) : null}
+      {status && !error ? <Alert tone="info">{status}</Alert> : null}
 
-      {error ? (
-        <div
-          className="card"
-          style={{
-            padding: 18,
-            border: "1px solid #f5c2c7",
-            background: "#fff5f5",
-            color: "#842029",
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
 
       {!loading && !error && sortedAnnouncements.length === 0 ? (
-        <div className="card" style={{ padding: 18 }}>
-          No announcements have been posted for this event yet.
-        </div>
+        <EmptyState message="No announcements have been posted for this event yet." />
       ) : null}
 
       {!loading && sortedAnnouncements.length > 0 ? (
         <div style={{ display: "grid", gap: 12 }}>
           {sortedAnnouncements.map((announcement) => (
-            <div
+            <PageSection
               key={announcement.id}
-              className="card"
+              variant="card"
               style={{
                 padding: 18,
                 background: announcement.is_pinned ? "#fffdf3" : undefined,
@@ -324,7 +309,7 @@ function MemberAnnouncementsPageInner() {
                   ? `Posted ${formatDateTime(announcement.created_at)}`
                   : "Posted recently"}
               </div>
-            </div>
+            </PageSection>
           ))}
         </div>
       ) : null}
