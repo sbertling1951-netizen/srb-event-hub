@@ -4,6 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
+import { Alert } from "@/components/ui/Alert";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Field, Input } from "@/components/ui/Field";
+import { PageSection } from "@/components/ui/PageSection";
 import { logEngagement } from "@/lib/engagement";
 import { fullName } from "@/lib/formatters";
 import { memberIdentityRpcArgs } from "@/lib/memberSession";
@@ -172,45 +176,12 @@ function AttendeesPageInner() {
         information, it will automatically become available here.
       </p>
 
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "#f8f9fb",
-          padding: 14,
-        }}
-      >
-        {status ? (
-          <div style={{ fontSize: 13, color: "#555" }}>Status: {status}</div>
-        ) : null}
-      </div>
+      {status && !error ? <Alert tone="info">Status: {status}</Alert> : null}
 
-      {error ? (
-        <div
-          role="alert"
-          style={{
-            border: "1px solid #fecaca",
-            borderRadius: 10,
-            background: "#fef2f2",
-            color: "#991b1b",
-            padding: 14,
-            fontWeight: 700,
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
 
       {!canViewLocator ? (
-        <div
-          style={{
-            border: "1px solid #f59e0b",
-            borderRadius: 10,
-            background: "#fffbeb",
-            color: "#92400e",
-            padding: 16,
-          }}
-        >
+        <Alert tone="warning">
           <div style={{ fontWeight: 800, marginBottom: 6 }}>
             Attendee Locator is locked
           </div>
@@ -219,30 +190,32 @@ function AttendeesPageInner() {
             their information with other attendees. Go to My Check-In and turn
             on sharing if you want to use this locator.
           </div>
-        </div>
+        </Alert>
       ) : null}
 
       {!canViewLocator ? null : (
         <>
-          <div
+          <PageSection
+            variant="card"
             style={{
-              border: "1px solid #ddd",
-              borderRadius: 10,
-              background: "white",
               padding: 12,
               maxWidth: 420,
               width: "100%",
               minWidth: 0,
             }}
           >
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>Search</div>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Name, email, phone, coach, or campsite"
-              style={{ width: "100%", minWidth: 0, padding: 8 }}
-            />
-          </div>
+            <Field label="Search">
+              {(controlProps) => (
+                <Input
+                  {...controlProps}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Name, email, phone, coach, or campsite"
+                  style={{ width: "100%", minWidth: 0 }}
+                />
+              )}
+            </Field>
+          </PageSection>
 
           <div style={{ fontSize: 13, color: "#555" }}>
             Showing {filtered.length} attendee{filtered.length === 1 ? "" : "s"}
@@ -251,16 +224,7 @@ function AttendeesPageInner() {
 
           <div style={{ display: "grid", gap: 12 }}>
             {filtered.map((a) => (
-              <div
-                key={a.id}
-                style={{
-                  border: "1px solid #ddd",
-                  borderRadius: 10,
-                  background: "white",
-                  padding: 14,
-                  minWidth: 0,
-                }}
-              >
+              <PageSection key={a.id} variant="card" style={{ padding: 14, minWidth: 0 }}>
                 <div
                   style={{
                     display: "grid",
@@ -300,21 +264,11 @@ function AttendeesPageInner() {
                     <div>{a.campsite_location || "—"}</div>
                   </div>
                 </div>
-              </div>
+              </PageSection>
             ))}
 
             {filtered.length === 0 ? (
-              <div
-                style={{
-                  border: "1px solid #ddd",
-                  borderRadius: 10,
-                  background: "white",
-                  padding: 16,
-                  color: "#666",
-                }}
-              >
-                No attendees found.
-              </div>
+              <EmptyState message="No attendees found." />
             ) : null}
           </div>
         </>
