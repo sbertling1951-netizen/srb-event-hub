@@ -7,6 +7,10 @@ import { useCallback, useEffect, useState } from "react";
 import AnnouncementBanner from "@/components/AnnouncementBanner";
 import ContextCard from "@/components/ContextCard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
+import { Alert } from "@/components/ui/Alert";
+import { AppLinkButton } from "@/components/ui/AppButton";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { PageSection } from "@/components/ui/PageSection";
 import {
   collectSharedExperienceContext,
   type PrimaryExperienceSignal,
@@ -402,7 +406,7 @@ export default function MemberDashboardPage() {
   if (!ready) {
     return (
       <MemberShellAdapter pageTitle={dashboardTitle}>
-        <div>Loading...</div>
+        <LoadingState message="Loading..." />
       </MemberShellAdapter>
     );
   }
@@ -435,16 +439,7 @@ export default function MemberDashboardPage() {
           : 0;
 
         return (
-          <div
-            className="card"
-            style={{
-              minWidth: 0,
-              padding: 18,
-              border: "1px solid #ddd",
-              borderRadius: 12,
-              background: "#fff",
-            }}
-          >
+          <PageSection variant="card" style={{ minWidth: 0, padding: 18 }}>
             <div
               style={{
                 display: "flex",
@@ -530,7 +525,7 @@ export default function MemberDashboardPage() {
                   key={`empty-${index}`}
                   style={{
                     padding: "10px 12px",
-                    border: "1px dashed #cbd5e1",
+                    border: "1px dashed var(--color-border-strong)",
                     borderRadius: 8,
                     color: "#6b7280",
                     fontStyle: "italic",
@@ -554,7 +549,7 @@ export default function MemberDashboardPage() {
                 + Add Participant
               </button>
             )}
-          </div>
+          </PageSection>
         );
       })()}
 
@@ -639,30 +634,9 @@ export default function MemberDashboardPage() {
       </div>
 
       {vendorsLoading ? null : vendorError ? (
-        <div
-          role="alert"
-          style={{
-            border: "1px solid #fecaca",
-            borderRadius: 12,
-            background: "#fef2f2",
-            color: "#991b1b",
-            padding: 14,
-            fontWeight: 700,
-          }}
-        >
-          {vendorError}
-        </div>
+        <Alert tone="danger">{vendorError}</Alert>
       ) : vendors.length > 0 ? (
-        <div
-          className="card"
-          style={{
-            minWidth: 0,
-            border: "1px solid #ddd",
-            borderRadius: 12,
-            background: "white",
-            padding: 16,
-          }}
-        >
+        <PageSection variant="card" style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 10 }}>
             {eventVendorsHeading}
           </div>
@@ -709,22 +683,25 @@ export default function MemberDashboardPage() {
 
               {activeVendor.action_type === "external_signup" &&
               activeVendor.signup_url ? (
-                <a
+                <AppLinkButton
+                  variant="primary"
                   href={activeVendor.signup_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={primaryLinkStyle}
                 >
                   Sign Up
-                </a>
+                </AppLinkButton>
               ) : activeVendor.action_type === "info_only" ? (
-                <Link href="/member/vendor-signup" style={primaryLinkStyle}>
+                <Link
+                  href="/member/vendor-signup"
+                  className="app-button app-button-primary"
+                >
                   View Vendors
                 </Link>
               ) : (
                 <Link
                   href={`/member/vendor-signup?vendorId=${activeVendor.id}`}
-                  style={primaryLinkStyle}
+                  className="app-button app-button-primary"
                 >
                   Request Service
                 </Link>
@@ -756,24 +733,13 @@ export default function MemberDashboardPage() {
               ))}
             </div>
           ) : null}
-        </div>
+        </PageSection>
       ) : null}
       </div>
     </MemberShellAdapter>
   );
 }
 
-const primaryLinkStyle = {
-  display: "inline-block",
-  width: "fit-content",
-  margin: "6px auto 0",
-  padding: "10px 14px",
-  borderRadius: 8,
-  background: "#0b5cff",
-  color: "#fff",
-  textDecoration: "none",
-  fontWeight: 700,
-};
 const memberGridButtonStyle: React.CSSProperties = {
   width: "100%",
   minHeight: 56,
