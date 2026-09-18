@@ -12,6 +12,19 @@ test("the Passport refund review page is guarded by platform authority and uses 
   assert.match(source, /<AdminShellAdapter[\s\S]*pageTitle="Passport Refunds"/);
 });
 
+test("the shell carries the exact Admin back target", () => {
+  assert.match(source, /backTarget=\{\{ href: "\/admin\/admin", label: "Admin" \}\}/);
+  assert.equal((source.match(/backTarget=/g) || []).length, 1);
+});
+
+test("the in-page heading is an h2, leaving the shell's own <h1> as the page's sole top-level heading", () => {
+  assert.match(
+    source,
+    /<PageHeader\s*\n\s*title="Passport Refunds"\s*\n\s*headingLevel="h2"\s*\n\s*description="Review requests before issuing a Sandbox refund\. Completed refunds remain visible here as audit-backed history\."\s*\n\s*\/>/,
+  );
+  assert.equal((source.match(/headingLevel="h1"/g) || []).length, 0);
+});
+
 test("the page uses only the governed review RPC and never reads refund tables or creates a service-role client", () => {
   assert.match(source, /supabase\.rpc\(\s*"list_self_service_event_passport_refund_review"/);
   assert.doesNotMatch(source, /\.from\(\s*["']self_service_event_passport_refund/);

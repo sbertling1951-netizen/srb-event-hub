@@ -51,6 +51,7 @@ export default function PassportRefundsPage() {
       <AdminShellAdapter
         pageTitle="Passport Refunds"
         pageSubtitle="Review pending and completed Sandbox Passport refunds."
+        backTarget={{ href: "/admin/admin", label: "Admin" }}
       >
         <PassportRefundsPageInner />
       </AdminShellAdapter>
@@ -121,7 +122,7 @@ function PassportRefundsPageInner() {
 
       <PageHeader
         title="Passport Refunds"
-        headingLevel="h1"
+        headingLevel="h2"
         description="Review requests before issuing a Sandbox refund. Completed refunds remain visible here as audit-backed history."
       />
 
