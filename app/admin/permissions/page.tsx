@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { Alert, type AlertTone } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
+import { Field, Input } from "@/components/ui/Field";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { PageSection } from "@/components/ui/PageSection";
 import { bumpAdminPermissionsVersion } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -100,7 +105,10 @@ const PERMISSION_GROUPS: Record<string, string[]> = {
 export default function PermissionsPage() {
   return (
     <AdminRouteGuard requiredPermission="can_manage_admins">
-      <AdminShellAdapter pageTitle="Permissions">
+      <AdminShellAdapter
+        pageTitle="Permissions"
+        backTarget={{ href: "/admin/admin", label: "Admin" }}
+      >
         <PermissionsInner />
       </AdminShellAdapter>
     </AdminRouteGuard>
@@ -112,6 +120,12 @@ function PermissionsInner() {
   const [loading, setLoading] = useState(true);
   const [undoing, setUndoing] = useState(false);
   const [presets, setPresets] = useState<Record<string, any>>({});
+  const [presetName, setPresetName] = useState("");
+  // Replaces the native alert() calls below -- same message text, same
+  // trigger points (toggle()'s catch, undoLastChange()'s empty-history
+  // check), only the delivery mechanism changes from a blocking browser
+  // dialog to an inline Alert.
+  const [banner, setBanner] = useState<{ message: string; tone: AlertTone } | null>(null);
 
   useEffect(() => {
     load();
@@ -241,11 +255,12 @@ function PermissionsInner() {
     } catch (err: any) {
       console.error("Toggle error:", err);
 
-      alert(
-        `Toggle failed:\n\n${
+      setBanner({
+        tone: "danger",
+        message: `Toggle failed:\n\n${
           err?.message || err?.error_description || JSON.stringify(err, null, 2)
         }`,
-      );
+      });
     }
   }
 
@@ -260,7 +275,7 @@ function PermissionsInner() {
         .limit(50);
 
       if (!data || data.length === 0) {
-        alert("No changes to undo");
+        setBanner({ tone: "neutral", message: "No changes to undo" });
         return;
       }
 
@@ -347,7 +362,7 @@ function PermissionsInner() {
   }
 
   if (loading) {
-    return <div style={{ padding: 20 }}>Loading permissions...</div>;
+    return <LoadingState message="Loading permissions..." />;
   }
 
   return (
@@ -359,63 +374,65 @@ function PermissionsInner() {
           justifyContent: "space-between",
         }}
       >
-        <h1 style={{ marginBottom: 20 }}>Permissions</h1>
-        <button
-          type="button"
+        <AppButton
+          variant="secondary"
           onClick={undoLastChange}
+          loading={undoing}
           disabled={undoing}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 8,
-            border: "1px solid #d1d5db",
-            background: undoing ? "#e5e7eb" : "#fff",
-            cursor: undoing ? "not-allowed" : "pointer",
-            fontWeight: 600,
-          }}
         >
-          {undoing ? "Undoing..." : "Undo Last Change"}
-        </button>
+          Undo Last Change
+        </AppButton>
       </div>
-      <div style={{ marginBottom: 16 }}>
-        <input
-          placeholder="Preset name"
-          id="presetName"
-          style={{ marginRight: 8, padding: 6 }}
-        />
-        <button
+      {banner ? (
+        <div style={{ marginTop: 16 }}>
+          <Alert tone={banner.tone}>{banner.message}</Alert>
+        </div>
+      ) : null}
+      <div style={{ marginBottom: 16, marginTop: 16 }}>
+        <Field label="Preset Name">
+          {(controlProps) => (
+            <Input
+              {...controlProps}
+              placeholder="Preset name"
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+            />
+          )}
+        </Field>
+        <AppButton
+          variant="primary"
           onClick={() => {
-            const input = document.getElementById(
-              "presetName",
-            ) as HTMLInputElement;
-            if (input?.value) {
-              savePreset(input.value);
+            if (presetName) {
+              savePreset(presetName);
             }
           }}
         >
           Save Preset
-        </button>
+        </AppButton>
 
         {Object.keys(presets).map((name) => (
-          <button
+          <AppButton
             key={name}
-            style={{ marginLeft: 8 }}
+            variant="secondary"
             onClick={() => applyPreset(name)}
           >
             Load {name}
-          </button>
+          </AppButton>
         ))}
       </div>
-      <div style={{ fontSize: 13, marginBottom: 16, color: "#555" }}>
+      <div className="app-subtle-text" style={{ fontSize: 13, marginBottom: 16 }}>
         Changes apply immediately. Some permissions auto-enable required
         dependencies.
       </div>
 
       {GROUPS.map((group) => (
-        <div key={group} style={{ marginBottom: 30 }}>
-          <h2 style={{ textTransform: "capitalize" }}>
-            {group.replace("_", " ")}
-          </h2>
-
+        <PageSection
+          key={group}
+          variant="card"
+          title={group.replace("_", " ")}
+          titleStyle={{ textTransform: "capitalize" }}
+          style={{ marginBottom: 30 }}
+        >
           {Object.entries(PERMISSION_GROUPS).map(([section, perms]) => {
             const sectionEnabledCount = perms.filter((p) =>
               isEnabled(group, p),
@@ -457,10 +474,10 @@ function PermissionsInner() {
                   borderRadius: 10,
                   border: "1px solid #e5e7eb",
                   background: allEnabled
-                    ? "#dcfce7" // green tint (all enabled)
+                    ? "var(--color-status-success-bg)" // green tint (all enabled)
                     : noneEnabled
-                      ? "#fef2f2" // red tint (all disabled)
-                      : "#f9fafb", // mixed state
+                      ? "var(--color-status-error-bg)" // red tint (all disabled)
+                      : "var(--color-bg-muted)", // mixed state
                   transition: "background 0.2s ease",
                 }}
               >
@@ -478,10 +495,10 @@ function PermissionsInner() {
                       fontWeight: 700,
                       textTransform: "uppercase",
                       color: allEnabled
-                        ? "#166534"
+                        ? "var(--color-status-success)"
                         : noneEnabled
-                          ? "#991b1b"
-                          : "#374151",
+                          ? "var(--color-status-error)"
+                          : "var(--color-text-secondary)",
                     }}
                   >
                     {section}
@@ -614,7 +631,7 @@ function PermissionsInner() {
               </div>
             );
           })}
-        </div>
+        </PageSection>
       ))}
     </div>
   );

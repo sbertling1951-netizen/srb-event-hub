@@ -94,3 +94,146 @@ test("savePreset()/loadPresets() are untouched -- admin_permission_presets is a 
   assert.match(SOURCE, /await supabase\.from\("admin_permission_presets"\)\.upsert\(/);
   assert.match(SOURCE, /await supabase\s*\n?\s*\.from\("admin_permission_presets"\)\s*\n?\s*\.select\("\*"\);/);
 });
+
+// -- Central UI: Permissions Presentation, Slice A -------------------------
+//
+// Presentation-only: shell/backTarget, duplicate-heading removal, shared
+// loading/button/field/alert primitives, and semantic-token color
+// substitutions. Every assertion above this point still proves the
+// governed-RPC/audit/dependency contracts are byte-identical; these prove
+// the authorized presentation substitutions landed exactly as scoped, and
+// nothing else (permission keys/groups/labels, dependency rules, the
+// custom toggle switch, guards) was touched.
+
+test("the shell carries the exact Admin backTarget", () => {
+  assert.match(
+    SOURCE,
+    /<AdminShellAdapter\s*\n\s*pageTitle="Permissions"\s*\n\s*backTarget=\{\{ href: "\/admin\/admin", label: "Admin" \}\}\s*\n\s*>/,
+  );
+});
+
+test("the duplicate body <h1>Permissions</h1> is gone -- the shell header remains the page's only h1", () => {
+  assert.equal(/<h1\b/.test(SOURCE), false);
+});
+
+test("the loading state is the canonical LoadingState with the exact prior message", () => {
+  assert.match(SOURCE, /import \{ LoadingState \} from "@\/components\/ui\/LoadingState";/);
+  assert.match(SOURCE, /if \(loading\) \{\s*\n\s*return <LoadingState message="Loading permissions\.\.\." \/>;\s*\n\s*\}/);
+});
+
+test("each privilege group is a PageSection, preserving all six groups, their order, and the same capitalized label", () => {
+  assert.match(SOURCE, /import \{ PageSection \} from "@\/components\/ui\/PageSection";/);
+  assert.match(
+    SOURCE,
+    /<PageSection\s*\n\s*key=\{group\}\s*\n\s*variant="card"\s*\n\s*title=\{group\.replace\("_", " "\)\}\s*\n\s*titleStyle=\{\{ textTransform: "capitalize" \}\}/,
+  );
+  assert.equal(/<h2\b/.test(SOURCE), false);
+  assert.match(SOURCE, /const GROUPS = \[/);
+  for (const group of ["super_admin", "event_admin", "checkin", "parking", "content_admin", "read_only"]) {
+    assert.ok(SOURCE.includes(`"${group}"`), `expected group "${group}" to remain`);
+  }
+});
+
+test("the Undo control is the canonical AppButton, preserving its exact onClick and disabled behavior", () => {
+  assert.match(SOURCE, /import \{ AppButton \} from "@\/components\/ui\/AppButton";/);
+  assert.match(
+    SOURCE,
+    /<AppButton\s*\n\s*variant="secondary"\s*\n\s*onClick=\{undoLastChange\}\s*\n\s*loading=\{undoing\}\s*\n\s*disabled=\{undoing\}\s*\n\s*>\s*\n\s*Undo Last Change\s*\n\s*<\/AppButton>/,
+  );
+  assert.equal(/<button\s*\n?\s*type="button"\s*\n?\s*onClick=\{undoLastChange\}/.test(SOURCE), false);
+});
+
+test("the preset-name field is a controlled Field + Input, replacing the document.getElementById DOM-read pattern -- savePreset still receives the exact typed string, uncleared and untrimmed", () => {
+  assert.match(SOURCE, /import \{ Field, Input \} from "@\/components\/ui\/Field";/);
+  assert.equal(/document\.getElementById/.test(SOURCE), false);
+  assert.equal(/id="presetName"/.test(SOURCE), false);
+  assert.match(SOURCE, /const \[presetName, setPresetName\] = useState\(""\);/);
+  assert.match(
+    SOURCE,
+    /<Field label="Preset Name">\s*\n\s*\{\(controlProps\) => \(\s*\n\s*<Input\s*\n\s*\{\.\.\.controlProps\}\s*\n\s*placeholder="Preset name"\s*\n\s*value=\{presetName\}\s*\n\s*onChange=\{\(e\) => setPresetName\(e\.target\.value\)\}\s*\n\s*\/>\s*\n\s*\)\}\s*\n\s*<\/Field>/,
+  );
+  assert.match(
+    SOURCE,
+    /onClick=\{\(\) => \{\s*\n\s*if \(presetName\) \{\s*\n\s*savePreset\(presetName\);\s*\n\s*\}\s*\n\s*\}\}/,
+  );
+  // No trim/clear was introduced.
+  assert.equal(/presetName\.trim\(\)/.test(SOURCE), false);
+  assert.equal(/setPresetName\(""\)/.test(SOURCE), false);
+});
+
+test("Save Preset and Load preset controls are the canonical AppButton with the exact prior handlers/labels", () => {
+  assert.match(SOURCE, /<AppButton\s*\n\s*variant="primary"\s*\n\s*onClick=\{\(\) => \{/);
+  assert.match(
+    SOURCE,
+    /<AppButton\s*\n\s*key=\{name\}\s*\n\s*variant="secondary"\s*\n\s*onClick=\{\(\) => applyPreset\(name\)\}\s*\n\s*>\s*\n\s*Load \{name\}\s*\n\s*<\/AppButton>/,
+  );
+});
+
+test("native alert() is fully replaced by one state-backed inline Alert -- exact message text and trigger points preserved, danger for toggle failure, neutral for the empty-history case, no new success messaging or auto-dismissal introduced", () => {
+  // Excludes // comment lines -- this page's own doc comment mentions
+  // "alert() calls" by name, which would otherwise false-positive here.
+  const executable = SOURCE.replace(/^\s*\/\/.*$/gm, "");
+  assert.equal(/\balert\(/.test(executable), false);
+  assert.match(SOURCE, /import \{ Alert, type AlertTone \} from "@\/components\/ui\/Alert";/);
+  assert.match(
+    SOURCE,
+    /const \[banner, setBanner\] = useState<\{ message: string; tone: AlertTone \} \| null>\(null\);/,
+  );
+  assert.match(
+    SOURCE,
+    /setBanner\(\{\s*\n\s*tone: "danger",\s*\n\s*message: `Toggle failed:\\n\\n\$\{\s*\n\s*err\?\.message \|\| err\?\.error_description \|\| JSON\.stringify\(err, null, 2\)\s*\n\s*\}`,\s*\n\s*\}\);/,
+  );
+  assert.match(SOURCE, /setBanner\(\{ tone: "neutral", message: "No changes to undo" \}\);/);
+  assert.match(SOURCE, /\{banner \? \(\s*\n\s*<div style=\{\{ marginTop: 16 \}\}>\s*\n\s*<Alert tone=\{banner\.tone\}>\{banner\.message\}<\/Alert>/);
+  assert.equal(/tone="success"/.test(SOURCE), false);
+  assert.equal(/setTimeout\(\s*\(\) => setBanner\(null\)/.test(SOURCE), false);
+});
+
+test("undoLastChange's try/catch/finally structure (setUndoing true/false, console.error) is unchanged around the alert-to-Alert conversion", () => {
+  const start = SOURCE.indexOf("async function undoLastChange() {");
+  const end = SOURCE.indexOf("\n  async function savePreset(", start);
+  const body = SOURCE.slice(start, end);
+  assert.match(body, /try \{\s*\n\s*setUndoing\(true\);/);
+  assert.match(body, /\} catch \(err\) \{\s*\n\s*console\.error\("Undo failed:", err\);\s*\n\s*\} finally \{\s*\n\s*setUndoing\(false\);\s*\n\s*\}/);
+});
+
+test("the explanatory copy uses app-subtle-text instead of the legacy inline color, with identical text", () => {
+  assert.match(
+    SOURCE,
+    /<div className="app-subtle-text" style=\{\{ fontSize: 13, marginBottom: 16 \}\}>\s*\n\s*Changes apply immediately\. Some permissions auto-enable required\s*\n\s*dependencies\.\s*\n\s*<\/div>/,
+  );
+  assert.equal(/color: "#555"/.test(SOURCE), false);
+});
+
+test("the three section-tint background/text color pairs are tokenized to distinct semantic tokens, preserving the exact allEnabled/noneEnabled conditions -- the three meanings remain visibly distinct, never collapsed to one style", () => {
+  assert.match(
+    SOURCE,
+    /background: allEnabled\s*\n\s*\? "var\(--color-status-success-bg\)" \/\/ green tint \(all enabled\)\s*\n\s*: noneEnabled\s*\n\s*\? "var\(--color-status-error-bg\)" \/\/ red tint \(all disabled\)\s*\n\s*: "var\(--color-bg-muted\)", \/\/ mixed state/,
+  );
+  assert.match(
+    SOURCE,
+    /color: allEnabled\s*\n\s*\? "var\(--color-status-success\)"\s*\n\s*: noneEnabled\s*\n\s*\? "var\(--color-status-error\)"\s*\n\s*: "var\(--color-text-secondary\)",/,
+  );
+  assert.equal(/#dcfce7|#fef2f2|#166534|#991b1b|#374151/.test(SOURCE), false);
+  // The three tokens used are pairwise distinct.
+  const bgTokens = ["var(--color-status-success-bg)", "var(--color-status-error-bg)", "var(--color-bg-muted)"];
+  assert.equal(new Set(bgTokens).size, 3);
+});
+
+test("regression: the custom permission toggle switch, its aria-pressed contract, knob, and enabled/disabled colors are completely untouched", () => {
+  assert.match(SOURCE, /aria-pressed=\{enabled\}/);
+  assert.match(SOURCE, /background: enabled \? "#0b5cff" : "#e5e7eb"/);
+  assert.match(SOURCE, /left: enabled \? 20 : 3,/);
+  assert.match(SOURCE, /disabled=\{locked \|\| undoing\}/);
+});
+
+test("regression: permission keys, groups, labels, dependency rules, and cascade/toggle-section logic are byte-identical", () => {
+  assert.match(SOURCE, /const ALL_PERMISSIONS = \[/);
+  assert.match(SOURCE, /const PERMISSION_LABELS: Record<string, string> = \{/);
+  assert.match(SOURCE, /const PERMISSION_GROUPS: Record<string, string\[\]> = \{/);
+  assert.match(SOURCE, /can_manage_checkin: \["can_manage_attendees"\],/);
+  assert.match(SOURCE, /can_manage_parking: \["can_manage_attendees"\],/);
+  assert.match(SOURCE, /can_manage_attendees: \["can_manage_checkin", "can_manage_parking"\],/);
+  assert.match(SOURCE, /function isRequiredByAnother\(group: string, key: string\)/);
+  assert.match(SOURCE, /async function toggleSection\(\)/);
+});
