@@ -201,9 +201,10 @@ test("recovery_required renders explicit sign-in + Temporary Event Access action
   assert.match(source, /if \(identityStatus === "recovery_required"\) \{[\s\S]{0,320}?setNeedsRecovery\(true\)/);
   assert.match(source, /const \[needsRecovery, setNeedsRecovery\] = useState\(false\)/);
   // the recovery view -- both actions reachable
+  const needsRecoveryIdx = source.indexOf("needsRecovery ? (");
   const recoveryView = source.slice(
-    source.indexOf("needsRecovery ? ("),
-    source.indexOf('"Loading check-in..."\n          )}'),
+    needsRecoveryIdx,
+    source.indexOf("Loading check-in...", needsRecoveryIdx),
   );
   assert.ok(recoveryView.length > 0, "expected the needsRecovery render branch");
   assert.match(recoveryView, /href="\/member\/login\?sessionExpired=1"/);
@@ -263,7 +264,7 @@ test("the status/error boxes use the shared Alert primitive, and the failure sur
 });
 
 test("Save uses the shared AppButton with the exact click handler, label swap, and loading-driven disabled behavior", () => {
-  assert.match(source, /import \{ AppButton \} from "@\/components\/ui\/AppButton";/);
+  assert.match(source, /import \{ AppButton, AppLinkButton \} from "@\/components\/ui\/AppButton";/);
   assert.match(
     source,
     /<AppButton variant="primary" loading=\{saving\} onClick=\{\(\) => void saveCheckin\(\)\}>\s*\n\s*\{saving \? "Saving\.\.\." : "Save"\}\s*\n\s*<\/AppButton>/,
@@ -271,15 +272,36 @@ test("Save uses the shared AppButton with the exact click handler, label swap, a
   assert.doesNotMatch(source, /<button\b/);
 });
 
-test("Slice 1 leaves the recovery/loading block and main Check-In panel untouched", () => {
-  assert.match(source, /needsReauth \?/);
-  assert.match(source, /needsRecovery \?/);
+test("Slice 2 leaves the main Check-In panel untouched", () => {
   assert.match(source, /Confirmed site:/);
   assert.match(source, /What site are you parked in\?/);
   assert.match(source, /Share my site \/ household details with other attendees/);
 });
 
-test("Slice 1 leaves every RPC, fetch, and data/authority contract unchanged", () => {
+test("the recovery/loading container uses PageSection with the exact muted-text token and preserved grid/gap layout", () => {
+  assert.match(source, /import \{ PageSection \} from "@\/components\/ui\/PageSection";/);
+  assert.match(
+    source,
+    /<PageSection\s*\n\s*variant="card"\s*\n\s*style=\{\{ color: "var\(--color-text-muted\)", display: "grid", gap: 12 \}\}\s*\n\s*>/,
+  );
+  assert.match(source, /needsReauth \?/);
+  assert.match(source, /needsRecovery \?/);
+});
+
+test("both 'Sign in again' actions use AppLinkButton with the exact href, and the temporary-access link keeps its blue text with only its border tokenized", () => {
+  assert.equal(
+    (source.match(/<AppLinkButton href="\/member\/login\?sessionExpired=1" variant="primary">/g) || []).length,
+    2,
+  );
+  assert.match(source, /Sign in again\s*\n\s*<\/AppLinkButton>/);
+  assert.match(source, /<Link\s*\n\s*href="\/member\/login"/);
+  assert.match(source, /border: "1px solid var\(--color-border-strong\)"/);
+  assert.match(source, /color: "#0b5cff"/);
+  assert.match(source, /Use temporary event access/);
+  assert.doesNotMatch(source, /background: "#0b5cff"/);
+});
+
+test("Slice 2 leaves every RPC, fetch, and data/authority contract unchanged", () => {
   assert.match(source, /supabase\.rpc\("get_my_attendee_record"/);
   assert.match(source, /supabase\.rpc\(\s*\n?\s*"get_my_confirmed_site_placement"/);
   assert.match(source, /"get_my_household_members"/);

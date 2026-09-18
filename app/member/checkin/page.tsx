@@ -7,7 +7,8 @@ import { useCallback, useEffect, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { Alert } from "@/components/ui/Alert";
-import { AppButton } from "@/components/ui/AppButton";
+import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
+import { PageSection } from "@/components/ui/PageSection";
 import { logEngagement } from "@/lib/engagement";
 import { preferredDisplayLine } from "@/lib/formatters";
 import { clearMemberLocalState } from "@/lib/memberAccountSession";
@@ -496,16 +497,9 @@ function MemberCheckinPageInner() {
       {error ? <Alert tone="danger">{error}</Alert> : null}
 
       {!attendee ? (
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 16,
-            color: "#666",
-            display: "grid",
-            gap: 12,
-          }}
+        <PageSection
+          variant="card"
+          style={{ color: "var(--color-text-muted)", display: "grid", gap: 12 }}
         >
           {needsReauth ? (
             <>
@@ -513,22 +507,9 @@ function MemberCheckinPageInner() {
                 Your account session has expired. Sign in again to load your
                 check-in.
               </div>
-              <Link
-                href="/member/login?sessionExpired=1"
-                style={{
-                  display: "inline-block",
-                  padding: "10px 14px",
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                  background: "#0b5cff",
-                  color: "#fff",
-                  textDecoration: "none",
-                  fontWeight: 700,
-                  justifySelf: "start",
-                }}
-              >
+              <AppLinkButton href="/member/login?sessionExpired=1" variant="primary">
                 Sign in again
-              </Link>
+              </AppLinkButton>
             </>
           ) : needsRecovery ? (
             <>
@@ -540,28 +521,16 @@ function MemberCheckinPageInner() {
               <div
                 style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
               >
-                <Link
-                  href="/member/login?sessionExpired=1"
-                  style={{
-                    display: "inline-block",
-                    padding: "10px 14px",
-                    borderRadius: 8,
-                    border: "1px solid #cbd5e1",
-                    background: "#0b5cff",
-                    color: "#fff",
-                    textDecoration: "none",
-                    fontWeight: 700,
-                  }}
-                >
+                <AppLinkButton href="/member/login?sessionExpired=1" variant="primary">
                   Sign in again
-                </Link>
+                </AppLinkButton>
                 <Link
                   href="/member/login"
                   style={{
                     display: "inline-block",
                     padding: "10px 14px",
                     borderRadius: 8,
-                    border: "1px solid #cbd5e1",
+                    border: "1px solid var(--color-border-strong)",
                     background: "#fff",
                     color: "#0b5cff",
                     textDecoration: "none",
@@ -575,7 +544,7 @@ function MemberCheckinPageInner() {
           ) : (
             "Loading check-in..."
           )}
-        </div>
+        </PageSection>
       ) : (
         <div
           style={{
