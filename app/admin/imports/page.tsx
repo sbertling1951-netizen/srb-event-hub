@@ -1400,21 +1400,13 @@ function AdminAttendeeImportsPageInner() {
     return (
       <div className="row-actions">
         {row.rowState === "commit_failed" ? (
-          <button
-            type="button"
+          <AppButton
+            variant="secondary"
             onClick={() => void handleRetryImportRow(row)}
             disabled={retryingRowId === row.rowId}
-            style={{
-              padding: "6px 10px",
-              borderRadius: 8,
-              border: "1px solid #ccc",
-              background: "white",
-              cursor: "pointer",
-              opacity: retryingRowId === row.rowId ? 0.6 : 1,
-            }}
           >
             {retryingRowId === row.rowId ? "Retrying..." : "Retry"}
-          </button>
+          </AppButton>
         ) : null}
         <AbandonRowButton
           row={row}
@@ -1682,8 +1674,7 @@ function AdminAttendeeImportsPageInner() {
       ) : null}
 
       {importRunResult ? (
-        <div className="card" style={{ padding: 18 }}>
-          <h2 style={{ marginTop: 0, marginBottom: 6 }}>Governed Import Results</h2>
+        <PageSection variant="card" title="Governed Import Results">
           <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 14 }}>
             Run {importRunResult.runId}
             {importRunResult.sourceFilename ? ` • ${importRunResult.sourceFilename}` : ""}
@@ -1723,7 +1714,7 @@ function AdminAttendeeImportsPageInner() {
                 {tiles.map((tile) => (
                   <div
                     key={tile.label}
-                    style={{ padding: 12, border: "1px solid #ddd", borderRadius: 10 }}
+                    style={{ padding: 12, border: "1px solid var(--color-border-default)", borderRadius: 10 }}
                   >
                     <div style={{ fontSize: 12, opacity: 0.7 }}>{tile.label}</div>
                     <div style={{ fontSize: 22, fontWeight: 800 }}>{tile.value}</div>
@@ -1788,7 +1779,7 @@ function AdminAttendeeImportsPageInner() {
               </DataTable>
             </div>
           )}
-        </div>
+        </PageSection>
       ) : null}
 
       {selectedImportEventId ? <ImportHistoryPanel eventId={selectedImportEventId} importType="attendee" /> : null}
@@ -2287,8 +2278,8 @@ function AdminAttendeeImportsPageInner() {
 const tableHeadStyle = {
   textAlign: "left" as const,
   padding: "10px 8px",
-  borderBottom: "2px solid #ddd",
-  background: "#f8f9fb",
+  borderBottom: "2px solid var(--color-border-default)",
+  background: "var(--color-bg-muted)",
   whiteSpace: "nowrap" as const,
   fontSize: 13,
 };
@@ -2296,7 +2287,7 @@ const tableHeadStyle = {
 const tableCellStyle = {
   textAlign: "left" as const,
   padding: "10px 8px",
-  borderBottom: "1px solid #eee",
+  borderBottom: "1px solid var(--color-border-default)",
   verticalAlign: "top" as const,
   fontSize: 13,
 };

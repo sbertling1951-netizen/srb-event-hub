@@ -702,3 +702,115 @@ test("regression: guard, shell, backTarget, routing doors, review/validation cal
   assert.match(source, /<DataTable caption="Saved attendee list">/);
   assert.match(source, /<AppLinkButton variant="tertiary" href="\/admin\/imports">\s*\n\s*Back to Imports/);
 });
+
+// -- Central UI: Imports Interior, Slice 3 Results Card -------------------
+//
+// Only the Governed Import Results card and the two shared table-style
+// color tokens. Every assertion above this point still proves the
+// guard/backTarget/routing/RPC/lifecycle/other-table contracts are
+// untouched; these prove the exact substitutions authorized for this
+// slice landed, and nothing outside the card was touched.
+
+test("Governed Import Results is a PageSection (title prop), not a hand-rolled <h2> card, preserving its existing children and order", () => {
+  const source = readSource();
+  const sectionIdx = source.indexOf('<PageSection variant="card" title="Governed Import Results">');
+  assert.notEqual(sectionIdx, -1);
+  assert.equal(/<h2[^>]*>Governed Import Results<\/h2>/.test(source), false);
+
+  const historyIdx = source.indexOf("<ImportHistoryPanel eventId={selectedImportEventId} importType=\"attendee\" />");
+  const sectionBody = source.slice(sectionIdx, historyIdx);
+  const runIdIdx = sectionBody.indexOf("Run {importRunResult.runId}");
+  const lifecycleIdx = sectionBody.indexOf("<RunLifecycleActions");
+  const tilesIdx = sectionBody.indexOf("const tiles: { label: string; value: number }[] = [");
+  const listOrTableIdx = sectionBody.indexOf("{isCompact ? (");
+  assert.ok(
+    runIdIdx > -1 && lifecycleIdx > runIdIdx && tilesIdx > lifecycleIdx && listOrTableIdx > tilesIdx,
+    "expected run identifier, RunLifecycleActions, stat tiles, and the ResponsiveList/DataTable split in that exact order",
+  );
+});
+
+test("each of the six result-stat-tile borders uses the border-default token, not the hardcoded hex value", () => {
+  const source = readSource();
+  const tilesIdx = source.indexOf("const tiles: { label: string; value: number }[] = [");
+  const tilesRenderEnd = source.indexOf("})()}", tilesIdx);
+  const tilesBody = source.slice(tilesIdx, tilesRenderEnd);
+  assert.match(tilesBody, /border: "1px solid var\(--color-border-default\)"/);
+  assert.equal(/#ddd/.test(tilesBody), false);
+  // One shared template renders all six tiles (Processed, Committed,
+  // Validation Failed, Needs Review, Commit Failed, Warnings) -- confirm
+  // the tile labels/order are untouched.
+  for (const label of [
+    "Processed",
+    "Committed",
+    "Validation Failed",
+    "Needs Review",
+    "Commit Failed",
+    "Warnings",
+  ]) {
+    assert.ok(tilesBody.includes(`"${label}"`), `expected the "${label}" tile to remain`);
+  }
+});
+
+test("the Retry control is the canonical AppButton (variant secondary), preserving its exact onClick, disabled expression, label behavior, and commit_failed gating/placement", () => {
+  const source = readSource();
+  const fnIdx = source.indexOf("function renderImportResultActions(row: AttendeeImportRowResult) {");
+  const fnBody = source.slice(fnIdx, source.indexOf("\n  return (", fnIdx));
+
+  assert.equal(/<button\b/.test(fnBody), false);
+  assert.match(
+    fnBody,
+    /\{row\.rowState === "commit_failed" \? \(\s*\n\s*<AppButton\s*\n\s*variant="secondary"\s*\n\s*onClick=\{\(\) => void handleRetryImportRow\(row\)\}\s*\n\s*disabled=\{retryingRowId === row\.rowId\}\s*\n\s*>\s*\n\s*\{retryingRowId === row\.rowId \? "Retrying\.\.\." : "Retry"\}\s*\n\s*<\/AppButton>\s*\n\s*\) : null\}/,
+  );
+  // AbandonRowButton and the committed/validation_failed em-dash sit
+  // exactly where they did before, untouched.
+  assert.match(
+    fnBody,
+    /<AbandonRowButton\s*\n\s*row=\{row\}\s*\n\s*onAbandoned=\{handleImportRowAbandoned\}\s*\n\s*onError=\{\(message\) => setError\(message\)\}\s*\n\s*\/>\s*\n\s*\{row\.rowState === "committed" \|\| row\.rowState === "validation_failed" \? "—" : null\}/,
+  );
+});
+
+test("the shared tableHeadStyle/tableCellStyle color values are tokenized -- structure, padding, font size, and text alignment are unchanged", () => {
+  const source = readSource();
+  const headIdx = source.indexOf("const tableHeadStyle = {");
+  const cellEnd = source.indexOf("};", source.indexOf("const tableCellStyle = {"));
+  const stylesBody = source.slice(headIdx, cellEnd);
+
+  assert.match(stylesBody, /borderBottom: "2px solid var\(--color-border-default\)"/);
+  assert.match(stylesBody, /background: "var\(--color-bg-muted\)"/);
+  assert.match(stylesBody, /borderBottom: "1px solid var\(--color-border-default\)"/);
+  assert.equal(/#ddd|#eee|#f8f9fb/.test(stylesBody), false);
+
+  // Non-color properties are byte-identical.
+  assert.match(stylesBody, /textAlign: "left" as const,\s*\n\s*padding: "10px 8px",/g);
+  assert.match(stylesBody, /whiteSpace: "nowrap" as const,/);
+  assert.match(stylesBody, /verticalAlign: "top" as const,/);
+  assert.equal((stylesBody.match(/fontSize: 13,/g) || []).length, 2);
+});
+
+test("regression: RunLifecycleActions/AbandonRowButton props and callbacks, DataTable columns/captions/row keys, ResponsiveList content, and isCompact branching in this card are byte-identical", () => {
+  const source = readSource();
+  assert.match(
+    source,
+    /<RunLifecycleActions\s*\n\s*runId=\{importRunResult\.runId\}\s*\n\s*status=\{importRunStatus\}\s*\n\s*rows=\{importRunResult\.rows\}\s*\n\s*onStagingClosed=\{handleImportStagingClosed\}\s*\n\s*onOpenRowsAbandoned=\{\(\) => void handleImportOpenRowsAbandoned\(\)\}\s*\n\s*onFinalized=\{handleImportRunFinalized\}\s*\n\s*onError=\{\(message\) => setError\(message\)\}\s*\n\s*\/>/,
+  );
+  assert.match(source, /<ResponsiveList aria-label="Governed import results">/);
+  assert.match(source, /<DataTable caption="Governed import results">/);
+  for (const column of ["Row", "Entry ID", "Email", "State", "Detail", "Action"]) {
+    assert.ok(source.includes(`<th scope="col" style={tableHeadStyle}>${column}</th>`), `expected the "${column}" column header to remain`);
+  }
+  assert.match(source, /<tr key=\{row\.rowId\}>/);
+  assert.match(source, /<li key=\{row\.rowId\} className="responsive-list-item">/);
+  assert.match(source, /const summary = summarizeAttendeeImportRows\(importRunResult\.rows\);/);
+});
+
+test("regression: the boundary stops exactly at Governed Import Results -- Import Summary, Imported Data Preview, Saved Attendee List, and Row Preview remain their pre-Slice-3 hand-rolled cards, untouched", () => {
+  const source = readSource();
+  assert.match(source, /<h2 style=\{\{ marginTop: 0, marginBottom: 12 \}\}>Import Summary<\/h2>/);
+  assert.match(source, /<h2 style=\{\{ marginTop: 0, marginBottom: 6 \}\}>\s*\n\s*Saved Attendee List\s*\n\s*<\/h2>/);
+  assert.match(source, /<h2 style=\{\{ marginTop: 0, marginBottom: 6 \}\}>Row Preview<\/h2>/);
+  // Untouched hex colors that remain outside this slice's boundary.
+  assert.match(source, /background: rows\.length \? "white" : "#f3f4f6"/);
+  assert.match(source, /border: "1px solid #bfdbfe"/);
+  assert.match(source, /color: "#8a1f1f"/);
+  assert.match(source, /color: "#166534"/);
+});
