@@ -42,7 +42,8 @@ function AdminWorkspaceInner() {
     <Page style={{ maxWidth: 860, margin: "0 auto", display: "grid", gap: 16 }}>
       <PageHeader
         title="Admin"
-        headingLevel="h1"
+        headingLevel="h2"
+        titleClassName="app-section-title"
         description="Manage admin accounts, permissions, and platform-level administration."
       />
 

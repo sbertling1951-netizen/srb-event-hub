@@ -3883,7 +3883,7 @@ function AdminNearbyPageInner() {
       {!error && status ? <Alert tone="neutral">{status}</Alert> : null}
 
       <PageSection variant="section">
-        <PageHeader title="Nearby Admin" headingLevel="h1" titleClassName="app-section-title" />
+        <PageHeader title="Nearby Admin" headingLevel="h2" titleClassName="app-section-title" />
 
         <div style={{ display: "grid", gap: "var(--space-1)" }}>
           <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>

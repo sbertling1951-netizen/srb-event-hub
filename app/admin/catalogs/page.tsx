@@ -49,7 +49,8 @@ function CatalogsWorkspaceInner() {
     <Page style={{ maxWidth: 860, margin: "0 auto", display: "grid", gap: 16 }}>
       <PageHeader
         title="Catalogs"
-        headingLevel="h1"
+        headingLevel="h2"
+        titleClassName="app-section-title"
         description="Reusable, curated reference data maintained by the platform, separate from day-to-day operational workspaces."
       />
 

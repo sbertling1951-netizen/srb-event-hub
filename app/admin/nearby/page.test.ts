@@ -30,6 +30,19 @@ test("shell wrapper remains in place, with a back target to Map Admin replacing 
   assert.equal(/Return to Dashboard/.test(PAGE_SOURCE), false);
 });
 
+// The shell (ShellHeader) renders the single page-level <h1> from
+// pageTitle. This page's top PageHeader duplicated that title verbatim
+// ("Nearby Admin") at h1, giving the page two competing top-level
+// headings; it is a section heading beneath the shell's.
+test("every in-page PageHeader is a section heading (h2), leaving the shell's pageTitle as the only page-level h1", () => {
+  assert.equal(/headingLevel="h1"/.test(PAGE_SOURCE), false);
+  assert.equal(/<h1\b/.test(PAGE_SOURCE), false);
+  assert.match(
+    PAGE_SOURCE,
+    /<PageHeader title="Nearby Admin" headingLevel="h2" titleClassName="app-section-title" \/>/,
+  );
+});
+
 test("the page-local isNarrow resize-listener breakpoint state is gone -- replaced by the shared useShellInterfaceCapabilities() hook", () => {
   assert.equal(/isNarrow/.test(PAGE_SOURCE), false);
   assert.equal(/addEventListener\(\s*["']resize["']/.test(PAGE_SOURCE), false);

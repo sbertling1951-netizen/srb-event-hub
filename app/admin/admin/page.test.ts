@@ -46,6 +46,22 @@ test("the page is guarded, exactly once, by the canonical Admin route guard and 
   assert.equal((SOURCE.match(/<AdminShellAdapter/g) || []).length, 1);
 });
 
+// The shell (ShellHeader) renders the single page-level <h1> from
+// pageTitle. This page's own PageHeader is a section heading beneath it,
+// so it must not also claim h1 -- the two texts were identical ("Admin"),
+// giving the page two competing top-level headings. It also carries the
+// shared .app-section-title class: without it the heading fell through to
+// the UA stylesheet (h1 32px -> h2 24px), so the level change alone would
+// have shrunk it. The shared class is the intended section typography.
+test("the in-page PageHeader is a section heading -- h2, with the shared section-title typography, leaving the shell's pageTitle as the only page-level h1", () => {
+  assert.equal(/headingLevel="h1"/.test(SOURCE), false);
+  assert.equal(/<h1\b/.test(SOURCE), false);
+  assert.match(
+    SOURCE,
+    /<PageHeader\s*\n\s*title="Admin"\s*\n\s*headingLevel="h2"\s*\n\s*titleClassName="app-section-title"\s*\n\s*description="Manage admin accounts, permissions, and platform-level administration\."\s*\n\s*\/>/,
+  );
+});
+
 test("the door guard is never stricter than the Admin parent nav item's own visibility -- an admin with can_manage_admins but WITHOUT can_view_admin_dashboard still sees a working link", () => {
   const admin = buildAdmin({ permissionMap: { can_manage_admins: true, can_view_admin_dashboard: false } });
 

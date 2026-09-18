@@ -2629,7 +2629,11 @@ function AdminAgendaPageInner() {
     return (
       <div style={{ display: "grid", gap: "var(--space-10)" }}>
         <PageSection variant="section">
-          <PageHeader title="No Agenda access for this event" headingLevel="h1" />
+          <PageHeader
+            title="No Agenda access for this event"
+            headingLevel="h2"
+            titleClassName="app-section-title"
+          />
           <Alert tone="danger">
             {status ||
               "You do not have Agenda view or manage authority for the current admin working event."}
@@ -2653,7 +2657,7 @@ function AdminAgendaPageInner() {
       />
 
       <PageSection variant="section">
-        <PageHeader title="Admin Agenda" headingLevel="h1" titleClassName="app-section-title" />
+        <PageHeader title="Admin Agenda" headingLevel="h2" titleClassName="app-section-title" />
 
         <div
           style={{

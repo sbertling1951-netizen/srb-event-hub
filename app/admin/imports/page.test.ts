@@ -485,9 +485,19 @@ test("the obsolete PageNavigation component is fully absent -- no import, no usa
   assert.equal(/homeHref|homeLabel|parentHref|parentLabel/.test(source), false);
 });
 
-test("the duplicate body <h1> repeating the shell title is gone -- the shell header remains the page's only h1, and no dead pageTitle constant was left behind", () => {
+test("no body-level page <h1> repeats the shell title -- neither as literal markup nor via PageHeader headingLevel, and no dead pageTitle constant was left behind", () => {
   const source = readSource();
   assert.equal(/<h1\b/.test(source), false);
+  // The original form of this assertion only rejected a literal <h1> tag,
+  // so it kept passing while the Imports landing door still rendered a
+  // second page-level h1 through PageHeader's headingLevel prop. The shell
+  // (ShellHeader) owns the single page h1; every in-page PageHeader on this
+  // page is a section heading.
+  assert.equal(/headingLevel="h1"/.test(source), false);
+  assert.match(
+    source,
+    /<PageHeader title="Imports" headingLevel="h2" titleClassName="app-section-title" \/>/,
+  );
   assert.equal(/const pageTitle = "Attendee Imports";/.test(source), false);
   assert.equal(/\{pageTitle\}/.test(source), false);
 });

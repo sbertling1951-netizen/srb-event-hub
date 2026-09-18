@@ -405,7 +405,7 @@ function ImportsLandingDoors() {
   return (
     <>
       <PageSection variant="section">
-        <PageHeader title="Imports" headingLevel="h1" titleClassName="app-section-title" />
+        <PageHeader title="Imports" headingLevel="h2" titleClassName="app-section-title" />
         <p className="app-subtle-text" style={{ marginTop: 0 }}>
           What do you want to import?
         </p>

@@ -1356,3 +1356,31 @@ test("the bare route guard, shell adapter, title/subtitle, and back target are p
   assert.equal((PAGE_SOURCE.match(/<AdminRouteGuard/g) || []).length, 1);
   assert.equal((PAGE_SOURCE.match(/<AdminShellAdapter/g) || []).length, 1);
 });
+
+// The shell (ShellHeader) renders the single page-level <h1> from
+// pageTitle ("Admin Agenda"). Both of AdminAgendaPageInner's returns --
+// the hasAgendaAccess === false branch and the normal workspace -- render
+// inside that same shell, so neither may claim h1 of its own.
+//
+// Deliberately NOT a whole-file literal-<h1> prohibition: the printable
+// agenda is a separate standalone document built as an HTML string, and
+// its own <h1> (the event name) is that document's legitimate title, not a
+// heading in this page's outline.
+// Both in-page headings also carry the shared .app-section-title class:
+// the access-denied heading previously had no class at all, so demoting it
+// alone would have dropped it from the UA h1 size (32px) to h2 (24px)
+// rather than onto the shared section tier.
+test("no in-page PageHeader claims h1 on either render path, both use the shared section-title typography, and the print document's own h1 is left alone", () => {
+  assert.equal(/headingLevel="h1"/.test(PAGE_SOURCE), false);
+  assert.match(
+    PAGE_SOURCE,
+    /<PageHeader title="Admin Agenda" headingLevel="h2" titleClassName="app-section-title" \/>/,
+  );
+  assert.match(
+    PAGE_SOURCE,
+    /<PageHeader\s*\n\s*title="No Agenda access for this event"\s*\n\s*headingLevel="h2"\s*\n\s*titleClassName="app-section-title"\s*\n\s*\/>/,
+  );
+  // Exactly one literal <h1> remains, and it is the print template's.
+  assert.equal((PAGE_SOURCE.match(/<h1\b/g) || []).length, 1);
+  assert.match(PAGE_SOURCE, /<h1>\$\{activeEvent\?\.name \?\? "Agenda"\}<\/h1>/);
+});
