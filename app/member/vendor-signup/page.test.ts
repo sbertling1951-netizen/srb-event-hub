@@ -94,7 +94,7 @@ test("Slice 1/2 leaves the request-card list and ConfirmDialog untouched", () =>
 // ---------------------------------------------------------------------------
 
 test("the Vendor select uses Field + Select, preserving the exact label, value, setter, disabled condition, and options (including the notice-text suffix)", () => {
-  assert.match(SOURCE, /import \{ Field, Select \} from "@\/components\/ui\/Field";/);
+  assert.match(SOURCE, /import \{ Field, Input, Select, Textarea \} from "@\/components\/ui\/Field";/);
   assert.match(SOURCE, /<Field label="Vendor">/);
   assert.match(
     SOURCE,
@@ -129,16 +129,74 @@ test("Submit and Refresh use the shared AppButton, preserving their exact handle
   assert.doesNotMatch(SOURCE, /<select\s*\n\s*value=\{preferredResponseMethod\}/);
 });
 
-test("Slice 2 leaves the vendor-detail card, action links, every other input, and the governed request lifecycle untouched", () => {
+test("Slice 2/3 leaves the vendor-detail card, action links, and the governed request lifecycle untouched", () => {
   assert.match(SOURCE, /Call Vendor/);
   assert.match(SOURCE, /Email Vendor/);
-  assert.match(SOURCE, /value=\{requesterName\}/);
-  assert.match(SOURCE, /value=\{notes\}/);
   assert.match(SOURCE, /async function submitRequest\(\) \{/);
   assert.match(SOURCE, /function cancelRequest\(request: MemberRequestRow\) \{/);
   assert.match(SOURCE, /async function confirmCancelRequest\(\) \{/);
   assert.match(SOURCE, /fetch\("\/api\/member\/vendor-requests", \{\s*\n\s*method: "POST",/);
   assert.equal((SOURCE.match(/backTarget=/g) || []).length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Presentation Slice 3: the seven remaining request-form text controls
+// (Your Name, Email, Phone / Text, Site Number, Requested Service, Party
+// Count, Notes) now use the shared Field/Input/Textarea, with no change to
+// Submit/Refresh, ConfirmDialog, Cancel, statusBadge, the request cards, the
+// vendor-detail card, or the governed request lifecycle beneath them.
+// ---------------------------------------------------------------------------
+
+test("Your Name, Email, Phone / Text, and Site Number use Field + Input, preserving their exact labels, values, setters, and placeholders", () => {
+  assert.match(SOURCE, /import \{ Field, Input, Select, Textarea \} from "@\/components\/ui\/Field";/);
+  assert.match(
+    SOURCE,
+    /<Field label="Your Name">\s*\n\s*\{\(controlProps\) => \(\s*\n\s*<Input\s*\n\s*\{\.\.\.controlProps\}\s*\n\s*value=\{requesterName\}\s*\n\s*onChange=\{\(e\) => setRequesterName\(e\.target\.value\)\}\s*\n\s*placeholder="Your name"/,
+  );
+  assert.match(
+    SOURCE,
+    /<Field label="Email">\s*\n\s*\{\(controlProps\) => \(\s*\n\s*<Input\s*\n\s*\{\.\.\.controlProps\}\s*\n\s*value=\{requesterEmail\}\s*\n\s*onChange=\{\(e\) => setRequesterEmail\(e\.target\.value\)\}\s*\n\s*placeholder="Email"/,
+  );
+  assert.match(
+    SOURCE,
+    /<Field label="Phone \/ Text">\s*\n\s*\{\(controlProps\) => \(\s*\n\s*<Input\s*\n\s*\{\.\.\.controlProps\}\s*\n\s*value=\{requesterPhone\}\s*\n\s*onChange=\{\(e\) => setRequesterPhone\(e\.target\.value\)\}\s*\n\s*placeholder="Phone or text number"/,
+  );
+  assert.match(
+    SOURCE,
+    /<Field label="Site Number">\s*\n\s*\{\(controlProps\) => \(\s*\n\s*<Input\s*\n\s*\{\.\.\.controlProps\}\s*\n\s*value=\{siteNumber\}\s*\n\s*onChange=\{\(e\) => setSiteNumber\(e\.target\.value\)\}\s*\n\s*placeholder="Site number"/,
+  );
+});
+
+test("Requested Service and Party Count use Field + Input, preserving their exact label, value, setter, placeholder, type, and min", () => {
+  assert.match(
+    SOURCE,
+    /<Field label="Requested Service">\s*\n\s*\{\(controlProps\) => \(\s*\n\s*<Input\s*\n\s*\{\.\.\.controlProps\}\s*\n\s*value=\{requestedService\}\s*\n\s*onChange=\{\(e\) => setRequestedService\(e\.target\.value\)\}\s*\n\s*placeholder="What service are you requesting\?"/,
+  );
+  assert.match(
+    SOURCE,
+    /<Field label="Party Count">\s*\n\s*\{\(controlProps\) => \(\s*\n\s*<Input\s*\n\s*\{\.\.\.controlProps\}\s*\n\s*type="number"\s*\n\s*min="1"\s*\n\s*value=\{guestCount\}\s*\n\s*onChange=\{\(e\) => setGuestCount\(e\.target\.value\)\}/,
+  );
+});
+
+test("Notes uses Field + Textarea, preserving its exact label, value, setter, placeholder, and rows", () => {
+  assert.match(
+    SOURCE,
+    /<Field label="Notes">\s*\n\s*\{\(controlProps\) => \(\s*\n\s*<Textarea\s*\n\s*\{\.\.\.controlProps\}\s*\n\s*value=\{notes\}\s*\n\s*onChange=\{\(e\) => setNotes\(e\.target\.value\)\}\s*\n\s*placeholder="Add any details the vendor should know\."\s*\n\s*rows=\{5\}/,
+  );
+});
+
+test("no raw <input>/<textarea> remains for the seven converted request-form fields, and no help text/validation/defaults were added", () => {
+  assert.doesNotMatch(SOURCE, /<input\b/);
+  assert.doesNotMatch(SOURCE, /<textarea\b/);
+});
+
+test("Slice 3 leaves Submit/Refresh, ConfirmDialog, Cancel, statusBadge, and the request cards untouched", () => {
+  assert.match(SOURCE, /<AppButton\s*\n\s*variant="primary"\s*\n\s*onClick=\{\(\) => void submitRequest\(\)\}/);
+  assert.match(SOURCE, /<AppButton\s*\n\s*variant="muted"\s*\n\s*onClick=\{\(\) => void loadPage\(\)\}/);
+  assert.match(SOURCE, /<ConfirmDialog\s*\n\s*open=\{!!requestPendingCancel\}/);
+  assert.match(SOURCE, /onClick=\{\(\) => cancelRequest\(request\)\}/);
+  assert.match(SOURCE, /function statusBadge\(status: string\) \{/);
+  assert.match(SOURCE, /\{memberRequests\.map\(\(request\) => \{/);
 });
 
 test("Slice 1 leaves loadPage, request submit/cancel/confirm, and every vendor query/RPC/API call unchanged", () => {

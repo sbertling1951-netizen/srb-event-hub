@@ -9,7 +9,7 @@ import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, Select } from "@/components/ui/Field";
+import { Field, Input, Select, Textarea } from "@/components/ui/Field";
 import { PageSection } from "@/components/ui/PageSection";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { memberIdentityRpcArgs } from "@/lib/memberSession";
@@ -652,15 +652,17 @@ function MemberVendorSignupInner() {
           </div>
         ) : null}
 
-        <label>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>Your Name</div>
-          <input
-            value={requesterName}
-            onChange={(e) => setRequesterName(e.target.value)}
-            placeholder="Your name"
-            style={{ width: "100%", padding: 10 }}
-          />
-        </label>
+        <Field label="Your Name">
+          {(controlProps) => (
+            <Input
+              {...controlProps}
+              value={requesterName}
+              onChange={(e) => setRequesterName(e.target.value)}
+              placeholder="Your name"
+              style={{ width: "100%" }}
+            />
+          )}
+        </Field>
 
         <div
           style={{
@@ -670,48 +672,54 @@ function MemberVendorSignupInner() {
               "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
           }}
         >
-          <label>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>Email</div>
-            <input
-              value={requesterEmail}
-              onChange={(e) => setRequesterEmail(e.target.value)}
-              placeholder="Email"
-              style={{ width: "100%", padding: 10 }}
-            />
-          </label>
+          <Field label="Email">
+            {(controlProps) => (
+              <Input
+                {...controlProps}
+                value={requesterEmail}
+                onChange={(e) => setRequesterEmail(e.target.value)}
+                placeholder="Email"
+                style={{ width: "100%" }}
+              />
+            )}
+          </Field>
 
-          <label>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>Phone / Text</div>
-            <input
-              value={requesterPhone}
-              onChange={(e) => setRequesterPhone(e.target.value)}
-              placeholder="Phone or text number"
-              style={{ width: "100%", padding: 10 }}
-            />
-          </label>
+          <Field label="Phone / Text">
+            {(controlProps) => (
+              <Input
+                {...controlProps}
+                value={requesterPhone}
+                onChange={(e) => setRequesterPhone(e.target.value)}
+                placeholder="Phone or text number"
+                style={{ width: "100%" }}
+              />
+            )}
+          </Field>
 
-          <label>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>Site Number</div>
-            <input
-              value={siteNumber}
-              onChange={(e) => setSiteNumber(e.target.value)}
-              placeholder="Site number"
-              style={{ width: "100%", padding: 10 }}
-            />
-          </label>
+          <Field label="Site Number">
+            {(controlProps) => (
+              <Input
+                {...controlProps}
+                value={siteNumber}
+                onChange={(e) => setSiteNumber(e.target.value)}
+                placeholder="Site number"
+                style={{ width: "100%" }}
+              />
+            )}
+          </Field>
         </div>
 
-        <label>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>
-            Requested Service
-          </div>
-          <input
-            value={requestedService}
-            onChange={(e) => setRequestedService(e.target.value)}
-            placeholder="What service are you requesting?"
-            style={{ width: "100%", padding: 10 }}
-          />
-        </label>
+        <Field label="Requested Service">
+          {(controlProps) => (
+            <Input
+              {...controlProps}
+              value={requestedService}
+              onChange={(e) => setRequestedService(e.target.value)}
+              placeholder="What service are you requesting?"
+              style={{ width: "100%" }}
+            />
+          )}
+        </Field>
 
         <div
           style={{
@@ -721,16 +729,18 @@ function MemberVendorSignupInner() {
               "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
           }}
         >
-          <label>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>Party Count</div>
-            <input
-              type="number"
-              min="1"
-              value={guestCount}
-              onChange={(e) => setGuestCount(e.target.value)}
-              style={{ width: "100%", padding: 10 }}
-            />
-          </label>
+          <Field label="Party Count">
+            {(controlProps) => (
+              <Input
+                {...controlProps}
+                type="number"
+                min="1"
+                value={guestCount}
+                onChange={(e) => setGuestCount(e.target.value)}
+                style={{ width: "100%" }}
+              />
+            )}
+          </Field>
 
           <Field label="Preferred Response">
             {(controlProps) => (
@@ -748,16 +758,18 @@ function MemberVendorSignupInner() {
           </Field>
         </div>
 
-        <label>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>Notes</div>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Add any details the vendor should know."
-            rows={5}
-            style={{ width: "100%", padding: 10 }}
-          />
-        </label>
+        <Field label="Notes">
+          {(controlProps) => (
+            <Textarea
+              {...controlProps}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add any details the vendor should know."
+              rows={5}
+              style={{ width: "100%" }}
+            />
+          )}
+        </Field>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <AppButton
