@@ -1,13 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import {
-  type CSSProperties,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 
 import {
@@ -17,8 +11,10 @@ import {
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
-import { AppLinkButton } from "@/components/ui/AppButton";
+import { Alert, type AlertTone } from "@/components/ui/Alert";
+import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -241,6 +237,39 @@ function saveActiveImportRunId(eventId: string, runId: string | null) {
   } catch {
     // ignore storage errors
   }
+}
+
+// Pure, presentation-only classification of this page's own existing
+// `status` confirmation/progress/failure text into an Alert tone -- never
+// a second source of any message itself (every setStatus call site is
+// unchanged). Mirrors the same heuristic already established for
+// Checklist/Event Staff/Validation Rules.
+export function importsStatusTone(message: string): AlertTone {
+  const lower = message.toLowerCase();
+
+  if (
+    lower.includes("failed") ||
+    lower.startsWith("could not") ||
+    lower === "access denied."
+  ) {
+    return "danger";
+  }
+
+  if (lower.endsWith("...")) {
+    return "info";
+  }
+
+  if (
+    lower.startsWith("loaded") ||
+    lower.startsWith("recovered import run") ||
+    lower.startsWith("resumed import run") ||
+    lower.startsWith("remaining open rows abandoned") ||
+    lower.startsWith("this run has been finalized")
+  ) {
+    return "success";
+  }
+
+  return "neutral";
 }
 
 function fullName(first?: string | null, last?: string | null) {
@@ -1430,40 +1459,25 @@ function AdminAttendeeImportsPageInner() {
         </details>
       </PageSection>
 
-      <div className="card" style={{ padding: 18 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "end",
-            marginBottom: 14,
-          }}
-        >
-          <div>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Data Review Queue</h2>
-            <div style={{ fontSize: 14, opacity: 0.8 }}>
-              {reviewIssues.filter((issue) => !issue.isResolved).length +
-                savedAttendeeIssues.length}{" "}
-              item
-              {reviewIssues.filter((issue) => !issue.isResolved).length +
-                savedAttendeeIssues.length ===
-              1
-                ? ""
-                : "s"}{" "}
-              need review or correction from the import preview or saved
-              attendee list
-            </div>
+      <PageSection variant="card" title="Data Review Queue">
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 14, opacity: 0.8 }}>
+            {reviewIssues.filter((issue) => !issue.isResolved).length +
+              savedAttendeeIssues.length}{" "}
+            item
+            {reviewIssues.filter((issue) => !issue.isResolved).length +
+              savedAttendeeIssues.length ===
+            1
+              ? ""
+              : "s"}{" "}
+            need review or correction from the import preview or saved
+            attendee list
           </div>
         </div>
 
         {reviewIssues.filter((issue) => !issue.isResolved).length === 0 &&
         savedAttendeeIssues.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>
-            No data review items currently flagged for the import preview or
-            saved attendee list.
-          </div>
+          <EmptyState message="No data review items currently flagged for the import preview or saved attendee list." />
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             {reviewIssues
@@ -1545,9 +1559,9 @@ function AdminAttendeeImportsPageInner() {
             ))}
           </div>
         )}
-      </div>
+      </PageSection>
 
-      <div className="card" style={{ padding: 18 }}>
+      <PageSection variant="card">
         <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
           <div style={{ fontWeight: 600 }}>Target Event</div>
 
@@ -1593,37 +1607,22 @@ function AdminAttendeeImportsPageInner() {
           ) : null}
         </div>
 
-        <div style={{ fontSize: 14, marginBottom: 12 }}>{status}</div>
+        <div style={{ marginBottom: 12 }}>
+          <Alert tone={importsStatusTone(status)}>{status}</Alert>
+        </div>
 
         {error ? (
-          <div
-            style={{
-              marginBottom: 12,
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #e2b4b4",
-              background: "#fff3f3",
-              color: "#8a1f1f",
-            }}
-          >
-            {error}
+          <div style={{ marginBottom: 12 }}>
+            <Alert tone="danger">{error}</Alert>
           </div>
         ) : null}
 
         {eventChangedSinceLoad ? (
-          <div
-            style={{
-              marginBottom: 12,
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #f59e0b",
-              background: "#fffbeb",
-              color: "#92400e",
-              fontSize: 14,
-            }}
-          >
-            Target event changed after file load. Reload the file before
-            importing to avoid importing into the wrong event.
+          <div style={{ marginBottom: 12 }}>
+            <Alert tone="warning">
+              Target event changed after file load. Reload the file before
+              importing to avoid importing into the wrong event.
+            </Alert>
           </div>
         ) : null}
 
@@ -1654,8 +1653,9 @@ function AdminAttendeeImportsPageInner() {
           ) : null}
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button
-              type="button"
+            <AppButton
+              variant="primary"
+              loading={importing}
               onClick={() => void handleImport()}
               disabled={
                 importing ||
@@ -1664,23 +1664,12 @@ function AdminAttendeeImportsPageInner() {
                 !rawRows.length ||
                 eventChangedSinceLoad
               }
-              style={{
-                ...darkButtonStyle,
-                opacity:
-                  importing ||
-                  parsing ||
-                  !selectedImportEventId ||
-                  !rawRows.length ||
-                  eventChangedSinceLoad
-                    ? 0.6
-                    : 1,
-              }}
             >
               {importing ? "Importing..." : "Import Attendees"}
-            </button>
+            </AppButton>
           </div>
         </div>
-      </div>
+      </PageSection>
 
       {selectedImportEventId ? (
         <ActiveRunsPanel
@@ -2294,18 +2283,6 @@ function AdminAttendeeImportsPageInner() {
     </div>
   );
 }
-
-const darkButtonStyle: CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "none",
-  background: "#111827",
-  color: "#ffffff",
-  WebkitTextFillColor: "#ffffff",
-  fontWeight: 700,
-  lineHeight: 1.2,
-  cursor: "pointer",
-};
 
 const tableHeadStyle = {
   textAlign: "left" as const,

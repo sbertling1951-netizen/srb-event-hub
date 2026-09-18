@@ -540,3 +540,165 @@ test("no other file was touched by this pass beyond the authorized cohort -- adm
   assert.match(source, /import \{ ImportHistoryPanel \} from "\.\/ImportHistoryPanel";/);
   assert.match(source, /import \{ VendorImportWorkflow \} from "\.\/VendorImportWorkflow";/);
 });
+
+// -- Central UI: Imports Interior, Slice 1 --------------------------------
+//
+// Only the two attendee-door operational cards from Data Review Queue
+// through the Target Event/upload/Import panel, ending immediately before
+// ActiveRunsPanel. Every assertion above this point still proves the
+// guard/backTarget/routing/RPC/lifecycle/table contracts are untouched;
+// these prove the primitive substitutions landed exactly as scoped.
+
+test("Data Review Queue is a PageSection (title prop), not a hand-rolled <h2> card, and the item-count description is preserved", () => {
+  const source = readSource();
+  assert.match(source, /<PageSection variant="card" title="Data Review Queue">/);
+  assert.equal(/<h2[^>]*>Data Review Queue<\/h2>/.test(source), false);
+  assert.match(
+    source,
+    /need review or correction from the import preview or saved\s*\n\s*attendee list/,
+  );
+});
+
+test("the no-items text is the canonical EmptyState with the exact prior message, not a plain opacity div", () => {
+  const source = readSource();
+  assert.match(
+    source,
+    /<EmptyState message="No data review items currently flagged for the import preview or saved attendee list\." \/>/,
+  );
+  assert.equal(
+    /<div style=\{\{ opacity: 0\.8 \}\}>\s*\n\s*No data review items/.test(source),
+    false,
+  );
+});
+
+test("the severity-tinted review-item rows are untouched -- same hex-coded error/warning styling, same click/keyboard handlers, deferred to a later slice", () => {
+  const source = readSource();
+  assert.match(source, /issue\.severity === "error" \? "#fca5a5" : "#fcd34d"/);
+  assert.match(source, /issue\.severity === "error" \? "#fef2f2" : "#fffbeb"/);
+  assert.match(source, /onClick=\{\(\) => openIssueInAttendeeManagement\(issue\)\}/);
+  assert.match(source, /onClick=\{\(\) => openSavedIssueInAttendeeManagement\(issue\)\}/);
+});
+
+test("the Target Event/upload/Import panel is a PageSection, preserving all existing content and order (target-event summary, status, error, warning, file input, Import button)", () => {
+  const source = readSource();
+  const sectionIdx = source.indexOf("<PageSection variant=\"card\">\n        <div style={{ display: \"grid\", gap: 8, marginBottom: 12 }}>");
+  assert.notEqual(sectionIdx, -1);
+  const activeRunsIdx = source.indexOf("<ActiveRunsPanel");
+  const sectionBody = source.slice(sectionIdx, activeRunsIdx);
+
+  const targetEventIdx = sectionBody.indexOf("Target Event");
+  const statusIdx = sectionBody.indexOf("<Alert tone={importsStatusTone(status)}>");
+  const errorIdx = sectionBody.indexOf('<Alert tone="danger">{error}</Alert>');
+  const warningIdx = sectionBody.indexOf('<Alert tone="warning">');
+  const fileInputIdx = sectionBody.indexOf('type="file"');
+  const importButtonIdx = sectionBody.indexOf("Import Attendees");
+
+  assert.ok(
+    targetEventIdx > -1 &&
+      statusIdx > targetEventIdx &&
+      errorIdx > statusIdx &&
+      warningIdx > errorIdx &&
+      fileInputIdx > warningIdx &&
+      importButtonIdx > fileInputIdx,
+    "expected Target Event, status, error, warning, file input, and Import button in that exact order",
+  );
+});
+
+test("the target-event <select> and file <input> remain completely untouched -- same values, handlers, disabled conditions, and raw markup", () => {
+  const source = readSource();
+  assert.match(
+    source,
+    /<select\s*\n\s*value=\{selectedImportEventId\}\s*\n\s*onChange=\{\(e\) => setSelectedImportEventId\(e\.target\.value\)\}\s*\n\s*disabled=\{loadingEvent\}/,
+  );
+  assert.match(source, /border: "1px solid #ccc"/);
+  assert.match(
+    source,
+    /<input\s*\n\s*type="file"\s*\n\s*accept="\.csv,\.xlsx,\.xls"\s*\n\s*disabled=\{loadingEvent \|\| !selectedImportEventId\}/,
+  );
+});
+
+test("status renders through the shared Alert using the new exported importsStatusTone classifier -- every existing status string and setStatus call site is preserved verbatim", () => {
+  const source = readSource();
+  assert.match(source, /import \{ Alert, type AlertTone \} from "@\/components\/ui\/Alert";/);
+  assert.match(source, /export function importsStatusTone\(message: string\): AlertTone \{/);
+  assert.match(source, /<Alert tone=\{importsStatusTone\(status\)\}>\{status\}<\/Alert>/);
+
+  for (const message of [
+    "Access denied.",
+    "No accessible events available for import.",
+    "Could not load events.",
+    "No rows found in file.",
+    "Parse failed.",
+    "Creating governed import run...",
+    "Import failed.",
+    "Remaining open rows abandoned.",
+    "Source staging closed. This run is now ready for review.",
+    "This run has been finalized and moved to Import History.",
+    "Opening saved attendee in Attendee Management...",
+    "Load a CSV or XLSX file to begin.",
+  ]) {
+    assert.ok(source.includes(`"${message}"`), `expected the status message "${message}" to remain verbatim`);
+  }
+});
+
+test("importsStatusTone classifies failure/progress/success status text correctly, mirroring the established Checklist/Event Staff/Validation Rules heuristic", () => {
+  const source = readSource();
+  const start = source.indexOf("export function importsStatusTone");
+  const body = source.slice(start, source.indexOf("\nfunction fullName", start));
+  assert.match(body, /lower\.includes\("failed"\) \|\|\s*\n\s*lower\.startsWith\("could not"\)/);
+  assert.match(body, /lower\.endsWith\("\.\.\."\)/);
+  assert.match(body, /lower\.startsWith\("loaded"\)/);
+});
+
+test("the error banner is the shared Alert tone=\"danger\", preserving the exact error source and text -- no hardcoded hex error box remains in this panel", () => {
+  const source = readSource();
+  const sectionIdx = source.indexOf("Target Event");
+  const activeRunsIdx = source.indexOf("<ActiveRunsPanel");
+  const sectionBody = source.slice(sectionIdx, activeRunsIdx);
+  assert.match(sectionBody, /\{error \? \(\s*\n\s*<div style=\{\{ marginBottom: 12 \}\}>\s*\n\s*<Alert tone="danger">\{error\}<\/Alert>/);
+  assert.equal(/#e2b4b4|#fff3f3|#8a1f1f/.test(sectionBody), false);
+});
+
+test("the event-changed-since-load warning is the shared Alert tone=\"warning\", preserving its exact text and eventChangedSinceLoad condition -- no hardcoded hex warning box remains in this panel", () => {
+  const source = readSource();
+  const sectionIdx = source.indexOf("Target Event");
+  const activeRunsIdx = source.indexOf("<ActiveRunsPanel");
+  const sectionBody = source.slice(sectionIdx, activeRunsIdx);
+  assert.match(
+    sectionBody,
+    /\{eventChangedSinceLoad \? \(\s*\n\s*<div style=\{\{ marginBottom: 12 \}\}>\s*\n\s*<Alert tone="warning">\s*\n\s*Target event changed after file load\. Reload the file before\s*\n\s*importing to avoid importing into the wrong event\.\s*\n\s*<\/Alert>/,
+  );
+  assert.equal(/#f59e0b|#fffbeb|#92400e/.test(sectionBody), false);
+});
+
+test("the Import Attendees button is the canonical AppButton with variant=\"primary\" and loading={importing} -- exact onClick, disabled expression, and label text preserved; darkButtonStyle and the now-unused CSSProperties import are gone", () => {
+  const source = readSource();
+  assert.match(source, /import \{ AppButton, AppLinkButton \} from "@\/components\/ui\/AppButton";/);
+  assert.equal(/darkButtonStyle/.test(source), false);
+  assert.equal(/CSSProperties/.test(source), false);
+  assert.match(
+    source,
+    /<AppButton\s*\n\s*variant="primary"\s*\n\s*loading=\{importing\}\s*\n\s*onClick=\{\(\) => void handleImport\(\)\}\s*\n\s*disabled=\{\s*\n\s*importing \|\|\s*\n\s*parsing \|\|\s*\n\s*!selectedImportEventId \|\|\s*\n\s*!rawRows\.length \|\|\s*\n\s*eventChangedSinceLoad\s*\n\s*\}\s*\n\s*>\s*\n\s*\{importing \? "Importing\.\.\." : "Import Attendees"\}/,
+  );
+});
+
+test("regression: guard, shell, backTarget, routing doors, review/validation calculations, and lifecycle wiring downstream of this slice are all untouched", () => {
+  const source = readSource();
+  assert.match(source, /<AdminRouteGuard requiredTask="event\.imports\.manage">/);
+  assert.match(
+    source,
+    /backTarget=\{\{ href: "\/admin\/attendees", label: "Attendees" \}\}/,
+  );
+  assert.equal(/PageNavigation/.test(source), false);
+  assert.match(source, /const importType = readImportType\(searchParams\);/);
+  assert.match(source, /const parsedReviewIssues = useMemo<ReviewIssue\[\]>/);
+  assert.match(source, /const savedAttendeeIssues = useMemo/);
+  assert.match(source, /<ActiveRunsPanel/);
+  assert.match(source, /<RunLifecycleActions/);
+  assert.match(source, /<AbandonRowButton/);
+  assert.match(source, /<ImportHistoryPanel eventId=\{selectedImportEventId\} importType="attendee" \/>/);
+  assert.match(source, /<DataTable caption="Governed import results">/);
+  assert.match(source, /<DataTable caption="Imported data preview">/);
+  assert.match(source, /<DataTable caption="Saved attendee list">/);
+  assert.match(source, /<AppLinkButton variant="tertiary" href="\/admin\/imports">\s*\n\s*Back to Imports/);
+});
