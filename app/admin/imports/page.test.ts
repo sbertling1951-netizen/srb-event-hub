@@ -803,12 +803,10 @@ test("regression: RunLifecycleActions/AbandonRowButton props and callbacks, Data
   assert.match(source, /const summary = summarizeAttendeeImportRows\(importRunResult\.rows\);/);
 });
 
-test("regression: Row Preview remains its pre-Slice-5 hand-rolled card, untouched -- Saved Attendee List's own heading was converted by Slice 5 (see its own tests below)", () => {
+test("regression: Row Preview remains the only deferred hand-rolled card before Slice 6", () => {
   const source = readSource();
-  assert.match(source, /<h2 style=\{\{ marginTop: 0, marginBottom: 6 \}\}>Row Preview<\/h2>/);
-  // Untouched hex colors that remain outside the Slice 3/4/5 boundary.
-  assert.match(source, /color: "#8a1f1f"/);
-  assert.match(source, /color: "#166534"/);
+  assert.match(source, /<PageSection variant="card" title="Row Preview">/);
+  assert.match(source, /<PageSection variant="card" title="Saved Attendee List">/);
 });
 
 // -- Central UI: Imports Interior, Slice 4 Import Summary -----------------
@@ -876,13 +874,11 @@ test("all four Import Summary metric-tile borders use the border-default token, 
   assert.match(tilesBody, />Detected Headers<\/div>\s*\n\s*<div style=\{\{ fontSize: 22, fontWeight: 800 \}\}>\s*\n\s*\{headers\.length\}/);
 });
 
-test("the preview's 'No file loaded yet.' text is the canonical EmptyState, preserving its exact !rows.length condition and text -- Row Preview's own separate, untouched 'No file loaded yet.' div (a different section, out of this slice's scope) is unaffected", () => {
+test("the imported-data preview and Row Preview use the canonical EmptyState with the exact message", () => {
   const source = readSource();
   assert.match(source, /\{!rows\.length \? \(\s*\n\s*<EmptyState message="No file loaded yet\." \/>\s*\n\s*\) : isCompact \? \(/);
-  // Exactly one EmptyState "No file loaded yet." exists (the preview's);
-  // Row Preview's own plain-div instance is untouched and still present.
-  assert.equal((source.match(/<EmptyState message="No file loaded yet\." \/>/g) || []).length, 1);
-  assert.equal((source.match(/<div style=\{\{ opacity: 0\.8 \}\}>No file loaded yet\.<\/div>/g) || []).length, 1);
+  assert.equal((source.match(/<EmptyState message="No file loaded yet\." \/>/g) || []).length, 2);
+  assert.equal((source.match(/<div style=\{\{ opacity: 0\.8 \}\}>No file loaded yet\.<\/div>/g) || []).length, 0);
 });
 
 test("regression: showFullImportTable state declaration, the Imported Data Preview <h3>, and the preview ResponsiveList/DataTable columns/captions/row keys/helpers are byte-identical", () => {
@@ -917,7 +913,7 @@ test("regression: guard, shell/backTarget, routing, lifecycle wiring, and Saved 
   assert.match(source, /<AbandonRowButton/);
   assert.match(source, /<ImportHistoryPanel eventId=\{selectedImportEventId\} importType="attendee" \/>/);
   assert.match(source, /<DataTable caption="Saved attendee list">/);
-  assert.match(source, /<h2 style=\{\{ marginTop: 0, marginBottom: 6 \}\}>Row Preview<\/h2>/);
+  assert.match(source, /<PageSection variant="card" title="Row Preview">/);
 });
 
 // -- Central UI: Imports Interior, Slice 5 Saved Attendee List ------------
@@ -1015,11 +1011,81 @@ test("regression: loadSavedAttendees, savedAttendeePageSize/loadingSavedAttendee
 
 test("regression: Row Preview and its content are entirely untouched by this slice", () => {
   const source = readSource();
-  const rowPreviewIdx = source.indexOf("<h2 style={{ marginTop: 0, marginBottom: 6 }}>Row Preview</h2>");
+  const rowPreviewIdx = source.indexOf('<PageSection variant="card" title="Row Preview">');
   assert.notEqual(rowPreviewIdx, -1);
   const rowPreviewBody = source.slice(rowPreviewIdx);
-  assert.match(rowPreviewBody, /<div style=\{\{ opacity: 0\.8 \}\}>No file loaded yet\.<\/div>/);
-  assert.match(rowPreviewBody, /color: "#8a1f1f"/);
-  assert.match(rowPreviewBody, /color: "#166534"/);
+  assert.match(rowPreviewBody, /<PageSection variant="card" title="Row Preview">/);
   assert.match(rowPreviewBody, /importPreviewPageSize/);
+});
+
+// -- Central UI: Imports Interior, Row Preview ----------------------------
+//
+// Only the terminal Row Preview card is converted here. These assertions
+// constrain the exact presentation substitutions while keeping row data,
+// warning semantics, and the rest of the page on their existing contracts.
+
+test("Row Preview is a PageSection with preserved count, controls, and body order", () => {
+  const source = readSource();
+  const sectionIdx = source.indexOf('<PageSection variant="card" title="Row Preview">');
+  assert.notEqual(sectionIdx, -1);
+  const sectionBody = source.slice(sectionIdx);
+  const countIdx = sectionBody.indexOf("imported row");
+  const fieldIdx = sectionBody.indexOf('<Field label="Rows to Show">');
+  const emptyIdx = sectionBody.indexOf("!rows.length");
+  assert.ok(
+    countIdx > -1 && fieldIdx > countIdx && emptyIdx > fieldIdx,
+    "expected count, Rows to Show control, and row body in order",
+  );
+  assert.equal(/<h2[^>]*>Row Preview<\/h2>/.test(sectionBody), false);
+});
+
+test("Row Preview Rows to Show uses Field + Select with the exact value, handler, cast, and options", () => {
+  const source = readSource();
+  const fieldIdx = source.lastIndexOf('<Field label="Rows to Show">');
+  const fieldEnd = source.indexOf("</Field>", fieldIdx) + "</Field>".length;
+  const fieldBlock = source.slice(fieldIdx, fieldEnd);
+  assert.equal(/<select\b/.test(fieldBlock), false);
+  assert.match(
+    fieldBlock,
+    /<Select\s*\n\s*\{\.\.\.controlProps\}\s*\n\s*value=\{importPreviewPageSize\}\s*\n\s*onChange=\{\(e\) =>\s*\n\s*setImportPreviewPageSize\(\s*\n\s*e\.target\.value as "25" \| "50" \| "100" \| "all",\s*\n\s*\)\s*\n\s*\}\s*\n\s*>/,
+  );
+  const options = [...fieldBlock.matchAll(/<option value="([^"]+)">([^<]+)<\/option>/g)].map((match) => [match[1], match[2]]);
+  assert.deepEqual(options, [
+    ["25", "25"],
+    ["50", "50"],
+    ["100", "100"],
+    ["all", "Entire List"],
+  ]);
+});
+
+test("Row Preview empty state and row chrome use the exact semantic distinction", () => {
+  const source = readSource();
+  const sectionIdx = source.indexOf('<PageSection variant="card" title="Row Preview">');
+  const sectionBody = source.slice(sectionIdx);
+  assert.match(
+    sectionBody,
+    /\{!rows\.length \? \(\s*\n\s*<EmptyState message="No file loaded yet\." \/>\s*\n\s*\) : \(/,
+  );
+  assert.match(sectionBody, /border: "1px solid var\(--color-border-default\)"/);
+  assert.match(sectionBody, /background: "var\(--color-bg-muted\)"/);
+  assert.match(sectionBody, /row\.warnings\.length \? \(/);
+  assert.match(sectionBody, /color: "var\(--color-status-error\)"/);
+  assert.match(sectionBody, /Warnings: \{row\.warnings\.join\(" • "\)\}/);
+  assert.match(sectionBody, /\) : \(\s*\n\s*<div\s*\n\s*style=\{\{\s*\n\s*marginTop: 10,\s*\n\s*color: "var\(--color-status-success\)",/);
+  assert.match(sectionBody, /No warnings detected\./);
+  assert.equal(/<Alert/.test(sectionBody), false);
+  assert.equal(/#ddd|#fafafa|#8a1f1f|#166534/.test(sectionBody), false);
+});
+
+test("Row Preview data contracts remain unchanged", () => {
+  const source = readSource();
+  const sectionIdx = source.indexOf('<PageSection variant="card" title="Row Preview">');
+  const sectionBody = source.slice(sectionIdx);
+  assert.match(sectionBody, /key=\{`\$\{row\.entry_id\}-\$\{row\.rowNumber\}`\}/);
+  assert.match(sectionBody, /previewRows\.map\(\(row\) =>/);
+  assert.match(sectionBody, /row\.activities\.map\(\(activity, index\) =>/);
+  assert.match(sectionBody, /Activity:|Activities/);
+  assert.match(sectionBody, /importPreviewPageSize/);
+  assert.match(sectionBody, /setImportPreviewPageSize\(\s*e\.target\.value as "25" \| "50" \| "100" \| "all"/);
+  assert.match(source, /const previewRows = useMemo\(/);
 });

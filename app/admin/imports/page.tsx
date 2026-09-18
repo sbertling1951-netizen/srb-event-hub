@@ -2076,7 +2076,7 @@ function AdminAttendeeImportsPageInner() {
         )}
       </PageSection>
 
-      <div className="card" style={{ padding: 18 }}>
+      <PageSection variant="card" title="Row Preview">
         <div
           style={{
             display: "flex",
@@ -2088,43 +2088,35 @@ function AdminAttendeeImportsPageInner() {
           }}
         >
           <div>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Row Preview</h2>{" "}
             <div style={{ fontSize: 14, opacity: 0.8 }}>
               {rows.length} imported row{rows.length === 1 ? "" : "s"}
             </div>
           </div>
 
           <div style={{ minWidth: 180 }}>
-            <label
-              style={{ display: "block", fontWeight: 600, marginBottom: 6 }}
-            >
-              Rows to Show
-            </label>
-            <select
-              value={importPreviewPageSize}
-              onChange={(e) =>
-                setImportPreviewPageSize(
-                  e.target.value as "25" | "50" | "100" | "all",
-                )
-              }
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #ccc",
-                background: "white",
-              }}
-            >
-              <option value="25">25</option>
-              <option value="50">50</option>
-              <option value="100">100</option>
-              <option value="all">Entire List</option>
-            </select>
+            <Field label="Rows to Show">
+              {(controlProps) => (
+                <Select
+                  {...controlProps}
+                  value={importPreviewPageSize}
+                  onChange={(e) =>
+                    setImportPreviewPageSize(
+                      e.target.value as "25" | "50" | "100" | "all",
+                    )
+                  }
+                >
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="all">Entire List</option>
+                </Select>
+              )}
+            </Field>
           </div>
         </div>
 
         {!rows.length ? (
-          <div style={{ opacity: 0.8 }}>No file loaded yet.</div>
+          <EmptyState message="No file loaded yet." />
         ) : (
           <div style={{ display: "grid", gap: 14 }}>
             <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 10 }}>
@@ -2134,10 +2126,10 @@ function AdminAttendeeImportsPageInner() {
               <div
                 key={`${row.entry_id}-${row.rowNumber}`}
                 style={{
-                  border: "1px solid #ddd",
+                  border: "1px solid var(--color-border-default)",
                   borderRadius: 12,
                   padding: 14,
-                  background: "#fafafa",
+                  background: "var(--color-bg-muted)",
                 }}
               >
                 <div
@@ -2214,13 +2206,21 @@ function AdminAttendeeImportsPageInner() {
 
                 {row.warnings.length ? (
                   <div
-                    style={{ marginTop: 10, color: "#8a1f1f", fontSize: 13 }}
+                    style={{
+                      marginTop: 10,
+                      color: "var(--color-status-error)",
+                      fontSize: 13,
+                    }}
                   >
                     Warnings: {row.warnings.join(" • ")}
                   </div>
                 ) : (
                   <div
-                    style={{ marginTop: 10, color: "#166534", fontSize: 13 }}
+                    style={{
+                      marginTop: 10,
+                      color: "var(--color-status-success)",
+                      fontSize: 13,
+                    }}
                   >
                     No warnings detected.
                   </div>
@@ -2229,7 +2229,7 @@ function AdminAttendeeImportsPageInner() {
             ))}
           </div>
         )}
-      </div>
+      </PageSection>
         </>
       )}
     </div>
