@@ -6,6 +6,10 @@ import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { ObjectPanel } from "@/components/ObjectPanel";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { Alert } from "@/components/ui/Alert";
+import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageSection } from "@/components/ui/PageSection";
 import { getAgendaColor } from "@/lib/agendaColors";
 import { logEngagement } from "@/lib/engagement";
 import { memberIdentityRpcArgs } from "@/lib/memberSession";
@@ -441,25 +445,9 @@ function MemberAgendaPageInner() {
 
   return (
     <div style={{ display: "grid", gap: 16, minWidth: 0, maxWidth: 960 }}>
-      {status ? (
-        <div role="status" style={{ fontSize: 13, color: "#666" }}>
-          {status}
-        </div>
-      ) : null}
+      {status && !error ? <Alert tone="info">{status}</Alert> : null}
 
-      {error ? (
-        <div
-          style={{
-            border: "1px solid #f5c2c7",
-            background: "#fff5f5",
-            color: "#842029",
-            borderRadius: 10,
-            padding: 14,
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
 
       {currentItem ? (
         <div
@@ -527,14 +515,7 @@ function MemberAgendaPageInner() {
         </div>
       ) : null}
 
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 10,
-          background: "white",
-          padding: 12,
-        }}
-      >
+      <PageSection variant="card">
         <div style={{ fontWeight: 700, marginBottom: 8 }}>
           Filter by category
         </div>
@@ -542,39 +523,21 @@ function MemberAgendaPageInner() {
           {categories.map((category) => {
             const active = selectedCategory === category;
             return (
-              <button
+              <AppButton
                 key={category}
-                type="button"
+                variant={active ? "primary" : "secondary"}
+                aria-pressed={active}
                 onClick={() => setSelectedCategory(category)}
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 999,
-                  border: active ? "1px solid #2563eb" : "1px solid #d1d5db",
-                  background: active ? "#dbeafe" : "#fff",
-                  color: "#111827",
-                  cursor: "pointer",
-                  fontWeight: 700,
-                }}
               >
                 {category}
-              </button>
+              </AppButton>
             );
           })}
         </div>
-      </div>
+      </PageSection>
 
       {groupedAgenda.length === 0 ? (
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            background: "white",
-            padding: 16,
-            color: "#666",
-          }}
-        >
-          No agenda items available.
-        </div>
+        <EmptyState message="No agenda items available." />
       ) : (
         <div style={{ display: "grid", gap: 18 }}>
           {groupedAgenda.map((group) => {
@@ -905,13 +868,12 @@ function MemberAgendaPageInner() {
             ) : null}
 
             {evalItemIds.has(selectedAgendaItem.id) ? (
-              <a
-                className="app-button app-button-primary"
+              <AppLinkButton
+                variant="primary"
                 href={`/member/evaluation?target=agenda_item&id=${selectedAgendaItem.id}`}
-                style={{ display: "inline-block", textDecoration: "none" }}
               >
                 Evaluate this presentation
-              </a>
+              </AppLinkButton>
             ) : null}
 
             {selectedAgendaItem.category ||
