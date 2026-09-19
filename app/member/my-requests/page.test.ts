@@ -189,7 +189,7 @@ test("each request card uses PageSection, keeping its key, grid layout, and its 
   );
 });
 
-test("Slice 1/2 leaves statusBadgeStyle, Cancel/Undo, and every load/mutation/API/identity contract untouched", () => {
+test("Slice 1/2 leaves statusBadgeStyle, the Cancel/Undo handlers, and every load/mutation/API/identity contract untouched", () => {
   assert.match(SOURCE, /function statusBadgeStyle\(status: string\): React\.CSSProperties \{/);
   assert.match(SOURCE, /onClick=\{\(\) => void cancelRequest\(request\.id\)\}/);
   assert.match(SOURCE, /onClick=\{\(\) => void undoCancelRequest\(request\.id\)\}/);
@@ -198,5 +198,64 @@ test("Slice 1/2 leaves statusBadgeStyle, Cancel/Undo, and every load/mutation/AP
   assert.match(SOURCE, /fetch\("\/api\/member\/vendor-requests", \{\s*\n\s*method: "PATCH",/);
   assert.match(SOURCE, /function statusMessage\(status: string\) \{/);
   assert.match(SOURCE, /const activeCount = useMemo\(\(\) => \{/);
+  assert.equal((SOURCE.match(/backTarget=/g) || []).length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Presentation Slice 3: the Cancel Request and Undo Cancel controls now use
+// the shared AppButton (outlined danger / neutral secondary), with no change
+// to the render ternary, the handlers, the immediate mutation behavior, the
+// API/payload/identity paths, statusBadgeStyle, or the card contents.
+//
+// Accepted appearance changes: Cancel goes from a filled #fee2e2 pill to
+// `.app-button-danger`, which is transparent at rest and tints to #fee2e2
+// only on hover; Undo loses its #dbeafe/#1e3a8a blue restore affinity for
+// the neutral `.app-button-secondary` treatment; both adopt the shared 45px
+// minimum touch target (previously ~34px) and 16px label.
+//
+// These are structural source assertions: they pin the props and JSX shape,
+// not rendered geometry. Neither the 45px height nor the outlined resting
+// fill is measured here -- that needs a browser.
+// ---------------------------------------------------------------------------
+
+test("Cancel Request uses the outlined danger AppButton, preserving its exact handler, label, and 8px top spacing", () => {
+  assert.match(SOURCE, /import \{ AppButton \} from "@\/components\/ui\/AppButton";/);
+  assert.match(
+    SOURCE,
+    /<AppButton\s*\n\s*variant="danger"\s*\n\s*onClick=\{\(\) => void cancelRequest\(request\.id\)\}\s*\n\s*style=\{\{ marginTop: 8 \}\}\s*\n\s*>\s*\n\s*Cancel Request\s*\n\s*<\/AppButton>/,
+  );
+});
+
+test("Undo Cancel uses the neutral secondary AppButton, preserving its exact handler, label, and 8px top spacing", () => {
+  assert.match(
+    SOURCE,
+    /<AppButton\s*\n\s*variant="secondary"\s*\n\s*onClick=\{\(\) => void undoCancelRequest\(request\.id\)\}\s*\n\s*style=\{\{ marginTop: 8 \}\}\s*\n\s*>\s*\n\s*Undo Cancel\s*\n\s*<\/AppButton>/,
+  );
+});
+
+test("the status-driven render ternary is unchanged and both controls stay immediate -- no disabled, loading, busy state, or confirmation was added", () => {
+  assert.match(
+    SOURCE,
+    /\{requestStatus !== "completed" && requestStatus !== "cancelled" \? \(/,
+  );
+  assert.match(SOURCE, /\) : requestStatus === "cancelled" \? \(/);
+  // Scoped to the two converted controls: no raw <button> remains on this
+  // page at all (both were the conversion targets).
+  assert.doesNotMatch(SOURCE, /<button\b/);
+  assert.doesNotMatch(SOURCE, /<AppButton[\s\S]{0,200}?(disabled|loading)=/);
+  assert.doesNotMatch(SOURCE, /ConfirmDialog|window\.confirm/);
+  // The immediate mutation path is untouched: no per-request pending state.
+  assert.doesNotMatch(SOURCE, /cancellingRequestId|pendingCancel/);
+});
+
+test("Slice 3 leaves statusBadgeStyle, the card contents, and the governed PATCH path untouched", () => {
+  assert.match(SOURCE, /function statusBadgeStyle\(status: string\): React\.CSSProperties \{/);
+  assert.match(SOURCE, /async function cancelRequest\(id: string\) \{/);
+  assert.match(SOURCE, /async function undoCancelRequest\(id: string\) \{/);
+  assert.match(SOURCE, /patchRequestStatus\(id, "cancelled"\)/);
+  assert.match(SOURCE, /patchRequestStatus\(id, "new"\)/);
+  assert.match(SOURCE, /fetch\("\/api\/member\/vendor-requests", \{\s*\n\s*method: "PATCH",/);
+  assert.match(SOURCE, /<strong>Site:<\/strong>/);
+  assert.match(SOURCE, /Submitted: \{formatDate\(request\.created_at\)\}/);
   assert.equal((SOURCE.match(/backTarget=/g) || []).length, 0);
 });

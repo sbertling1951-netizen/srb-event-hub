@@ -486,6 +486,8 @@ function PermissionsInner() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: 8,
                     marginBottom: 8,
                   }}
                 >
@@ -504,25 +506,17 @@ function PermissionsInner() {
                     {section}
                   </div>
 
-                  <button
-                    type="button"
+                  <AppButton
+                    variant="secondary"
                     onClick={toggleSection}
-                    style={{
-                      fontSize: 11,
-                      padding: "4px 8px",
-                      borderRadius: 6,
-                      border: "1px solid #d1d5db",
-                      background: "#f9fafb",
-                      cursor: "pointer",
-                      fontWeight: 600,
-                    }}
+                    style={{ marginLeft: "auto" }}
                   >
                     {allEnabled
                       ? "Disable All"
                       : noneEnabled
                         ? "Enable All"
                         : "Toggle All"}
-                  </button>
+                  </AppButton>
                 </div>
 
                 <div

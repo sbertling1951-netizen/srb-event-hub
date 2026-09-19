@@ -220,11 +220,21 @@ test("the three section-tint background/text color pairs are tokenized to distin
   assert.equal(new Set(bgTokens).size, 3);
 });
 
-test("regression: the custom permission toggle switch, its aria-pressed contract, knob, and enabled/disabled colors are completely untouched", () => {
+test("regression: the custom permission toggle switch, its aria-pressed contract, knob, dimensions, event behavior, and enabled/disabled colors are completely untouched", () => {
   assert.match(SOURCE, /aria-pressed=\{enabled\}/);
   assert.match(SOURCE, /background: enabled \? "#0b5cff" : "#e5e7eb"/);
   assert.match(SOURCE, /left: enabled \? 20 : 3,/);
   assert.match(SOURCE, /disabled=\{locked \|\| undoing\}/);
+  // The switch is deliberately excluded from the AppButton migration: it is
+  // a 42x24 animated toggle with button (aria-pressed) semantics, which the
+  // shared Checkbox -- a bare native input -- would not reproduce.
+  assert.match(SOURCE, /width: 42,\s*\n\s*height: 24,\s*\n\s*minWidth: 42,/);
+  assert.match(SOURCE, /e\.stopPropagation\(\);/);
+  assert.match(SOURCE, /void toggle\(group, perm\);/);
+  // It is the ONE remaining raw <button> on this page. This page is
+  // deliberately NOT under a blanket no-raw-button rule -- that would
+  // invite converting this excluded switch.
+  assert.equal((SOURCE.match(/<button\b/g) || []).length, 1);
 });
 
 test("regression: permission keys, groups, labels, dependency rules, and cascade/toggle-section logic are byte-identical", () => {
@@ -236,4 +246,64 @@ test("regression: permission keys, groups, labels, dependency rules, and cascade
   assert.match(SOURCE, /can_manage_attendees: \["can_manage_checkin", "can_manage_parking"\],/);
   assert.match(SOURCE, /function isRequiredByAnother\(group: string, key: string\)/);
   assert.match(SOURCE, /async function toggleSection\(\)/);
+});
+
+// ---------------------------------------------------------------------------
+// Presentation: the per-section bulk Disable All / Enable All / Toggle All
+// control now uses the shared secondary AppButton, with no change to
+// toggleSection, the dependency/cascade rules it delegates to, locked-state
+// handling, persistence, presets, undo, authority checks, or the permission
+// refresh. The per-permission animated switches are excluded (see the
+// regression test above, which positively pins them).
+//
+// Accepted layout change: the bulk control adopts the shared 45px minimum
+// touch target, roughly doubling its height and width. Rendered 30 times
+// (6 privilege groups x 5 permission sections), that raises the page's
+// overall height appreciably. Its header row therefore gains
+// flexWrap/gap so the control can wrap below a long section label instead
+// of crushing it, and marginLeft: auto keeps it right-aligned on either
+// line.
+//
+// These are structural source assertions. The height increase and the exact
+// width at which the row wraps are source-level estimates from resolved CSS,
+// not browser measurements -- this file cannot verify rendered geometry.
+// ---------------------------------------------------------------------------
+
+test("the bulk section control is the canonical secondary AppButton, preserving toggleSection and the exact three-way label logic", () => {
+  assert.match(
+    SOURCE,
+    /<AppButton\s*\n\s*variant="secondary"\s*\n\s*onClick=\{toggleSection\}\s*\n\s*style=\{\{ marginLeft: "auto" \}\}\s*\n\s*>\s*\n\s*\{allEnabled\s*\n\s*\? "Disable All"\s*\n\s*: noneEnabled\s*\n\s*\? "Enable All"\s*\n\s*: "Toggle All"\}\s*\n\s*<\/AppButton>/,
+  );
+  // Its former hand-rolled compact styling is gone. #f9fafb and #d1d5db
+  // were unique to this control, so their absence is exact.
+  assert.equal(/background: "#f9fafb"/.test(SOURCE), false);
+  assert.equal(/border: "1px solid #d1d5db"/.test(SOURCE), false);
+  // fontSize: 11 is NOT scoped to this control by string alone -- the
+  // "(required)" and dependency-hint <span> badges legitimately use it too.
+  // It dropped from three occurrences to those two.
+  assert.equal((SOURCE.match(/fontSize: 11,/g) || []).length, 2);
+  // No disabled/loading gate was invented for a control that never had one.
+  assert.doesNotMatch(SOURCE, /onClick=\{toggleSection\}\s*\n\s*(disabled|loading)=/);
+});
+
+test("the bulk control's header row keeps its alignment, justification and margin, and adds only wrapping and a gap", () => {
+  assert.match(
+    SOURCE,
+    /display: "flex",\s*\n\s*alignItems: "center",\s*\n\s*justifyContent: "space-between",\s*\n\s*flexWrap: "wrap",\s*\n\s*gap: 8,\s*\n\s*marginBottom: 8,/,
+  );
+});
+
+test("the governed mutation path, dependency cascade, locked handling, presets, undo, and permission refresh are all unchanged", () => {
+  assert.match(SOURCE, /async function toggleSection\(\)/);
+  assert.match(SOURCE, /const enableAll = !allEnabled;/);
+  assert.match(SOURCE, /if \(isRequiredByAnother\(group, perm\)\) \{\s*\n\s*continue;/);
+  assert.match(SOURCE, /function isRequiredByAnother\(group: string, key: string\)/);
+  assert.match(SOURCE, /bumpAdminPermissionsVersion/);
+  assert.match(SOURCE, /applyPreset/);
+  assert.match(SOURCE, /undoLastChange/);
+  assert.match(SOURCE, /<AdminRouteGuard requiredPermission="can_manage_admins">/);
+  assert.match(
+    SOURCE,
+    /pageTitle="Permissions"\s*\n\s*backTarget=\{\{ href: "\/admin\/admin", label: "Admin" \}\}/,
+  );
 });

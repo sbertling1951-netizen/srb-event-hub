@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MemberShellAdapter } from "@/components/shell/adapters/MemberShellAdapter";
 import { Alert } from "@/components/ui/Alert";
+import { AppButton } from "@/components/ui/AppButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSection } from "@/components/ui/PageSection";
 import { memberIdentityRpcArgs } from "@/lib/memberSession";
@@ -483,39 +484,21 @@ function MyRequestsInner() {
               Submitted: {formatDate(request.created_at)}
             </div>
             {requestStatus !== "completed" && requestStatus !== "cancelled" ? (
-              <button
-                type="button"
+              <AppButton
+                variant="danger"
                 onClick={() => void cancelRequest(request.id)}
-                style={{
-                  marginTop: 8,
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                  border: "1px solid #ef4444",
-                  background: "#fee2e2",
-                  color: "#7f1d1d",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
+                style={{ marginTop: 8 }}
               >
                 Cancel Request
-              </button>
+              </AppButton>
             ) : requestStatus === "cancelled" ? (
-              <button
-                type="button"
+              <AppButton
+                variant="secondary"
                 onClick={() => void undoCancelRequest(request.id)}
-                style={{
-                  marginTop: 8,
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                  border: "1px solid #2563eb",
-                  background: "#dbeafe",
-                  color: "#1e3a8a",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
+                style={{ marginTop: 8 }}
               >
                 Undo Cancel
-              </button>
+              </AppButton>
             ) : null}
           </PageSection>
         );
