@@ -249,6 +249,236 @@ test("the Mid-Size Scale toggle re-renders the real, existing SampleRoster (Sect
   );
 });
 
+// --- app/globals.css block extraction -------------------------------------
+//
+// These tests assert on slices of the real stylesheet. The boundaries used to
+// be bare `indexOf("<selector>")` pairs, which broke when the shared
+// link-button repair added the eight variant class names inside a
+// `:not(:where(...))` exclusion list: those names now also occur EARLIER in
+// the file than the rules that declare them, so several markers resolved to
+// the exclusion list instead of the real rule -- or to an index before the
+// block's own start, silently yielding an empty slice that made an assertion
+// either fail confusingly or pass against unrelated text.
+//
+// `cssRule` below matches a rule's COMPLETE selector list (whitespace-
+// insensitively) rather than a line-anchored prefix, so an exclusion-list
+// entry, a neighbouring rule, or a rule that merely starts the same way can
+// never be mistaken for the requested one. It reads comment-blanked text both
+// to find the rule and to return it, and it fails loudly on a missing,
+// ambiguous, unterminated or malformed rule instead of producing an empty or
+// oversized block. `cssBetween` still reads raw source, because its one
+// caller deliberately inspects a documentation comment.
+
+/** Replace every CSS comment with the same number of spaces, so offsets stay
+ *  aligned with the original source while commented-out, rule-shaped text can
+ *  never be matched as a real rule. */
+function blankCssComments(cssSource: string): string {
+  return cssSource.replace(/\/\*[\s\S]*?\*\//g, (comment) => " ".repeat(comment.length));
+}
+
+/** Whitespace-insensitive form of a selector list, so a caller may pass it on
+ *  one line or exactly as wrapped in the stylesheet. */
+function normalizeSelectorList(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The full source of the ONE top-level rule whose COMPLETE selector list
+ * equals `selectorList`, from its first selector through its own closing
+ * brace.
+ *
+ * Deliberately not a prefix/substring search. A prefix match could return a
+ * different rule that merely starts the same way, silently pick one of two
+ * rules sharing a prefix (the narrowed nav-link rest and :hover rules), read a
+ * commented-out rule body, or -- when the requested rule is unterminated --
+ * run on and adopt a LATER rule's declarations and closing brace. Each of
+ * those is asserted against in the helper regression tests below.
+ *
+ * Fails explicitly when the rule is missing, ambiguous, unterminated, or has
+ * another `{` opening before its own `}`.
+ */
+function cssRule(cssSource: string, selectorList: string): string {
+  const scan = blankCssComments(cssSource);
+  const wanted = normalizeSelectorList(selectorList);
+  assert.notEqual(wanted, "", "cssRule() needs a non-empty selector list");
+
+  const found: string[] = [];
+  for (let brace = scan.indexOf("{"); brace !== -1; brace = scan.indexOf("{", brace + 1)) {
+    // The selector list runs back to the end of the previous block (or the
+    // start of the file), so an at-rule header or a neighbouring rule can
+    // never be mistaken for part of this one.
+    const previousBlockEnd = Math.max(scan.lastIndexOf("}", brace), scan.lastIndexOf("{", brace - 1));
+    if (normalizeSelectorList(scan.slice(previousBlockEnd + 1, brace)) !== wanted) {
+      continue;
+    }
+
+    const close = scan.indexOf("}", brace + 1);
+    const nextOpen = scan.indexOf("{", brace + 1);
+    assert.notEqual(close, -1, `globals.css: rule "${wanted}" is never closed`);
+    assert.ok(
+      nextOpen === -1 || nextOpen > close,
+      `globals.css: rule "${wanted}" is malformed -- another "{" opens before its own "}"`,
+    );
+    // Start at the selector's own first character. Comment blanking preserves
+    // offsets, so measuring the leading run of whitespace on the BLANKED text
+    // skips any preceding comment -- slicing from previousBlockEnd directly
+    // would prepend that comment to the rule.
+    //
+    // The slice is taken from the BLANKED text, not the original source: a
+    // comment INSIDE the rule body would otherwise come back verbatim, so a
+    // commented-out declaration could satisfy a style assertion about a real
+    // one. Blanking replaces each comment with the same number of spaces, so
+    // the returned rule keeps its exact shape and offsets while containing
+    // only declarations the browser would actually apply.
+    const selectorRegion = scan.slice(previousBlockEnd + 1, brace);
+    const leadingBlank = selectorRegion.length - selectorRegion.replace(/^\s+/, "").length;
+    found.push(scan.slice(previousBlockEnd + 1 + leadingBlank, close + 1));
+  }
+
+  assert.equal(
+    found.length,
+    1,
+    `globals.css: expected exactly one rule with selector list "${wanted}", found ${found.length}`,
+  );
+  return found[0];
+}
+
+/**
+ * The text between two markers. Used only where the target IS a comment, so
+ * unlike `cssRule` this reads the raw source. The start marker must be
+ * unambiguous, and the end marker is searched forward from it so an earlier
+ * duplicate cannot invert the range.
+ */
+function cssBetween(cssSource: string, startMarker: string, endMarker: string): string {
+  const occurrences = cssSource.split(startMarker).length - 1;
+  assert.equal(occurrences, 1, `globals.css: start marker "${startMarker}" must occur exactly once, found ${occurrences}`);
+  const start = cssSource.indexOf(startMarker);
+  const end = cssSource.indexOf(endMarker, start + startMarker.length);
+  assert.notEqual(end, -1, `globals.css: end marker "${endMarker}" not found after start`);
+  return cssSource.slice(start, end);
+}
+
+/** Complete selector lists of the rules these tests extract. */
+const BASE_BUTTON_SELECTOR = ".app-button, button.app-button";
+const NAV_LINK_REST_SELECTOR =
+  "a.app-button:not( :where( .app-button-primary, .app-button-secondary," +
+  " .app-button-muted, .app-button-danger, .app-button-stop," +
+  " .app-button-success, .app-button-warning, .app-button-start ) )";
+const DANGER_SELECTOR = ".app-button-danger, button.app-button-danger, a.app-button-danger";
+const DISABLED_SELECTOR =
+  '.app-button:disabled, button.app-button:disabled, .app-button[aria-disabled="true"]';
+
+// --- cssRule() boundary-safety regressions ---------------------------------
+//
+// Each case below is a failure mode the previous prefix+"\n}" implementation
+// silently produced, verified by reproducing it before this repair. A passing
+// style-contract suite does NOT establish that extraction boundaries are safe,
+// so the boundaries themselves are tested here.
+
+test("cssRule ignores rule-shaped text inside a comment and returns the real rule", () => {
+  const css = [
+    "/* Historical note: we used to ship",
+    ".app-button-legacy {",
+    "  color: red;",
+    "} */",
+    ".app-button-legacy {",
+    "  color: green;",
+    "}",
+    "",
+  ].join("\n");
+
+  const rule = cssRule(css, ".app-button-legacy");
+  assert.match(rule, /color: green;/);
+  // The previous helper returned the commented-out body instead.
+  assert.doesNotMatch(rule, /color: red;/);
+});
+
+test("cssRule does not let a commented-out declaration INSIDE a rule body satisfy a style assertion", () => {
+  const css = [
+    ".target {",
+    "  /* .historical { background: transparent; } */",
+    "  background: red;",
+    "}",
+    "",
+  ].join("\n");
+
+  const rule = cssRule(css, ".target");
+  // The real declaration is present...
+  assert.match(rule, /background: red;/);
+  // ...and the commented-out one is not, so it can never stand in for it.
+  assert.doesNotMatch(rule, /background: transparent/);
+  assert.doesNotMatch(rule, /\.historical/);
+});
+
+test("cssRule fails explicitly when the requested rule is missing, even though another valid rule follows", () => {
+  const css = [".app-button-other {", "  color: red;", "}", ""].join("\n");
+
+  assert.throws(
+    () => cssRule(css, ".app-button-missing"),
+    /expected exactly one rule with selector list ".app-button-missing", found 0/,
+  );
+});
+
+test("cssRule fails explicitly on a malformed (unterminated) requested rule instead of adopting the next rule's body and brace", () => {
+  const css = [
+    ".app-button-broken {",
+    "  color: red;",
+    "",
+    ".app-button-next {",
+    "  color: blue;",
+    "}",
+    "",
+  ].join("\n");
+
+  assert.throws(
+    () => cssRule(css, ".app-button-broken"),
+    /malformed -- another "\{" opens before its own "\}"/,
+  );
+});
+
+test("cssRule distinguishes rest and hover rules that share a selector prefix, and rejects the bare shared prefix", () => {
+  const css = [
+    "a.app-button:not(:where(.v)) {",
+    "  text-decoration: underline;",
+    "}",
+    "",
+    "a.app-button:not(:where(.v)):hover:not(:disabled) {",
+    "  background: blue;",
+    "}",
+    "",
+  ].join("\n");
+
+  const rest = cssRule(css, "a.app-button:not(:where(.v))");
+  assert.match(rest, /text-decoration: underline;/);
+  assert.doesNotMatch(rest, /background: blue;/);
+
+  const hover = cssRule(css, "a.app-button:not(:where(.v)):hover:not(:disabled)");
+  assert.match(hover, /background: blue;/);
+  assert.doesNotMatch(hover, /text-decoration: underline;/);
+
+  // The shared prefix alone is not a complete selector list, so it is an
+  // explicit failure rather than an arbitrary pick between the two.
+  assert.throws(() => cssRule(css, "a.app-button:not("), /found 0/);
+});
+
+test("cssRule extracts the real multiline :not(:where(...)) nav-link rule from app/globals.css, matched on its complete selector list", () => {
+  const cssSource = readFileSync(fileURLToPath(new URL("../../globals.css", import.meta.url)), "utf8");
+
+  const rest = cssRule(cssSource, NAV_LINK_REST_SELECTOR);
+  // Exactly one rule, its own declarations only -- no hover sibling, and it
+  // ends at its own closing brace.
+  assert.match(rest, /^a\.app-button:not\(/);
+  assert.match(rest, /\}$/);
+  assert.doesNotMatch(rest, /:hover/);
+  assert.match(rest, /text-decoration: underline;/);
+  assert.match(rest, /padding-left: var\(--space-2\);/);
+
+  // Its :hover sibling is reachable only by its own complete selector list.
+  const hover = cssRule(cssSource, `${NAV_LINK_REST_SELECTOR}:hover:not(:disabled)`);
+  assert.match(hover, /background: var\(--color-action-secondary-hover\);/);
+  assert.doesNotMatch(hover, /text-decoration: underline;/);
+});
+
 test("the Mid-Size UI Scale IS now the real :root token set -- app/globals.css's :root carries the approved values, and only the Legacy comparison still uses a reference-only override", () => {
   const cssSource = readFileSync(fileURLToPath(new URL("../../globals.css", import.meta.url)), "utf8");
   const rootStart = cssSource.indexOf(":root {");
@@ -271,20 +501,27 @@ test("the Mid-Size UI Scale IS now the real :root token set -- app/globals.css's
 
 test("the shared .app-button/.app-button-danger/a.app-button rules in app/globals.css carry the approved System 3 semantics -- ghost ordinary, outlined destructive, link-style navigation, all at the approved 16px", () => {
   const cssSource = readFileSync(fileURLToPath(new URL("../../globals.css", import.meta.url)), "utf8");
-  const baseButtonBlock = cssSource.slice(
-    cssSource.indexOf(".app-button,\nbutton.app-button {"),
-    cssSource.indexOf("a.app-button {"),
-  );
+  // Bounded to the base rule itself, not "everything up to the nav-link
+  // rule" -- the previous end marker ("a.app-button {") no longer exists now
+  // that the nav-link selector is narrowed.
+  const baseButtonBlock = cssRule(cssSource, BASE_BUTTON_SELECTOR);
   assert.match(baseButtonBlock, /background: transparent;/);
   assert.match(baseButtonBlock, /font-size: 16px;/);
 
-  const navLinkBlock = cssSource.slice(cssSource.indexOf("a.app-button {"), cssSource.indexOf(".app-button:focus-visible"));
+  // The narrowed no-variant anchor rule, matched on its COMPLETE selector
+  // list -- the rest rule and its :hover sibling share a prefix, so a prefix
+  // match could silently return either one.
+  const navLinkBlock = cssRule(cssSource, NAV_LINK_REST_SELECTOR);
+  assert.doesNotMatch(navLinkBlock, /:hover/);
   assert.match(navLinkBlock, /text-decoration: underline;/);
+  // Still the no-variant rule: it excludes the explicit variants.
+  assert.match(navLinkBlock, /:where\(/);
+  assert.match(navLinkBlock, /\.app-button-primary,/);
 
-  const dangerBlock = cssSource.slice(cssSource.indexOf(".app-button-danger,"), cssSource.indexOf(".app-button-muted,"));
+  const dangerBlock = cssRule(cssSource, DANGER_SELECTOR);
   assert.match(dangerBlock, /background: transparent;/);
 
-  const stopComment = cssSource.slice(cssSource.indexOf("Destructive confirmation"), cssSource.indexOf(".app-button-stop,"));
+  const stopComment = cssBetween(cssSource, "Destructive confirmation", "\n.app-button-stop,");
   assert.match(stopComment, /ConfirmDialog/);
 });
 
@@ -462,10 +699,11 @@ test("the tactile treatment CSS lives on the real .app-button/.app-button-primar
 
 test("disabled always wins over the tactile treatment -- the existing .app-button:disabled rule (box-shadow: none) is more specific than any single-class variant rule, so no separate disabled override was needed", () => {
   const cssSource = readFileSync(fileURLToPath(new URL("../../globals.css", import.meta.url)), "utf8");
-  const disabledBlock = cssSource.slice(
-    cssSource.indexOf(".app-button:disabled,"),
-    cssSource.indexOf(".app-button-primary,"),
-  );
+  // Bounded to the .app-button:disabled rule itself. The previous end marker
+  // (".app-button-primary,") now first occurs inside the nav-link rule's
+  // exclusion list, which is EARLIER in the file than this rule -- inverting
+  // the range and yielding an empty block.
+  const disabledBlock = cssRule(cssSource, DISABLED_SELECTOR);
   assert.match(disabledBlock, /box-shadow: none;/);
 });
 

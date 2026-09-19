@@ -351,6 +351,19 @@ button.app-button {
   gap: var(--space-2);
   box-shadow: none;
   touch-action: manipulation;
+  /* A label word that cannot fit its line breaks instead of being clipped.
+     `anywhere` rather than `break-word` deliberately: only `anywhere`
+     participates in min-content intrinsic sizing, so a button that is a flex
+     item (default `min-width: auto`) can actually shrink to its container
+     instead of keeping the longest word's width and overflowing. Measured:
+     with `break-word` the Vendor Access action still overflowed its card at
+     320px/200% zoom; with `anywhere` it fits with every character visible.
+     Inert at normal sizes -- geometry is byte-identical until a word genuinely
+     cannot fit -- and neutralized where a caller sets `white-space: nowrap`
+     (e.g. ObjectPanel's compact primary actions). The clipping itself comes
+     from `.card { overflow: hidden }` under the 899px breakpoint; this lets
+     the label wrap rather than hiding or shrinking it. */
+  overflow-wrap: anywhere;
   /* Tactile Treatment (Central UI Standard, promoted from the
      /admin/ui-reference Section 16 prototype): every button transitions
      transform/box-shadow/background so hover elevation and the pressed-
@@ -398,8 +411,37 @@ button.app-button:active:not(:disabled) {
    AppLinkButton with no variant renders an <a>, which must read as a
    link rather than a button -- more specific than the base rule above so
    it wins for the unmodified case while an explicit variant (e.g.
-   variant="primary") still renders that variant's real button chrome. */
-a.app-button {
+   variant="primary") still renders that variant's real button chrome.
+
+   The :not(:where(...)) list is what makes that last clause true. This
+   rule was previously plain `a.app-button`, which matched EVERY anchor
+   including variant-bearing ones. Each variant rule below re-declares
+   border-color/background/background-image/color, so those did win by
+   source order -- but no variant rule declares padding-left/
+   padding-right or text-decoration, so this rule's 6px link padding and
+   underline leaked into every explicit-variant AppLinkButton, against
+   the documented contract above. Excluding the eight visual modifier
+   classes lets a variant anchor fall through to the base .app-button
+   padding and `text-decoration: none` instead, with no value repeated
+   here. :where() contributes zero specificity, so this selector stays
+   exactly (0,1,1) and no other cascade relationship shifts. The list is
+   the eight modifier-emitting variants in AppButton.tsx's ButtonVariant
+   union -- deliberately NOT a [class*="app-button-"] substring match,
+   which would also catch the layout utilities .app-button-row/-grid-2/
+   -grid-3/-full/-spinner. `default`/`tertiary` emit no class at all
+   (GHOST_VARIANTS), so they keep this link treatment, as intended. */
+a.app-button:not(
+    :where(
+      .app-button-primary,
+      .app-button-secondary,
+      .app-button-muted,
+      .app-button-danger,
+      .app-button-stop,
+      .app-button-success,
+      .app-button-warning,
+      .app-button-start
+    )
+  ) {
   border-color: transparent;
   background: transparent;
   background-image: none;
@@ -415,8 +457,29 @@ a.app-button {
    required so this rule's specificity (0,3,1) beats the base
    .app-button:hover:not(:disabled) rule (0,3,0) above -- without it, the
    base ghost-hover background would win over this link-hover background
-   despite appearing earlier in the file. */
-a.app-button:hover:not(:disabled) {
+   despite appearing earlier in the file.
+
+   Narrowed with the same :not(:where(...)) list as the rest rule above,
+   for the same reason: at (0,3,1) this beat every a.app-button-*:hover
+   rule (0,2,1), so a variant anchor's hover was repainted with the link
+   hover. Excluded variants now hover correctly -- primary/danger/start/
+   stop via the element-agnostic .app-button-<v>:hover:not(:disabled)
+   selector in each variant's own hover group (0,3,0, winning over the
+   base ghost hover on source order), and secondary/muted/success/
+   warning via that base ghost hover, which is exactly what their
+   <button> counterparts already get. :where() keeps this at (0,3,1). */
+a.app-button:not(
+    :where(
+      .app-button-primary,
+      .app-button-secondary,
+      .app-button-muted,
+      .app-button-danger,
+      .app-button-stop,
+      .app-button-success,
+      .app-button-warning,
+      .app-button-start
+    )
+  ):hover:not(:disabled) {
   background: var(--color-action-secondary-hover);
   border-color: transparent;
 }
