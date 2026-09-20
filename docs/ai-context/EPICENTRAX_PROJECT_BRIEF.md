@@ -231,6 +231,16 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Re-anchor reconciliation — 2026-09-20 (Shared focus-ring contrast repair)
+
+- Current substantive baseline: `e0b3d61`, committed locally on top of `d44ba41`. Promotion and deployment of this repair are pending.
+- The shared focus token changed from `rgba(37, 99, 235, 0.35)` to opaque `#6b7280`. Contrast is 3.6927–4.8345:1 across nine evaluated flat colors. `#0f172a` is supplemental coverage, not a verified Photos control background.
+- Selector scope, outline geometry, independent invalid-input indicators, container suppressions, and tenant-branding invariance remain unchanged.
+- LEM implemented the two-file repair; Lun independently reviewed it. Reported validation: 173 focused tests, targeted lint, and a production build generating 133 static pages. Mel independently verified byte-identical TypeScript output against clean HEAD with equivalent generated inputs: 16 existing diagnostics.
+- Browser evidence covers automated Chromium, Firefox, and WebKit fixtures, including corrected per-control text enlargement. WebKit keyboard coverage uses Option-Tab/Option-Shift-Tab. This does not establish native Safari, physical-device, live focus-trap, or comprehensive accessibility conformance.
+- Existing geometry findings remain open; this color-only repair neither resolves them nor establishes fixture-only findings as live-app defects.
+- Earlier deployment statements and unresolved production migration-ledger checks retain their existing attribution and limitations. No deployment or database verification occurred during this repair.
+
 ### Re-anchor reconciliation — 2026-09-19 (Central UI Standard rollout, shell navigation, behavior/authority fixes, and the shared link-button repair)
 
 - **Current substantive baseline: `cdaf03a` — LIVE.** Pap reported the service
@@ -746,12 +756,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-19T18:36:00-07:00`
+**Generated at:** `2026-09-20T08:55:26-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `cdaf03a fix(ui): preserve shared link-button styling and wrapping`
-**Commit date:** `2026-09-19T08:18:31-07:00`
-**origin/main:** `cdaf03a`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**Commit:** `e0b3d61 fix(ui): improve shared focus-ring contrast`
+**Commit date:** `2026-09-20T08:54:49-07:00`
+**origin/main:** `d44ba41`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
