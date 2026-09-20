@@ -1068,31 +1068,30 @@ function NearbyPageInner() {
                     <div className="nearby-action-row" style={{ marginTop: 6 }}>
                       {(place.address ||
                         (place.lat !== null && place.lng !== null)) && (
-                        <button
-                          type="button"
+                        <AppButton
+                          variant="primary"
                           onClick={() => handleDirections(place)}
-                          className="nearby-action-button"
                         >
                           Directions
-                        </button>
+                        </AppButton>
                       )}
                       {place.phone && (
-                        <a
+                        <AppLinkButton
+                          variant="primary"
                           href={`tel:${place.phone}`}
-                          className="nearby-action-button"
                         >
                           Call
-                        </a>
+                        </AppLinkButton>
                       )}
                       {place.website && (
-                        <a
+                        <AppLinkButton
+                          variant="primary"
                           href={place.website}
                           target="_blank"
                           rel="noreferrer"
-                          className="nearby-action-button"
                         >
                           Website
-                        </a>
+                        </AppLinkButton>
                       )}
                     </div>
                   )}

@@ -21,6 +21,11 @@ const SOURCE = readFileSync(
   "utf8",
 );
 
+const GLOBALS_CSS = readFileSync(
+  fileURLToPath(new URL("../../globals.css", import.meta.url)),
+  "utf8",
+);
+
 test("Event read uses Member continuity by known id, not a direct/public events read", () => {
   assert.match(
     SOURCE,
@@ -337,7 +342,7 @@ test("map viewport intent is derived only from the Event center -- never from th
   assert.doesNotMatch(props, /viewportIntent=\{[\s\S]*?selectedMapObjectId/);
 });
 
-test("List view rendering is unchanged -- same cards, same openPlacePanel, same Directions/Call", () => {
+test("List view structure, openPlacePanel and the emergency Directions control are unchanged", () => {
   assert.match(SOURCE, /\{viewMode === "list" && \(/);
   assert.match(SOURCE, /filteredPlaces\.map\(\(place\) => \(/);
   assert.match(SOURCE, /onClick=\{\(\) => handleDirections\(place\)\}/);
@@ -365,7 +370,7 @@ test("the empty-results box uses the shared EmptyState primitive, preserving its
   );
 });
 
-test("Nearby's custom design system (.nearby-* classes) is completely untouched by this cleanup", () => {
+test("Nearby's custom design system (.nearby-* classes) is still in use -- the emergency actions, cards, chrome and status text all keep their own classes", () => {
   for (const className of [
     "nearby-header-card",
     "nearby-search-input",
@@ -389,4 +394,152 @@ test("no RPC/query/map/geolocation/filtering/session/engagement behavior was tou
   assert.match(SOURCE, /activityType: "nearby_view"/);
   assert.match(SOURCE, /const filteredPlaces = useMemo/);
   assert.match(SOURCE, /function handleDirections\(place: Place, overridePreference\?: MapPreference\) \{/);
+});
+
+// ---------------------------------------------------------------------------
+// Ordinary place-card actions: Directions/Call/Website now use the shared
+// primary AppButton/AppLinkButton. Approved appearance changes: shared
+// tenant-brand primary color, 16px label, 45px minimum height, 10px radius,
+// shared shadow/hover/focus/active treatment, and shared label wrapping.
+// Button-only movement effects are not expected to match the anchors.
+//
+// The emergency-card Directions/Call are deliberately EXCLUDED from this
+// slice and keep their own classes and colors. That is a slice exclusion,
+// not a permanent styling exemption.
+//
+// These are structural source assertions: they pin props and JSX shape, not
+// rendered geometry or computed style.
+// ---------------------------------------------------------------------------
+
+test("ordinary Directions uses the shared primary AppButton, keeping its exact render condition and handler", () => {
+  assert.match(
+    SOURCE,
+    /\{\(place\.address \|\|\s*\n\s*\(place\.lat !== null && place\.lng !== null\)\) && \(\s*\n\s*<AppButton\s*\n\s*variant="primary"\s*\n\s*onClick=\{\(\) => handleDirections\(place\)\}\s*\n\s*>\s*\n\s*Directions\s*\n\s*<\/AppButton>/,
+  );
+});
+
+test("ordinary Call uses the shared primary AppLinkButton with the unchanged tel: href and no target/rel", () => {
+  assert.match(
+    SOURCE,
+    /\{place\.phone && \(\s*\n\s*<AppLinkButton\s*\n\s*variant="primary"\s*\n\s*href=\{`tel:\$\{place\.phone\}`\}\s*\n\s*>\s*\n\s*Call\s*\n\s*<\/AppLinkButton>/,
+  );
+});
+
+test("ordinary Website uses the shared primary AppLinkButton, preserving target=\"_blank\" and rel=\"noreferrer\"", () => {
+  assert.match(
+    SOURCE,
+    /\{place\.website && \(\s*\n\s*<AppLinkButton\s*\n\s*variant="primary"\s*\n\s*href=\{place\.website\}\s*\n\s*target="_blank"\s*\n\s*rel="noreferrer"\s*\n\s*>\s*\n\s*Website\s*\n\s*<\/AppLinkButton>/,
+  );
+});
+
+test("the ordinary action row keeps its layout wrapper, 6px top margin, and action order", () => {
+  assert.match(
+    SOURCE,
+    /<div className="nearby-action-row" style=\{\{ marginTop: 6 \}\}>/,
+  );
+  const rowStart = SOURCE.indexOf('<div className="nearby-action-row" style={{ marginTop: 6 }}>');
+  assert.notEqual(rowStart, -1);
+  const row = SOURCE.slice(rowStart, SOURCE.indexOf("</div>", rowStart));
+  assert.ok(
+    row.indexOf("Directions") < row.indexOf("Call") &&
+      row.indexOf("Call") < row.indexOf("Website"),
+    "ordinary actions must stay in Directions, Call, Website order",
+  );
+  // The three converted controls no longer carry the page-local button class.
+  assert.doesNotMatch(row, /nearby-action-button/);
+});
+
+// Bounded extraction of the emergency card block: from the emergency card's
+// own class to the start of the ordinary places grid. Both markers are unique
+// in page.tsx, and the assertions below fail loudly if either moves.
+function emergencyRegion() {
+  const start = SOURCE.indexOf('className="nearby-emergency-card"');
+  const end = SOURCE.indexOf('<div className="nearby-places-grid">');
+  assert.notEqual(start, -1, "emergency card marker not found");
+  assert.notEqual(end, -1, "ordinary places grid marker not found");
+  assert.ok(end > start, "emergency card must precede the ordinary places grid");
+  return SOURCE.slice(start, end);
+}
+
+test("the emergency Directions and Call controls keep their own page-local classes, handler, destination and labels", () => {
+  assert.match(
+    SOURCE,
+    /<button\s*\n\s*type="button"\s*\n\s*onClick=\{\(\) => handleDirections\(place\)\}\s*\n\s*className="nearby-action-button nearby-action-button-danger"\s*\n\s*>\s*\n\s*Directions\s*\n\s*<\/button>/,
+  );
+  assert.match(
+    SOURCE,
+    /<a\s*\n\s*href=\{`tel:\$\{place\.phone\}`\}\s*\n\s*className="nearby-action-button nearby-action-button-dark"\s*\n\s*>\s*\n\s*Call\s*\n\s*<\/a>/,
+  );
+  // Scoped to the emergency card region rather than counted file-wide: an
+  // unrelated future use elsewhere must neither break this assertion nor
+  // silently satisfy it. The ordinary row's own absence check above is the
+  // complement.
+  const region = emergencyRegion();
+  assert.equal((region.match(/className="nearby-action-button/g) || []).length, 2);
+});
+
+test("the ordinary actions remain siblings of the ordinary place-card opening control, not nested inside it", () => {
+  // Anchored on the ORDINARY card's opener. The bare `nearby-place-open-button`
+  // class belongs to the EMERGENCY card and appears earlier in the file, so an
+  // exact-string search for it would satisfy this test without ever looking at
+  // the ordinary card.
+  const openIdx = SOURCE.indexOf(
+    'className="nearby-place-open-button nearby-place-open-button-has-favorite"',
+  );
+  const rowIdx = SOURCE.indexOf(
+    '<div className="nearby-action-row" style={{ marginTop: 6 }}>',
+  );
+  // Both extraction boundaries must exist, and in this order.
+  assert.notEqual(openIdx, -1, "ordinary card opener not found");
+  assert.notEqual(rowIdx, -1, "ordinary action row not found");
+  assert.ok(rowIdx > openIdx, "ordinary action row must follow the ordinary opener");
+  const closeIdx = SOURCE.lastIndexOf("</button>", rowIdx);
+  assert.notEqual(closeIdx, -1, "no closing </button> precedes the ordinary action row");
+  assert.ok(
+    closeIdx > openIdx,
+    "the ordinary opener must close before the ordinary action row begins",
+  );
+});
+
+test("the emergency Directions and Call render conditions are unchanged -- asserted independently of the ordinary actions", () => {
+  const region = emergencyRegion();
+  const rowIdx = region.indexOf('<div className="nearby-action-row">');
+  assert.notEqual(rowIdx, -1, "emergency action row not found");
+  // Bound the slice at the row's own closing tag, so the enclosing emergency
+  // section's conditional is not counted as one of the action conditions.
+  const rowClose = region.indexOf("\n                      </div>", rowIdx);
+  assert.notEqual(rowClose, -1, "emergency action row is not closed as expected");
+  const row = region.slice(rowIdx, rowClose);
+  // Directions renders on an address OR a complete coordinate pair.
+  assert.match(
+    row,
+    /\{place\.address \|\|\s*\n\s*\(place\.lat !== null && place\.lng !== null\) \? \(\s*\n\s*<button/,
+  );
+  // Call renders only when a phone number exists.
+  assert.match(row, /\{place\.phone \? \(\s*\n\s*<a/);
+  // Both remain explicit ternaries with a null branch, not && short-circuits.
+  assert.equal((row.match(/\) : null\}/g) || []).length, 2);
+  assert.doesNotMatch(row, /&& \(/);
+});
+
+test("the ordinary card's content column is pinned to the available width, so the overflow-clipped card cannot be outgrown by a child's min-content", () => {
+  // Bounded extraction of one exact rule. `grid-template-columns: minmax(0, 1fr)`
+  // appears elsewhere in globals.css, so an unscoped search would not
+  // discriminate; this reads only the ordinary card's own rule body.
+  const selector = ".nearby-place-card .nearby-place-content {";
+  assert.equal(
+    GLOBALS_CSS.split(selector).length - 1,
+    1,
+    "expected exactly one .nearby-place-card .nearby-place-content rule",
+  );
+  const bodyStart = GLOBALS_CSS.indexOf(selector) + selector.length;
+  const bodyEnd = GLOBALS_CSS.indexOf("}", bodyStart);
+  assert.notEqual(bodyEnd, -1, "unterminated .nearby-place-card .nearby-place-content rule");
+  assert.match(
+    GLOBALS_CSS.slice(bodyStart, bodyEnd),
+    /^\s*grid-template-columns:\s*minmax\(0,\s*1fr\);\s*$/,
+  );
+  // The constraint stays scoped to the ordinary card; emergency cards keep the
+  // auto column that their own fixed-width, horizontally scrolling row relies on.
+  assert.doesNotMatch(GLOBALS_CSS, /\.nearby-emergency-card\s+\.nearby-place-content/);
 });

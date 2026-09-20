@@ -3053,6 +3053,16 @@ button[style*="background-color: #fafafa"] * {
   position: relative;
 }
 
+/* The ordinary card clips its own overflow, so this content column must be
+   sized by the space available rather than by a child's min-content. The
+   open button contributes its unbreakable title word plus the 40px favorite
+   gutter (.nearby-place-open-button-has-favorite), which at narrow widths
+   under enlargement grew the auto column past the card and left the action
+   row with no room to shrink into. Emergency cards keep the auto column. */
+.nearby-place-card .nearby-place-content {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .nearby-card-title {
   font-size: 22px;
   line-height: 1.2;
