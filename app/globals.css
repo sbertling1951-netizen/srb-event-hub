@@ -45,7 +45,7 @@
   --color-selected: var(--tenant-brand-secondary, #2563eb);
   --color-selected-bg: #dbeafe;
 
-  --color-focus-ring: rgba(37, 99, 235, 0.35);
+  --color-focus-ring: #6b7280;
   --color-disabled-bg: #f1f5f9;
   --color-disabled-text: #64748b;
 

@@ -556,3 +556,140 @@ test("these token assertions cannot be satisfied by a comment, a missing/duplica
     ),
   );
 });
+
+// ---------------------------------------------------------------------------
+// Shared focus indicator (approved 2026-09-20). --color-focus-ring was an
+// alpha colour, rgba(37, 99, 235, 0.35). At 35% alpha the best contrast any
+// hue can reach over a light surface is ~2.44:1, so no hue could satisfy
+// WCAG 2.2 SC 1.4.11's 3:1 for a required state indication -- the alpha, not
+// the hue, was the defect. The replacement is opaque and mid-tone so that it
+// clears BOTH the light/tinted surfaces and the audited dark ones (admin
+// Slideshow cards and preview regions); a near-black candidate was rejected
+// because it measured ~1.02:1 against the #161616 Slideshow card.
+//
+// The token stays invariant under tenant branding (branding token contract
+// §6), and this repair changes colour only -- outline width, offset, radius,
+// selector scope, the invalid-input override and the container suppressions
+// are all unchanged, so neither open clipping finding (the ordinary Nearby
+// opener, the ObjectPanel Next control) is touched or claimed to be fixed.
+// ---------------------------------------------------------------------------
+
+/** The nine flat surfaces evaluated for this repair. */
+const FOCUS_RING_SURFACES: ReadonlyArray<readonly [string, string]> = [
+  ["panel / elevated", "#ffffff"],
+  ["page", "#f3f4f6"],
+  ["muted", "#f8f9fb"],
+  ["danger Alert", "#fee2e2"],
+  ["warning Alert", "#fef3c7"],
+  ["Nearby emergency card", "#fff7f7"],
+  ["Slideshow card", "#161616"],
+  ["Slideshow preview", "#111111"],
+  // Supplemental only: an audited dark literal tested as a flat colour. This
+  // is NOT a proven Photos control background and must not be read as one.
+  ["supplemental dark literal", "#0f172a"],
+];
+
+/** Every rule that paints the shared ring, by COMPLETE selector list. */
+const FOCUS_RING_CONSUMERS: readonly string[] = [
+  ".app-button:focus-visible, button.app-button:focus-visible, a.app-button:focus-visible",
+  ".app-control:focus-visible, .app-card-section input:focus-visible, .app-card-section select:focus-visible, .app-card-section textarea:focus-visible, .app-card-section-muted input:focus-visible, .app-card-section-muted select:focus-visible, .app-card-section-muted textarea:focus-visible, .table-toolbar-row input:focus-visible, .table-toolbar-row select:focus-visible",
+  ".app-inline-edit-trigger:focus-visible",
+  "a.app-status-pill-link:focus-visible",
+  ".admin-summary-link:focus-visible",
+  ".object-panel-close:focus-visible, .object-panel-nav-button:focus-visible, .object-panel a:focus-visible, .object-panel button:focus-visible",
+  ".nearby-place-open-button:focus-visible",
+  ".preferred-map-chooser-option:focus-visible",
+  ".preferred-map-chooser-cancel:focus-visible",
+  ".shell-nav-subitem:focus-visible, .shell-nav-item-toggle:focus-visible",
+  ".shell-nav-item:focus-visible, .shell-nav-account-action:focus-visible, .shell-nav-trigger:focus-visible, .shell-account-action:focus-visible, .shell-back-action:focus-visible",
+  ".ui-ref-toc a:focus-visible",
+];
+
+test("--color-focus-ring is declared exactly once and is opaque -- an alpha ring cannot reach 3:1 on a light surface at any hue", () => {
+  const value = declaredValue(ROOT_RULE, "--color-focus-ring");
+  assert.equal(value, "#6b7280");
+  assert.match(value, /^#[0-9a-f]{6}$/i, "the focus ring must be an opaque 6-digit hex");
+  assert.doesNotMatch(value, /rgba?\(/i, "the focus ring must not reintroduce an alpha colour");
+});
+
+test("the focus ring clears 3:1 against all nine evaluated flat surfaces, light, tinted and dark", () => {
+  const ring = declaredValue(ROOT_RULE, "--color-focus-ring");
+  for (const [name, surface] of FOCUS_RING_SURFACES) {
+    const ratio = contrastRatio(ring, surface);
+    // Compared unrounded: a 2.999 must never be reported as a pass.
+    assert.ok(
+      ratio >= 3,
+      `${name} (${surface}): ring ${ring} is ${ratio.toFixed(4)}:1, below the 3:1 non-text minimum`,
+    );
+  }
+});
+
+test("every shared-ring consumer keeps its exact selector list and unchanged outline geometry", () => {
+  assert.equal(
+    (GLOBALS_CSS_BLANKED.match(/var\(--color-focus-ring/g) || []).length,
+    FOCUS_RING_CONSUMERS.length,
+    "a consumer was added or removed without updating this list",
+  );
+  for (const selectorList of FOCUS_RING_CONSUMERS) {
+    const rule = cssRule(selectorList);
+    assert.match(rule, /outline-offset:\s*2px;/, `${selectorList} lost its 2px offset`);
+    if (selectorList === "a.app-status-pill-link:focus-visible") {
+      // Keeps its own --border-width-thick fallback form; this repair does not
+      // add that token or normalise the shorthand.
+      assert.match(
+        rule,
+        /outline:\s*var\(--border-width-thick, 2px\) solid var\(--color-focus-ring, currentColor\);/,
+      );
+    } else {
+      assert.match(rule, /outline:\s*2px solid var\(--color-focus-ring\);/, `${selectorList} lost its 2px solid ring`);
+    }
+  }
+  // The Nearby opener additionally rounds its ring; that geometry is untouched.
+  assert.match(
+    cssRule(".nearby-place-open-button:focus-visible"),
+    /border-radius:\s*var\(--radius-small\);/,
+  );
+});
+
+test("the independent invalid-input indicator and the container focus suppressions are untouched by the token repair", () => {
+  const invalid = cssRule('.app-control[aria-invalid="true"]:focus-visible');
+  assert.match(invalid, /outline-color:\s*var\(--color-status-error\);/);
+  assert.doesNotMatch(invalid, /--color-focus-ring/, "the invalid indicator must stay independent");
+
+  for (const container of [
+    ".app-dialog:focus-visible",
+    ".object-panel:focus-visible",
+    ".preferred-map-chooser:focus-visible",
+  ]) {
+    assert.match(cssRule(container), /outline:\s*none;/, `${container} lost its suppression`);
+  }
+});
+
+test("the focus-ring assertions cannot be satisfied by a comment, a duplicate declaration, or a broadened selector group", () => {
+  // A commented-out token must not count as declared.
+  assert.throws(
+    () => declaredValue(cssRule(":root", ":root {\n  /* --color-focus-ring: #6b7280; */\n}\n"), "--color-focus-ring"),
+    /expected exactly one "--color-focus-ring" declaration, found 0/,
+  );
+  // A duplicated declaration is ambiguous, not a pass.
+  assert.throws(
+    () => declaredValue(":root { --color-focus-ring: #6b7280; --color-focus-ring: rgba(37, 99, 235, 0.35); }", "--color-focus-ring"),
+    /found 2/,
+  );
+  // A broadened selector group must not answer for the exact consumer.
+  assert.throws(() =>
+    cssRule(
+      ".app-inline-edit-trigger:focus-visible",
+      ".app-inline-edit-trigger:focus-visible, .something-else:focus-visible { outline: 2px solid red; }\n",
+    ),
+  );
+  // A duplicated rule is ambiguous too.
+  assert.throws(() =>
+    cssRule(
+      ".admin-summary-link:focus-visible",
+      ".admin-summary-link:focus-visible { outline: 1px }\n.admin-summary-link:focus-visible { outline: 2px }\n",
+    ),
+  );
+  // An alpha ring must fail the contrast gate these tests rely on.
+  assert.throws(() => contrastRatio("rgba(37, 99, 235, 0.35)", "#ffffff"));
+});
