@@ -25,9 +25,9 @@
      --color-focus-ring are deliberately NOT wired to a tenant override:
      doing so would require deriving a new shade or verifying contrast,
      which this bridge does not invent (contract §6). */
-  --color-action-primary: var(--tenant-brand-primary, #60a5fa);
-  --color-action-primary-hover: #3b82f6;
-  --color-action-primary-active: #2563eb;
+  --color-action-primary: var(--tenant-brand-primary, #2563eb);
+  --color-action-primary-hover: #1d4ed8;
+  --color-action-primary-active: #1e40af;
   --color-action-secondary: #f8fafc;
   --color-action-secondary-hover: #eff6ff;
   --color-action-destructive: #dc2626;

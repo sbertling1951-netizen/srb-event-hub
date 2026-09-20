@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
+import { buildTenantBrandOverrides } from "@/lib/tenantBrandOverrides";
 
 // Focused tests for the shared AppButton/AppLinkButton primitive and its
 // canonical action semantics (System 3, approved 2026-08-19 -- see
@@ -374,4 +375,184 @@ test("a caller-supplied layout utility does not turn a no-variant link into a va
   // It carries no variant class, so the narrowed rule still matches it --
   // which is why the exclusion list must not be a substring match.
   assert.equal(/app-button-(primary|secondary|muted|danger|stop|success|warning|start)/.test(html), false);
+});
+
+// ---------------------------------------------------------------------------
+// Primary-action contrast ramp (approved 2026-09-19). The enabled primary fill
+// must clear WCAG 2.x SC 1.4.3's normal-text 4.5:1 against its fixed white
+// label in every enabled state. `.app-button` labels are 16px at
+// --font-weight-semibold (700): bold, but under 18.66px, so "normal" text, not
+// "large". Focus adds only an outline and never repaints the fill, so a
+// focused control shows whichever of the three fills below is current.
+//
+// Rest stays tenant-brandable through --tenant-brand-primary; hover and active
+// stay platform-fixed literals (see the Tier 2 bridge comment in globals.css
+// and contract §6). Values are read out of globals.css rather than restated
+// here, so these cannot drift from the stylesheet or pass against a value the
+// CSS does not actually declare. Focus-ring contrast is a separate open issue
+// and is deliberately not asserted here.
+// ---------------------------------------------------------------------------
+
+const ROOT_RULE = cssRule(":root");
+
+/**
+ * The single declared value of `property` within one already-extracted rule.
+ * Fails when the declaration is missing or repeated. cssRule() has already
+ * blanked comments, so a commented-out declaration can never satisfy this, and
+ * the trailing `[;}]` keeps the last declaration in a block readable without
+ * swallowing the rest of the rule.
+ */
+function declaredValue(ruleSource: string, property: string): string {
+  // The terminator is matched by lookahead, not consumed: consuming it would
+  // eat the separator a following duplicate declaration needs to be found,
+  // silently turning a repeated (ambiguous) declaration into a single hit.
+  const pattern = new RegExp(`(?:^|[;{])\\s*${property}\\s*:\\s*([^;}]+)(?=[;}])`, "g");
+  const values = [...ruleSource.matchAll(pattern)].map((match) => match[1].trim());
+  assert.equal(
+    values.length,
+    1,
+    `expected exactly one "${property}" declaration, found ${values.length}`,
+  );
+  return values[0];
+}
+
+/** WCAG 2.x relative luminance / contrast, for opaque 6-digit hex only. */
+function relativeLuminance(hex: string): number {
+  const match = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+  assert.ok(match, `expected an opaque 6-digit hex color, got "${hex}"`);
+  const packed = parseInt(match[1], 16);
+  const [r, g, b] = [(packed >> 16) & 255, (packed >> 8) & 255, packed & 255].map((channel) => {
+    const c = channel / 255;
+    return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrastRatio(a: string, b: string): number {
+  const x = relativeLuminance(a);
+  const y = relativeLuminance(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+test("the primary action tokens are the approved ramp, and the tenant fallback expression is preserved", () => {
+  assert.equal(
+    declaredValue(ROOT_RULE, "--color-action-primary"),
+    "var(--tenant-brand-primary, #2563eb)",
+  );
+  assert.equal(declaredValue(ROOT_RULE, "--color-action-primary-hover"), "#1d4ed8");
+  assert.equal(declaredValue(ROOT_RULE, "--color-action-primary-active"), "#1e40af");
+  assert.equal(declaredValue(ROOT_RULE, "--color-text-on-primary"), "#ffffff");
+});
+
+test("every enabled primary fill clears 4.5:1 against the fixed white label", () => {
+  const label = declaredValue(ROOT_RULE, "--color-text-on-primary");
+  const primary = declaredValue(ROOT_RULE, "--color-action-primary");
+  const fallback = /,\s*(#[0-9a-f]{6})\s*\)$/i.exec(primary);
+  assert.ok(fallback, `the primary token must keep a literal hex fallback, got "${primary}"`);
+
+  for (const [state, fill] of [
+    ["rest (unbranded fallback)", fallback[1]],
+    ["hover", declaredValue(ROOT_RULE, "--color-action-primary-hover")],
+    ["active", declaredValue(ROOT_RULE, "--color-action-primary-active")],
+  ] as const) {
+    const ratio = contrastRatio(label, fill);
+    // Compared unrounded: a 4.49 must never be reported as a pass.
+    assert.ok(
+      ratio >= 4.5,
+      `${state}: ${fill} on ${label} is ${ratio.toFixed(4)}:1, below the 4.5:1 normal-text minimum`,
+    );
+  }
+});
+
+test("hover and active stay platform-fixed literals -- never wired to a tenant override", () => {
+  for (const property of [
+    "--color-action-primary-hover",
+    "--color-action-primary-active",
+  ]) {
+    const value = declaredValue(ROOT_RULE, property);
+    assert.match(value, /^#[0-9a-f]{6}$/i, `${property} must stay an opaque literal`);
+    assert.doesNotMatch(value, /var\(/, `${property} must not source from Tier 2`);
+  }
+});
+
+test("the real validator still admits a conforming tenant primary and withholds every non-conforming one", () => {
+  const accepted = buildTenantBrandOverrides({
+    primaryColor: "#1d4ed8",
+    secondaryColor: null,
+    accentColor: null,
+  });
+  assert.equal(accepted["--tenant-brand-primary"], "#1d4ed8");
+
+  // Every rejected value leaves Tier 2 unset, so the ramp's own fallback is
+  // what actually renders -- which is why that fallback had to become
+  // conforming. Includes the 4.5:1 boundary from both sides.
+  const boundaryPass = buildTenantBrandOverrides({
+    primaryColor: "#767676",
+    secondaryColor: null,
+    accentColor: null,
+  });
+  assert.equal(boundaryPass["--tenant-brand-primary"], "#767676");
+
+  for (const rejected of ["#777777", "#ffffff", "not-a-color", "rgba(0, 0, 0, 0.9)", null]) {
+    const overrides = buildTenantBrandOverrides({
+      primaryColor: rejected,
+      secondaryColor: null,
+      accentColor: null,
+    });
+    assert.equal(
+      "--tenant-brand-primary" in overrides,
+      false,
+      `${rejected} must never reach Tier 2`,
+    );
+  }
+});
+
+test("the primary rule paints button and link from the same tokens, keeping the white label and the separate blue shadow tint", () => {
+  const rule = cssRule(".app-button-primary, button.app-button-primary, a.app-button-primary");
+  assert.match(rule, /border-color:\s*var\(--color-action-primary\);/);
+  assert.match(rule, /background:\s*var\(--color-action-primary\);/);
+  assert.match(rule, /background-image:\s*none;/);
+  assert.match(rule, /color:\s*var\(--color-text-on-primary\) !important;/);
+  assert.match(rule, /-webkit-text-fill-color:\s*var\(--color-text-on-primary\) !important;/);
+  // The inset highlight and ambient tint are literal shadow values, not part
+  // of the ramp repair -- they are deliberately unchanged.
+  assert.match(rule, /rgba\(255, 255, 255, 0\.22\)/);
+  assert.match(rule, /rgba\(59, 130, 246, 0\.3\)/);
+  assert.doesNotMatch(rule, /opacity:/);
+});
+
+test("the primary hover and active rules read their fixed state tokens, for buttons and links alike", () => {
+  const hover = cssRule(".app-button-primary:hover:not(:disabled), a.app-button-primary:hover");
+  assert.match(hover, /background:\s*var\(--color-action-primary-hover\);/);
+  assert.match(hover, /border-color:\s*var\(--color-action-primary-hover\);/);
+
+  const active = cssRule(
+    ".app-button-primary:active:not(:disabled), button.app-button-primary:active:not(:disabled), a.app-button-primary:active",
+  );
+  assert.match(active, /background:\s*var\(--color-action-primary-active\);/);
+  assert.match(active, /border-color:\s*var\(--color-action-primary-active\);/);
+});
+
+test("these token assertions cannot be satisfied by a comment, a missing/duplicate/broadened rule, or a repeated declaration", () => {
+  // A commented-out declaration must not count as declared.
+  assert.throws(
+    () => declaredValue(cssRule(":root", ":root {\n  /* --color-action-primary-hover: #1d4ed8; */\n}\n"), "--color-action-primary-hover"),
+    /expected exactly one "--color-action-primary-hover" declaration, found 0/,
+  );
+  // A declaration repeated inside one rule is ambiguous, not a pass.
+  assert.throws(
+    () => declaredValue(":root { --color-action-primary-hover: #1d4ed8; --color-action-primary-hover: #3b82f6; }", "--color-action-primary-hover"),
+    /found 2/,
+  );
+  // Missing rule.
+  assert.throws(() => cssRule(":root", ".something-else { color: red; }\n"));
+  // Duplicated rule.
+  assert.throws(() => cssRule(":root", ":root { color: red; }\n:root { color: blue; }\n"));
+  // A broadened selector group must not answer for the exact one.
+  assert.throws(() =>
+    cssRule(
+      ".app-button-primary, button.app-button-primary, a.app-button-primary",
+      ".app-button-primary, button.app-button-primary, a.app-button-primary, .app-button-stop { background: red; }\n",
+    ),
+  );
 });
