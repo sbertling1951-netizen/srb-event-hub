@@ -231,6 +231,106 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Re-anchor reconciliation — 2026-09-19 (Central UI Standard rollout, shell navigation, behavior/authority fixes, and the shared link-button repair)
+
+- **Current substantive baseline: `cdaf03a` — LIVE.** Pap reported the service
+  online and the production working tree clean at `cdaf03a`. That production
+  status is **Pap-reported and was not independently verified by this
+  documentation task**; no deployment, database, or runtime check was run.
+- **Scope of this range.** 75 commits, `b20169d..cdaf03a`, touching 139 files.
+  The large majority is presentation standardization, but the range is **not
+  presentation-only**: it also contains targeted behavior and authority
+  changes, a branding feature, and two data-repair migrations. The lists
+  below are **not exhaustive** — do not read the UI milestones as covering
+  the whole range, and do not treat the named commits as the complete set of
+  behavior-affecting changes.
+- **Central UI Standard rollout (presentation standardization).** The shared
+  primitives (`PageSection`, `Alert`, `LoadingState`, `EmptyState`,
+  `AppButton`/`AppLinkButton`, `Field`/`Input`/`Select`/`Textarea`,
+  `ConfirmDialog`, `FormActions`) now carry the Admin imports, permissions,
+  agenda, photos, vendors, evaluations and parking workspaces and the Member
+  participants, announcements, attendee-locator, check-in, agenda, photos,
+  dashboard, evaluation, vendor-signup, assignments, events and requests
+  surfaces. This milestone records the adoption of the shared primitives; it
+  makes no blanket claim that every commit in it left behavior, navigation,
+  authority, queries or payloads untouched. Several commits carried in this
+  rollout also changed behavior — see the targeted changes below.
+- **Canonical shell navigation.** Admin workspace and Catalogs entry points and
+  parent navigation, organizer parent navigation, canonical classification of
+  the Registry Provider Catalog, and canonical `backTarget` return paths
+  replacing hand-rolled navigation.
+- **Admin heading hierarchy corrected (`dd15012`).** Five shell-wrapped Admin
+  pages rendered a second page-level `<h1>` duplicating the shell title; the
+  shell header is now the single page `<h1>`.
+- **Targeted behavior and authority changes include** (non-exhaustive; some
+  arrived inside commits whose subject line reads as presentation work):
+  - `3af5d8d` — Reports navigation is gated by task authority.
+  - `f03260e` — Super-Admin Event Staff roles are preserved.
+  - `79d59a2` — deleting an evaluation question now requires confirmation
+    through `ConfirmDialog` before the existing
+    `delete_evaluation_template_question` RPC is invoked. The RPC and its
+    arguments are unchanged; what changed is that the destructive call is no
+    longer reachable in a single click.
+  - `a62e0d5` — Vendor Workspace navigation now renders the canonical
+    `vendors` nav item's authority-filtered children via
+    `getAdminNavItemChildren(admin, tenantAuthority, "vendors")` instead of
+    hard-coded links, and removes destinations that were previously linked.
+    This is a **navigation-visibility change, not a backend-authorization
+    change** — no policy, grant, or server-side check was altered.
+  - `c7752ca` — alongside its migration, the Events admin page now reads
+    `nearby_area_id`, excludes templates that have no backfilled parent
+    (`(row) => !!row.nearby_area_id`), and submits the parent ID rather than
+    the template ID, because `events.selected_nearby_area_id` targets
+    `nearby_areas` and never `nearby_area_templates`.
+- **Runtime tenant-branding token bridge (`9e0b36f`)**, with its contract
+  document `EPICENTRAX_RUNTIME_TENANT_BRANDING_TOKEN_CONTRACT.md` (`41fbd52`).
+- **Two data-repair migrations are present in repository history** —
+  `20261023000000_repair_legacy_stored_area_template_parent_links` (`c7752ca`)
+  and `20261024000000_retire_branson_legacy_duplicate_parking_site`
+  (`bf90ded`), each with a co-located test. **Their application to the
+  production migration ledger is unverified.** This task made no database
+  query and makes no claim about how or whether they were applied; confirming
+  the ledger requires its own explicit authorization.
+- **Shared link-button repair — shipped in `cdaf03a`.** `38e0c74` is only the
+  reviewed baseline this repair was measured against, not the commit that
+  delivered it. Two problems were fixed: the `a.app-button` text-link rest and
+  hover rules leaked 6px horizontal padding, an underline, and the link hover
+  into explicit-variant `AppLinkButton`s, contrary to the contract documented
+  in that rule's own comment — both selectors now exclude the eight visual
+  modifier classes via `:not(:where(...))`, holding specificity constant; and
+  `.app-button` gained `overflow-wrap: anywhere` so an over-long label word
+  wraps instead of being clipped by `.card { overflow: hidden }` at narrow
+  widths.
+- **Evidence for that repair, and its limits.** Reported evidence: focused test
+  suites, targeted ESLint, a full TypeScript comparison against unmodified
+  HEAD with equivalent generated inputs (byte-identical diagnostics), and a
+  production build. Browser evidence: **three engine families** — Chromium/
+  Chrome (Blink), Firefox (Gecko) and WebKit — exercised with automated local
+  fixtures over the real primitives, covering selector parsing,
+  `overflow-wrap: anywhere`, `:focus-visible`, all eight variants plus
+  no-variant/ghost/utility/override controls, and label containment at 320,
+  375, 768 and 1280 CSS pixels with CSS-zoom and doubled-text stress.
+  **Explicitly not covered: native Safari, physical mobile, native
+  browser-menu zoom, and comprehensive accessibility proof.** Automated WebKit
+  is not native Safari and not iOS. WebKit keyboard checks used
+  **Option-Tab / Option-Shift-Tab**. CSS zoom and text-size stress are not
+  native browser-menu zoom.
+- **Unresolved usability concerns (not resolved, not permanently accepted).**
+  At 320px with 200% CSS zoom the Vendor Access primary action wraps to an
+  extreme multiline label; the Vendor Access heading still clips; and
+  LocationCard still overflows under enlargement. The heading and LocationCard
+  findings are **pre-existing** and were unchanged by this repair. All three
+  remain open usability questions awaiting a decision, not settled design.
+- **Deferred.** Member Nearby action-link conversion **remains deferred**, and
+  its emergency-card action styling has **not** been permanently exempted —
+  that styling is still an open presentation decision.
+- **Existing unresolved concerns and authority blockers carry forward
+  unchanged.** The master-map public/anonymous SELECT breadth and Dou's
+  source-only legacy vendor / place / Nearby / map authority findings both
+  remain **OPEN**; vendor / place / Nearby / map catalog expansion remains
+  **BLOCKED** pending independent runtime verification. Nothing in this range
+  verified, closed, or narrowed any of them.
+
 ### Re-anchor reconciliation — 2026-09-14 (Passport refund completion, refunded state, and Super-Admin review)
 
 - **Current substantive baseline: `b20169d` — LIVE.** Production Status
@@ -559,11 +659,14 @@ index.
      Any database or runtime check requires its own explicit authorization.
   3. **No P3, offline, or asset-sharing implementation** — not a schema,
      migration, RPC, route, or UI — **without a new explicit Pap approval.**
-- **Librarian block staleness:** the machine-generated block below still
-  reports baseline `87c25af` / `origin/main 87c25af`; it lags this
-  reconciliation and `git` is authoritative. `npm run context:update` should
-  be run by whoever next moves the baseline (not run by this documentation
-  task).
+- **Librarian block staleness:** the machine-generated block below is a
+  **timestamped snapshot** taken when `npm run context:update` last ran, so it
+  reports whatever commit and working-tree state existed at that moment and
+  lags every commit made afterwards. **Current `git` is authoritative** for
+  branch, HEAD, `origin/main`, and ahead/behind. (This note previously quoted
+  a specific stale baseline; naming a commit here only goes stale again, so it
+  records the general rule instead. The observation that the block lagged this
+  2026-09-09 reconciliation stands.)
 
 ---
 
@@ -643,11 +746,11 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-14T14:57:51-07:00`
+**Generated at:** `2026-09-19T18:36:00-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `b20169d fix(admin): refresh Event access after creation`
-**Commit date:** `2026-09-14T14:52:51-07:00`
-**origin/main:** `b20169d`
+**Commit:** `cdaf03a fix(ui): preserve shared link-button styling and wrapping`
+**Commit date:** `2026-09-19T08:18:31-07:00`
+**origin/main:** `cdaf03a`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
@@ -715,6 +818,7 @@ _Git status above was captured before this script wrote this section; writing th
 - `EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P2_IMPLEMENTATION_SPECIFICATION.md`
 - `EPICENTRAX_REGISTRY_PROVIDER_CATALOG_P3_CONTRACT.md`
 - `EPICENTRAX_RENDERER_NEUTRAL_MAPPING_ARCHITECTURE.md`
+- `EPICENTRAX_RUNTIME_TENANT_BRANDING_TOKEN_CONTRACT.md`
 - `EPICENTRAX_SELF_SERVICE_EVENT_AND_ORGANIZATION_ONBOARDING_BLUEPRINT.md`
 - `EPICENTRAX_SELF_SERVICE_ONBOARDING_P2A_IMPLEMENTATION_SPECIFICATION.md`
 - `EPICENTRAX_SHARED_EXPERIENCE_CONTEXT_ARCHITECTURE.md`
@@ -729,14 +833,14 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `261`
-- Latest migration: `20261022000000_create_super_admin_passport_refund_review.sql`
+- Total migration files: `263`
+- Latest migration: `20261024000000_retire_branson_legacy_duplicate_parking_site.sql`
 - Latest five:
-  - `20261018000000_govern_self_service_event_passport_refund_confirmation.sql`
-  - `20261019000000_govern_self_service_event_passport_refund_visibility.sql`
   - `20261020000000_fix_self_service_event_passport_refund_confirmation_column_ambiguity.sql`
   - `20261021000000_add_self_service_event_passport_refunded_confirmation_status.sql`
   - `20261022000000_create_super_admin_passport_refund_review.sql`
+  - `20261023000000_repair_legacy_stored_area_template_parent_links.sql`
+  - `20261024000000_retire_branson_legacy_duplicate_parking_site.sql`
 
 ### Identity-audit inventory
 - SQL files: `14`
