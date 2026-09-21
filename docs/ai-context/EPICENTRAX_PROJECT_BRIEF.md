@@ -231,15 +231,26 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Member account setup repair — 2026-09-20 (Reviewed; production verification pending)
+### Member account setup repair — 2026-09-20 (Reviewed, promoted and deployed; live account checks pending)
 
 - **Substantive code baseline: `0125b2d462c887cc2dad702f4d898244f5bc2198`.** Pap approved committing,
   reconciling and promoting the eight-file repair after Lun's independent PASS.
   Mel reverified every reviewed file hash, the exact cohort, empty index and
   unchanged stash against the review anchor, and freshly fetched origin/main
-  before committing. This checkpoint accompanies the repair for one planned
-  webhook deployment; promotion and successful production activation must be
-  established from subsequent Git and server evidence, not inferred here.
+  before committing. Mel pushed the source and accompanying checkpoint as
+  release **`57a50e93314a842fec2adaca5c7b3d303fb8d505`** to main in one
+  fast-forward push, triggering the single authorized webhook deployment.
+- **Production evidence (Pap-run verification):** the release activated at
+  **2026-09-21T04:50:36Z** in
+  `/root/srb-event-hub-releases/20260921T044851Z-57a50e93314a`, app PID 3950395.
+  The rollback target is `20260921T025032Z-645be6bf7441`. Both application
+  hostnames passed origin verification (HTML and 13 referenced assets each,
+  protected system-status route returning 401) and public verification with
+  ordinary TLS validation. All 26 captured old asset URLs passed. The script
+  confirmed the original baseline, cleanup evidence, candidate port, worker
+  absence and pinned config permissions before pausing only the webhook for
+  this documentation closeout; the application remains online. Webhook resume
+  and PM2 save await Pap's closeout output. Reboot recovery remains unproven.
 - **Behavior:** successful member activation now opens the existing Set a
   Password page, then opens the account only after a successful password save.
   PKCE exchanges the authorization code rather than the entire callback URL.
@@ -275,7 +286,8 @@ state override this subsection whenever they disagree, per the
   Live gates after deployment: fresh verification to password save to subsequent
   password login, iPhone focus/scroll feedback, and My Events hidden for Temporary
   Event Access but available for account sessions. No migration or database write
-  is part of this release. No production success is claimed at this checkpoint.
+  is part of this release. Deployment verification above does not establish
+  successful live account activation, email delivery or password login.
 
 ### Member photo-help release — 2026-09-20 (Reviewed, promoted and deployed)
 
@@ -939,12 +951,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-20T21:44:29-07:00`
+**Generated at:** `2026-09-20T21:51:15-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `0125b2d fix(auth): guide verified members through password setup`
-**Commit date:** `2026-09-20T21:44:09-07:00`
-**origin/main:** `08269c1`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `57a50e9 docs: record reviewed member-account repair release`
+**Commit date:** `2026-09-20T21:44:33-07:00`
+**origin/main:** `57a50e9`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
