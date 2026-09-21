@@ -231,7 +231,36 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Attendee import sharing-answer compatibility — 2026-09-21 (Promoted and deployed; closeout and fresh import pending)
+### Successful import banner — 2026-09-21 (Reviewed and committed; approved release pending)
+
+- **Substantive code baseline: `86f197df6dd1ff29225d66c57efeda86ba8a9e1d`.** Pap approved the
+  reviewed two-file Imports page/test fix, checkpoint, one deployment, verification
+  and closeout after Lun's PASS and production preflight. Mel reverified all 11
+  review hashes, exact cohort, empty index and unchanged stash; fresh origin/main
+  matched `7a446728c0eaa35cb864f7cc961aa89f0c106caa`. Committed source bytes match
+  review. Production deployment is not yet claimed.
+- **Behavior:** the existing shared Alert success tone (light green) is selected
+  for this page's exact processed-summary format only when processed > 0, every
+  processed row committed, and review/failure/warning counts are zero. Event-name
+  words such as "failed" do not override successful counts. All other summaries
+  retain their existing non-success classification; progress and other messages
+  are unchanged. No changes to message text, import counts, parser, orchestration,
+  authority, database or shared Alert/CSS. No new import is part of this release.
+- **Evidence:** Lun independently passed 83/83 focused page tests, targeted lint
+  and diff checks, with all 11 final hashes unchanged. The test executes the actual
+  classifier. Retained discrimination: 82 pass/1 expected failure against the old
+  implementation, specifically the successful 21/21 result. LEM also reported full
+  TypeScript output byte-identical to the retained 16-error baseline. No build or
+  browser harness was required for this presentation-only correction; production
+  visual green remains unobserved and does not justify repeating an imported file.
+- **Production preflight (Pap-run, 2026-09-21T20:36:47.592Z):** serving/controller
+  `a179d4fac64c8c700ce3d4cc6be859514a95b8db`, app PID 3974391, webhook online,
+  no worker, lock free; live/pinned/next origin all `https://epicentrax.com`.
+  Captured 26 asset URLs. Next: one promotion, runtime verification and guarded
+  documentation closeout, webhook resume and PM2 save. A future legitimate import
+  can establish live visual acceptance; do not repeat the already committed roster.
+
+### Attendee import sharing-answer compatibility — 2026-09-21 (Promoted, deployed and live import accepted)
 
 - **Substantive code baseline: `fceffa5ea61cb3c62d0167568630367d41094627`.** Pap approved the
   reviewed two-file parser/test repair, checkpoint reconciliation, one deployment,
@@ -249,8 +278,17 @@ state override this subsection whenever they disagree, per the
   with neutral body/private-no-store through both origin and public paths.
   All 26 captured old asset URLs passed. Pointer/baseline, pinned-config and
   cleanup/worker/port gates passed; only the webhook was paused for documentation
-  closeout and the lock was released with the application online. Webhook resume
-  and verified PM2 save await Pap's closeout output. No fresh import was performed.
+  closeout and the lock was released with the application online. Pap subsequently
+  completed closeout: webhook online, unchanged signing secret, unsigned POST 401,
+  no worker, app PID unchanged and verified PM2 saved state. Backup:
+  `/root/pm2-closeout-backup-20260921T202010Z-mw_hh2hi`. No startup-unit restart or
+  reboot; reboot recovery remains unproven.
+- **Live import acceptance (Pap-provided):** the unchanged CSV was then imported
+  into Saint George. Pap confirmed all imported, and the screenshot of run
+  `b5f55dc3-41e8-4a1e-8fff-ee24a0db51af` reported 21 processed/21 committed,
+  zero need-review, zero validation failures and zero commit failures. This is
+  observed application output supplied by Pap, not an agent database query. The
+  red success banner was a separate presentation defect addressed above.
 - **Behavior:** the attendee contract accepts the established `Yes, Share my email`
   and `No. Don't share my email` answers only for email sharing. Exact matching uses
   existing case/whitespace/curly-apostrophe normalization. Existing short boolean
@@ -269,12 +307,11 @@ state override this subsection whenever they disagree, per the
 - **Production preflight (Pap-run, 2026-09-21T20:12:15.218Z):** serving/controller
   `c4044715d19f3585d08bb599fc306f2502c5e20d`, app PID 3971631, webhook online,
   no worker, lock free; live/pinned/next origin all `https://epicentrax.com`.
-  Captured 26 current asset URLs, subsequently verified above. Next: documentation
-  closeout while webhook paused, resume/save PM2, then Pap's separately executed
-  fresh import into the intended Event and actual commit/review/failure totals.
-  This release does not itself import the CSV.
-- **Remaining boundaries:** the failed historical run remains unchanged. Live
-  canonical commit, authorization and results are not proven by local parsing.
+  Captured 26 current asset URLs, subsequently verified above. Closeout and Pap's
+  fresh import are now complete; deployment scripts did not import the CSV.
+- **Remaining boundaries:** the failed historical run remains unchanged. Local
+  parsing alone does not prove stored results; Pap's successful live run is the
+  separate operational evidence above. Stored consent values were not queried.
   Separate deferred findings: sharing-template instructions incorrectly say unknown
   answers become No; SheetJS repeated nickname headers are not recognized as the
   optional Co-Pilot nickname alias. Neither is changed by this release.
@@ -1185,12 +1222,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-21T13:19:14-07:00`
+**Generated at:** `2026-09-21T13:39:23-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `a179d4f docs: record approved import sharing repair release`
-**Commit date:** `2026-09-21T13:14:29-07:00`
-**origin/main:** `a179d4f`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**Commit:** `86f197d fix(imports): show successful import summaries in green`
+**Commit date:** `2026-09-21T13:38:48-07:00`
+**origin/main:** `7a44672`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
