@@ -231,7 +231,7 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Member activation with password and email code — 2026-09-21 (Reviewed; release approved, production verification pending)
+### Member activation with password and email code — 2026-09-21 (Reviewed, promoted and deployed; live activation pending)
 
 - **Substantive code baseline: `cdff7204a5867bb5a29e93151dc2d90ea316ccb1`.**
   Pap approved the four-file activation flow, checkpoint reconciliation, one
@@ -240,8 +240,19 @@ state override this subsection whenever they disagree, per the
   exact cohort, empty index and unchanged stash; fresh `origin/main` matched
   `e298d503991f011b49ecfb98d6a0c2d3ab4811b1` before committing. Only the activation
   page, its test, and the new activation-flow module and test are in the source
-  commit. Promotion and verified production outcome are recorded separately;
-  approval and source validation alone do not establish deployment success.
+  commit. Mel promoted the source and accompanying checkpoint as release
+  **`7f033e03f646312b4097ff4b39f0136233f6b8a6`** in one fast-forward push to main,
+  triggering the one approved webhook deployment.
+- **Production verification (Pap-run):** activated at **2026-09-21T15:58:40Z**
+  in `/root/srb-event-hub-releases/20260921T155704Z-7f033e03f646`, app PID 3967339.
+  Verified rollback target: `20260921T133145Z-f022acdca4be`. Both hostnames passed
+  through-origin HTML and 13 referenced assets each, protected system-status
+  returning 401, and public HTML/assets with ordinary TLS validation. All 26
+  retained old asset URLs passed. The verifier confirmed release pointers,
+  original baseline, pinned-config mode and cleanup/worker/port gates, then
+  paused only the webhook for documentation closeout; the app remains online.
+  Webhook resume and PM2 save await Pap's closeout output. No app or startup-unit
+  restart or reboot is required by this closeout.
 - **Behavior:** members enter evidence and choose/confirm a password, then enter
   an emailed code on the same page. Continue gives way to the code step after
   the eligible verification attempt is prepared. A fresh code establishes an
@@ -1063,12 +1074,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-21T08:56:09-07:00`
+**Generated at:** `2026-09-21T08:59:21-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `cdff720 feat(auth): finish member activation with password and email code`
-**Commit date:** `2026-09-21T08:55:46-07:00`
-**origin/main:** `e298d50`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `7f033e0 docs: record approved activation code release`
+**Commit date:** `2026-09-21T08:56:22-07:00`
+**origin/main:** `7f033e0`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
