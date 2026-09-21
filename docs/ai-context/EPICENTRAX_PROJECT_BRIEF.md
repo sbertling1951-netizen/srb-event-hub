@@ -231,7 +231,43 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Canonical account-holder name — 2026-09-21 (Promoted and deployed; closeout and live name acceptance pending)
+### Attendee import sharing-answer compatibility — 2026-09-21 (Reviewed and committed; approved release pending)
+
+- **Substantive code baseline: `fceffa5ea61cb3c62d0167568630367d41094627`.** Pap approved the
+  reviewed two-file parser/test repair, checkpoint reconciliation, one deployment,
+  verification and closeout after Lun's PASS and the read-only production preflight.
+  Mel verified all 14 review hashes, exact two-file cohort, empty index and unchanged
+  stash/input CSV. Fresh origin/main matched `1f16cf75f11771b4b8897f516869dab84cdf598c`;
+  committed source bytes match the review. No deployment result claimed yet.
+- **Behavior:** the attendee contract accepts the established `Yes, Share my email`
+  and `No. Don't share my email` answers only for email sharing. Exact matching uses
+  existing case/whitespace/curly-apostrophe normalization. Existing short boolean
+  values and blank=false are preserved; unknown or contradictory nonempty answers
+  still fail validation. Volunteer/first-timer fields retain their existing vocabulary.
+  Original source payload, aliases/conflict handling, fingerprint algorithm, staging,
+  canonical commit authority and identity boundaries are unchanged. No migration.
+- **Independent evidence:** Lun passed contract 10/10, orchestration 17/17, template
+  24/24 and imports-page 83/83 tests; lint had no errors and baseline warning counts;
+  diff checks passed. Lun independently parsed Pap's unchanged CSV locally through
+  production XLSX options: 21 valid, zero issues, 16 sharing true/5 false, volunteer
+  true 5 and first-timer true 12. Source payload identity and input hash were preserved.
+  LEM's discriminating tests fail against the anchored parser (3 fail/7 pass), pass
+  repaired (10/10); retained TypeScript output is byte-identical to the prior 16-error
+  baseline and one production build passed. These are parser results, not live imports.
+- **Production preflight (Pap-run, 2026-09-21T20:12:15.218Z):** serving/controller
+  `c4044715d19f3585d08bb599fc306f2502c5e20d`, app PID 3971631, webhook online,
+  no worker, lock free; live/pinned/next origin all `https://epicentrax.com`.
+  Captured 26 current asset URLs for post-switch verification. Next: one promotion,
+  runtime verification, documentation closeout while webhook paused, resume/save PM2,
+  then Pap's separately executed fresh import into the intended Event and actual
+  commit/review/failure totals. This release does not itself import the CSV.
+- **Remaining boundaries:** the failed historical run remains unchanged. Live
+  canonical commit, authorization and results are not proven by local parsing.
+  Separate deferred findings: sharing-template instructions incorrectly say unknown
+  answers become No; SheetJS repeated nickname headers are not recognized as the
+  optional Co-Pilot nickname alias. Neither is changed by this release.
+
+### Canonical account-holder name — 2026-09-21 (Promoted, deployed and accepted)
 
 - **Substantive code baseline: `e7eebc52724054eabb91bd48992ce0bb0ac762e4`.** Pap approved
   the four reviewed account-name files, this checkpoint, one webhook deployment,
@@ -250,8 +286,12 @@ state override this subsection whenever they disagree, per the
   private/no-store headers through origin and public routes on both hosts. The
   verifier confirmed pointers, original baseline and cleanup/worker/port gates,
   paused only the webhook, and released the lock with the app online. Documentation
-  closeout is authorized; webhook resume and verified PM2 save await Pap's output.
-  Real signed-in name display remains pending Jan's observation.
+  closeout completed in Pap's subsequent output: webhook online, unchanged signing
+  secret, unsigned POST 401, no worker, unchanged app PID, verified PM2 saved state.
+  Backup: `/root/pm2-closeout-backup-20260921T182051Z-ms80u5c1`. Pap confirmed the
+  repair works and supplied a screenshot showing Jan Bertling as account holder,
+  with the event cards separately labeled Registration: Steven Bertling. This is
+  Pap-provided live acceptance, not an agent-run signed-in request.
 - **Behavior:** the account heading reads the signed-in account's active canonical
   Person display name through the existing governed Auth-to-Person chain. The new
   bearer-authenticated endpoint returns only `displayName`, with private/no-store
@@ -282,14 +322,13 @@ state override this subsection whenever they disagree, per the
   her expected events. Pap's read-only SQL showed her account actively linked to
   her active canonical Person. The pilot name in the heading was a display defect;
   no identity repair was needed. These are user-provided observations, not an
-  agent-run production query. The new account heading still needs live acceptance.
+  agent-run production query. The corrected account heading subsequently passed Pap's live acceptance above.
 - **Production preflight (Pap-run, 2026-09-21T18:14:04.485Z):** serving/controller
   release `7f033e03f646312b4097ff4b39f0136233f6b8a6`, app PID 3967339, webhook online,
   no worker, lock free; live/pinned/next-deployment origin settings all match
   `https://epicentrax.com`. Retained 26 old asset URLs, all subsequently verified
-  above. Next: complete documentation closeout while the webhook is stopped,
-  resume/save PM2, and confirm Jan's header and event access. Signed-in profile
-  behavior remains a runtime gate; mocked tests do not prove production identity.
+  above. Documentation closeout and Pap's name/event acceptance are complete.
+  No startup-unit restart or reboot was performed; reboot recovery remains unproven.
 
 ### Member activation with password and email code — 2026-09-21 (Reviewed, promoted and deployed; live activation pending)
 
@@ -1134,12 +1173,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-21T11:20:18-07:00`
+**Generated at:** `2026-09-21T13:14:09-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `c404471 docs: record approved canonical account-name release`
-**Commit date:** `2026-09-21T11:17:19-07:00`
-**origin/main:** `c404471`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**Commit:** `fceffa5 fix(imports): normalize established email sharing answers`
+**Commit date:** `2026-09-21T13:13:34-07:00`
+**origin/main:** `1f16cf7`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
