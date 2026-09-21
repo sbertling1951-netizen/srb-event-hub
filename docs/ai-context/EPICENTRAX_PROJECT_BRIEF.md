@@ -231,6 +231,54 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Activation callback origin repair — 2026-09-21 (Reviewed; approved for one deployment)
+
+- **Substantive code baseline: `8cda628f6d3fa18391c102ea1b016ef3569bc1b7`.** Pap approved the
+  two-file repair and checkpoint reconciliation after Lun's independent PASS.
+  Mel reverified all seven review-anchor hashes, exact cohort, empty index,
+  branch and stash after a fresh fetch of main at `620ed8b`. Only the activation
+  magic-link API route and its new behavioral test changed. Promotion and
+  production activation of this repair are pending, not inferred from approval.
+- **Behavior:** activation callbacks use validated `EPICENTRAX_APP_ORIGIN`,
+  never the request origin or host headers. Production requires HTTPS and
+  rejects loopback. Missing/invalid configuration returns the existing generic
+  response before creating a challenge or requesting email. URL construction
+  preserves `/auth/callback`, `purpose=activation` and the encoded attempt token.
+  Identity eligibility, proof, finalization and account-linking rules are unchanged.
+- **Acceptance:** Lun independently passed 18 route tests and 51 neighboring
+  tests, targeted ESLint and diff checks. His complete TypeScript output matches
+  LEM's retained clean-HEAD output with 16 pre-existing diagnostics. LEM's
+  production build passed; Lun reviewed retained evidence rather than rerunning
+  a full build. The HTTP-mocked tests use the real Supabase client and prove the
+  transmitted callback, not hosted redirect handling or live activation.
+- **Production configuration gate (Pap-run, read-only):** serving release
+  `57a50e93314a842fec2adaca5c7b3d303fb8d505`, its live process environment,
+  pinned `.release-env` and next-deployment `app.env` all resolve the configured
+  origin to `https://epicentrax.com`. No configuration change is needed.
+- **Prior account-release closeout and incident update:** Pap's closeout confirmed
+  webhook online, signing secret unchanged, unsigned POST 401, no worker, app PID
+  unchanged and verified PM2 save. Backup:
+  `/root/pm2-closeout-backup-20260921T045208Z-e0cpupkn`. The startup unit remains
+  inactive; reboot recovery is unproven. These facts supersede the pending
+  closeout status in the prior dated entry below.
+- **Hosted email and account evidence (Pap-reported):** Auth logged
+  `over_email_send_rate_limit` with custom SMTP disabled. Pap configured Resend
+  SMTP using a verified domain; subsequent recovery email was reported delivered,
+  and Jan completed password reset and sign-in. Her exact-account read-only query
+  showed verified email but zero Person/Auth links and no activation audit rows
+  tied to that Auth user. A later activation email and Auth `/otp` log both showed
+  only the homepage as the return address. This proves the callback was bypassed;
+  the complete reverse-proxy-to-Supabase-fallback causal chain remains unverified.
+  No real email tokens are retained in this checkpoint.
+- **Remaining live gates:** verify release health and retained assets, then one
+  fresh activation on Jan's own device must reach the callback and establish the
+  correct canonical Person before inspecting her registrations. Hosted redirect
+  allowlist/template query preservation is not yet independently verified. The
+  setup event checklist is public discovery, not evidence of account-linked
+  registrations. The signed-in activation redirect, that misleading checklist
+  wording and the earlier loading hang are outside this two-file repair.
+  No migration, manual identity reassignment or direct database write is included.
+
 ### Member account setup repair — 2026-09-20 (Reviewed, promoted and deployed; live account checks pending)
 
 - **Substantive code baseline: `0125b2d462c887cc2dad702f4d898244f5bc2198`.** Pap approved committing,
@@ -951,12 +999,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-20T21:51:15-07:00`
+**Generated at:** `2026-09-21T06:30:14-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `57a50e9 docs: record reviewed member-account repair release`
-**Commit date:** `2026-09-20T21:44:33-07:00`
-**origin/main:** `57a50e9`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**Commit:** `8cda628 fix(auth): use configured public origin for activation links`
+**Commit date:** `2026-09-21T06:29:53-07:00`
+**origin/main:** `620ed8b`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
