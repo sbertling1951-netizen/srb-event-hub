@@ -3,7 +3,7 @@
 import type { Route } from "next";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   categorizeEventTiming,
@@ -71,25 +71,97 @@ async function loadWorkspaceContextShadow(
   }
 }
 
-function deriveDisplayName(
-  email: string | null,
-  registrations: ResolvedRegistration[],
-): string {
-  if (registrations.length > 0) {
-    const name = registrationDisplayName(registrations[0]);
-    if (name && name !== registrations[0].entry_id) {
-      return name;
+const ACCOUNT_PROFILE_ENDPOINT = "/api/member/account-profile";
+
+/**
+ * Shown whenever the account holder's own name is not (yet) known. A
+ * registration name and an email local part are both inferences about who this
+ * account belongs to, so neither is ever used here.
+ */
+const NEUTRAL_ACCOUNT_HEADING = "Account";
+
+/**
+ * Reads the signed-in account holder's own display name using only this
+ * session's bearer. No person, attendee, email or registration selector is
+ * sent -- the server derives the account from the credential alone. Every
+ * failure yields no name rather than a guessed one.
+ */
+export async function fetchAccountProfileName(
+  accessToken: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | null> {
+  try {
+    const response = await fetchImpl(ACCOUNT_PROFILE_ENDPOINT, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return null;
     }
+
+    const payload: { displayName?: unknown } = await response.json();
+    const displayName =
+      typeof payload.displayName === "string" ? payload.displayName.trim() : "";
+
+    return displayName.length > 0 ? displayName : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Applies a loaded name ONLY while the load that requested it is still the
+ * current one. A superseded reload, a changed account/session, or an unmounted
+ * page must never adopt or retain a prior Person's name. Always resolves --
+ * a profile failure can never interrupt the caller's own work.
+ */
+export async function applyAccountProfileName(params: {
+  accessToken: string;
+  isCurrent: () => boolean;
+  onName: (displayName: string | null) => void;
+  fetchImpl?: typeof fetch;
+}): Promise<void> {
+  const displayName = await fetchAccountProfileName(
+    params.accessToken,
+    params.fetchImpl,
+  );
+
+  if (!params.isCurrent()) {
+    return;
   }
 
-  if (email) {
-    const local = email.split("@")[0];
-    if (local) {
-      return local;
-    }
-  }
+  params.onName(displayName);
+}
 
-  return "Member";
+/**
+ * The account identity block. It renders only the canonical account holder's
+ * own name or the neutral heading -- never a registration/pilot name, and
+ * never anything inferred from the email address.
+ */
+export function AccountIdentityHeader({
+  displayName,
+  email,
+}: {
+  displayName: string | null;
+  email: string | null;
+}) {
+  return (
+    <div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "#0b5cff" }}>
+        EpicentraX Account
+      </div>
+      <h1 style={{ margin: "4px 0 0", fontSize: 24 }}>
+        {displayName || NEUTRAL_ACCOUNT_HEADING}
+      </h1>
+      {email ? (
+        <div style={{ fontSize: 13, color: "#475569", marginTop: 4 }}>
+          {email}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export default function MemberAccountPage() {
@@ -117,60 +189,197 @@ export default function MemberAccountPage() {
   const [signingOut, setSigningOut] = useState(false);
   const [workspaceContextShadow, setWorkspaceContextShadow] =
     useState<WorkspaceContextShadow | null>(null);
+  // The account holder's own name, from the canonical Person this Auth
+  // account is linked to. Null until known, and whenever it is not available.
+  const [accountName, setAccountName] = useState<string | null>(null);
+
+  // Identity token for the CURRENT account load. Every asynchronous result --
+  // session, name, registrations, workspace shadow -- is adopted only while
+  // its own run is still this token, so a superseded reload, an account
+  // change, a sign-out or an unmounted page can never write another account's
+  // data onto this one.
+  const accountLoadRunRef = useRef<object | null>(null);
+
+  // The Auth account this page is bound to, mirrored from the Supabase Auth
+  // session itself: `undefined` = not observed yet, null = no authenticated
+  // account. It is a mirror, never a second authority -- every authorization
+  // decision still derives from auth.uid() on the server. `recoveryAttempt`
+  // advances only when the SAME account is announced again while this page
+  // could not obtain its matching readable session -- the one case in which a
+  // same-account event must retry the load rather than be ignored.
+  const [authIdentity, setAuthIdentity] = useState<{
+    accountId: string | null | undefined;
+    recoveryAttempt: number;
+  }>({ accountId: undefined, recoveryAttempt: 0 });
+  // True while the current account's load ended without a readable matching
+  // session in this tab. A healthy account never has it set, so ordinary
+  // same-account token refreshes reload nothing.
+  const sessionUnresolvedRef = useRef(false);
+
+  /**
+   * Stops every in-flight result from being adopted and removes the account
+   * data already on screen. Used the moment a load starts for a (possibly
+   * different) account and the moment sign-out is chosen, so nothing
+   * belonging to the previous account outlives it.
+   */
+  const invalidateAccountLoad = useCallback(() => {
+    accountLoadRunRef.current = null;
+    sessionUnresolvedRef.current = false;
+    setLoadStatus("checking");
+    setError(null);
+    setAccountName(null);
+    setVerifiedEmail(null);
+    setAuthUserId(null);
+    setRegistrations([]);
+    setWorkspaceContextShadow(null);
+    setOpeningAttendeeId(null);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      // Unmount: nothing queued may resurrect this page's state.
+      accountLoadRunRef.current = null;
+    };
+  }, []);
+
+  // The page's load lifetime follows the ACTUAL authenticated identity, not a
+  // boolean in a parent. onAuthStateChange emits the current session
+  // immediately on subscribe and again on every sign-in, sign-out and token
+  // refresh, including changes made in another tab. The callback stays
+  // synchronous -- awaiting a Supabase auth operation inside it would deadlock
+  // the SDK's own lock. An unchanged account id is not a state change, so a
+  // token refresh on a healthy account reloads nothing; only an account whose
+  // matching session could not be read here retries on its next announcement.
+  // The announcement is just the trigger: the load still requires this tab's
+  // own readable session for that account.
+  useEffect(() => {
+    let active = true;
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (!active) {
+          return;
+        }
+
+        const nextAccountId = session?.user?.id ?? null;
+        const unresolved = sessionUnresolvedRef.current;
+        setAuthIdentity((current) => {
+          if (current.accountId !== nextAccountId) {
+            return { accountId: nextAccountId, recoveryAttempt: 0 };
+          }
+          if (nextAccountId !== null && unresolved) {
+            return { ...current, recoveryAttempt: current.recoveryAttempt + 1 };
+          }
+          return current;
+        });
+      },
+    );
+
+    return () => {
+      active = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
 
   // Access rules: require a valid Supabase Auth session and resolve the
   // person exclusively through auth.uid() -> person_auth_accounts ->
   // people -> attendees.person_id via resolve_member_account(). No
   // person_id, attendee_id, auth_user_id, or event authorization is ever
   // accepted from a query parameter or other client-supplied value.
-  const load = useCallback(async () => {
-    setLoadStatus("checking");
-    setError(null);
+  const load = useCallback(
+    async (expectedAccountId: string | null) => {
+      // Clear first: this run may be for a different account than the one on
+      // screen, and nothing may be shown as if it belonged to the new one.
+      invalidateAccountLoad();
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const session = sessionData?.session;
+      const accountLoadRun = {};
+      accountLoadRunRef.current = accountLoadRun;
+      const isCurrent = () => accountLoadRunRef.current === accountLoadRun;
 
-    if (!session) {
-      setWorkspaceContextShadow(null);
-      setLoadStatus("denied");
-      router.replace("/member/login");
-      return;
-    }
+      if (!expectedAccountId) {
+        setLoadStatus("denied");
+        router.replace("/member/login");
+        return;
+      }
 
-    setVerifiedEmail(session.user.email ?? null);
-    setAuthUserId(session.user.id);
-    setLoadStatus("loading");
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!isCurrent()) {
+        return;
+      }
+      const session = sessionData?.session;
 
-    const { data: rows, error: resolveError } = await supabase.rpc(
-      "resolve_member_account",
-    );
+      // The session must still be the account this run was started for. An
+      // obsolete answer -- including a no-session answer from a superseded run
+      // -- must never redirect away from, or load data into, a newer account's
+      // page; the newer observation drives its own run. When this tab simply
+      // cannot read a matching session yet, stay neutral and let the next
+      // announcement of the same account retry.
+      if (!session || session.user.id !== expectedAccountId) {
+        sessionUnresolvedRef.current = true;
+        return;
+      }
 
-    if (resolveError) {
-      setError(
-        "We could not load your linked registrations. Please try again.",
+      setVerifiedEmail(session.user.email ?? null);
+      setAuthUserId(session.user.id);
+      setLoadStatus("loading");
+
+      // The account holder's own name loads independently of the registration
+      // list: a profile failure leaves the authorized event list, navigation and
+      // the password link untouched, and a registration failure never names the
+      // account. Both use THIS session's own credential.
+      void applyAccountProfileName({
+        accessToken: session.access_token,
+        isCurrent,
+        onName: setAccountName,
+      });
+
+      const { data: rows, error: resolveError } = await supabase.rpc(
+        "resolve_member_account",
       );
+
+      if (!isCurrent()) {
+        return;
+      }
+
+      if (resolveError) {
+        setError(
+          "We could not load your linked registrations. Please try again.",
+        );
+        setLoadStatus("ready");
+        return;
+      }
+
+      const resolvedRegistrations = Array.isArray(rows)
+        ? (rows as ResolvedRegistration[])
+        : [];
+
+      setRegistrations(resolvedRegistrations);
       setLoadStatus("ready");
-      return;
-    }
 
-    const resolvedRegistrations = Array.isArray(rows)
-      ? (rows as ResolvedRegistration[])
-      : [];
-
-    setRegistrations(resolvedRegistrations);
-    setLoadStatus("ready");
-
-    // Comparison only: the existing direct RPC result remains authoritative
-    // for this page until a later Workspace Resolver slice is approved.
-    void loadWorkspaceContextShadow(
-      session.access_token,
-      resolvedRegistrations,
-    ).then(setWorkspaceContextShadow);
-  }, [router]);
+      // Comparison only: the existing direct RPC result remains authoritative
+      // for this page until a later Workspace Resolver slice is approved.
+      void loadWorkspaceContextShadow(
+        session.access_token,
+        resolvedRegistrations,
+      ).then((shadow) => {
+        if (!isCurrent()) {
+          return;
+        }
+        setWorkspaceContextShadow(shadow);
+      });
+    },
+    [invalidateAccountLoad, router],
+  );
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (authIdentity.accountId === undefined) {
+      // The Auth session has not been observed yet; the page stays in its
+      // existing "Checking your account..." state until it is.
+      return;
+    }
+
+    void load(authIdentity.accountId);
+  }, [authIdentity, load]);
 
   const grouped = useMemo(() => {
     const buckets: Record<
@@ -211,12 +420,17 @@ export default function MemberAccountPage() {
 
   async function handleSignOut() {
     setSigningOut(true);
+    // Synchronously, before the first await: sign-out has been chosen, so no
+    // in-flight result may still be adopted and nothing belonging to this
+    // account may stay on screen while sign-out and navigation complete.
+    invalidateAccountLoad();
     await signOutOfMemberAccount();
     router.replace("/member/login");
   }
 
   async function handleSignOutForEventAccess() {
     setSigningOut(true);
+    invalidateAccountLoad();
     await signOutOfMemberAccount();
     router.replace("/member/login");
   }
@@ -225,7 +439,6 @@ export default function MemberAccountPage() {
     return <div style={{ padding: 24 }}>Checking your account...</div>;
   }
 
-  const displayName = deriveDisplayName(verifiedEmail, registrations);
   const hasAnyRegistrations = registrations.length > 0;
 
   return (
@@ -250,17 +463,10 @@ export default function MemberAccountPage() {
             flexWrap: "wrap",
           }}
         >
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#0b5cff" }}>
-              EpicentraX Account
-            </div>
-            <h1 style={{ margin: "4px 0 0", fontSize: 24 }}>{displayName}</h1>
-            {verifiedEmail ? (
-              <div style={{ fontSize: 13, color: "#475569", marginTop: 4 }}>
-                {verifiedEmail}
-              </div>
-            ) : null}
-          </div>
+          <AccountIdentityHeader
+            displayName={accountName}
+            email={verifiedEmail}
+          />
 
           <div
             style={{
@@ -532,7 +738,7 @@ function EventGroup({
   );
 }
 
-function EventCard({
+export function EventCard({
   row,
   onOpen,
   opening,
@@ -542,7 +748,10 @@ function EventCard({
   opening: boolean;
 }) {
   const dateRange = formatDateRange(row.start_date, row.end_date);
-  const displayName = registrationDisplayName(row);
+  // The name on THIS registration, which on a household entry is the pilot --
+  // not necessarily the account holder. It is labelled so the two are never
+  // confused. The shared helper itself is unchanged.
+  const registrationName = registrationDisplayName(row);
   const venueOrLocation = row.venue_name || row.location || null;
 
   return (
@@ -575,7 +784,7 @@ function EventCard({
           </div>
         ) : null}
         <div style={{ fontSize: 13, color: "#475569" }}>
-          {displayName}
+          {`Registration: ${registrationName}`}
           {row.has_arrived ? (
             <span style={{ color: "#166534", fontWeight: 700 }}>
               {" "}
