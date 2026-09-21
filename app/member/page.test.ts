@@ -15,6 +15,13 @@ const SOURCE = readFileSync(
   "utf8",
 );
 
+test("My Events is offered only to an established account session, not Temporary Event Access or unresolved Auth", () => {
+  assert.match(
+    SOURCE,
+    /\{workspace\.isAccountSession === true \? \(\s*<button[\s\S]*?goTo\("\/member\/account"\)[\s\S]*?My Events\s*<\/button>\s*\) : null\}/,
+  );
+});
+
 test("vendor Notice content is read through the governed resolve_attendee_visible_vendor_notices RPC, not a raw vendor_event_status table read", () => {
   assert.match(
     SOURCE,

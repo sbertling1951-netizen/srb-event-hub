@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   getIdentityClaimPublicMessage,
@@ -73,6 +73,15 @@ export default function MemberActivatePage() {
   const [magicLinkBusy, setMagicLinkBusy] = useState(false);
   const [magicLinkStatus, setMagicLinkStatus] = useState<string | null>(null);
   const [magicLinkError, setMagicLinkError] = useState<string | null>(null);
+  const verificationHeadingRef = useRef<HTMLHeadingElement>(null);
+  const verificationReady = result === "CONTINUE_VERIFICATION" && !!attemptToken;
+
+  useEffect(() => {
+    if (verificationReady) {
+      verificationHeadingRef.current?.focus({ preventScroll: true });
+      verificationHeadingRef.current?.scrollIntoView({ block: "start" });
+    }
+  }, [verificationReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -165,6 +174,9 @@ export default function MemberActivatePage() {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (busy || verificationReady) {
+      return;
+    }
 
     const parsed = parseIdentityClaimInput({
       firstName,
@@ -329,7 +341,19 @@ export default function MemberActivatePage() {
 
       <form
         onSubmit={handleSubmit}
+        onChange={() => {
+          if (result) {
+            setResult(null);
+            setAttemptToken(null);
+            setMagicLinkSent(false);
+            setMagicLinkStatus(null);
+            setMagicLinkError(null);
+            setError(null);
+            setStatus("Information changed. Select Continue to check it again.");
+          }
+        }}
         autoComplete="on"
+        aria-busy={busy}
         style={{
           border: "1px solid #ddd",
           borderRadius: 12,
@@ -349,6 +373,7 @@ export default function MemberActivatePage() {
           <label>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>First Name</div>
             <input
+              disabled={busy}
               type="text"
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
@@ -360,6 +385,7 @@ export default function MemberActivatePage() {
           <label>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>Last Name</div>
             <input
+              disabled={busy}
               type="text"
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
@@ -379,6 +405,7 @@ export default function MemberActivatePage() {
           <label>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>Home State</div>
             <input
+              disabled={busy}
               type="text"
               value={homeState}
               onChange={(e) => setHomeState(e.target.value)}
@@ -393,6 +420,7 @@ export default function MemberActivatePage() {
               Email Address
             </div>
             <input
+              disabled={busy}
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -412,6 +440,7 @@ export default function MemberActivatePage() {
           <label>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>Mobile Phone</div>
             <input
+              disabled={busy}
               type="tel"
               value={mobilePhone}
               onChange={(e) => setMobilePhone(e.target.value)}
@@ -426,6 +455,7 @@ export default function MemberActivatePage() {
               Membership Number
             </div>
             <input
+              disabled={busy}
               type="text"
               value={membershipNumber}
               onChange={(e) => setMembershipNumber(e.target.value)}
@@ -469,6 +499,7 @@ export default function MemberActivatePage() {
                   }}
                 >
                   <input
+                    disabled={busy}
                     type="checkbox"
                     checked={selectedEventIds.includes(event.id)}
                     onChange={() => toggleEvent(event.id)}
@@ -511,32 +542,36 @@ export default function MemberActivatePage() {
             : ` You currently have ${additionalEvidenceCount} additional evidence field${additionalEvidenceCount === 1 ? "" : "s"} filled.`}
         </div>
 
-        <button
-          type="submit"
-          disabled={busy}
-          style={{
-            width: "100%",
-            minHeight: 48,
-            padding: "12px 14px",
-            borderRadius: 8,
-            border: "1px solid #cbd5e1",
-            background: "#0b5cff",
-            color: "#ffffff",
-            cursor: busy ? "not-allowed" : "pointer",
-            fontWeight: 700,
-            fontSize: 16,
-            lineHeight: 1.2,
-            opacity: busy ? 0.7 : 1,
-            WebkitAppearance: "none",
-            appearance: "none",
-          }}
-        >
-          {busy ? "Checking..." : "Continue"}
-        </button>
+        {!verificationReady ? (
+          <button
+            type="submit"
+            disabled={busy}
+            style={{
+              width: "100%",
+              minHeight: 48,
+              padding: "12px 14px",
+              borderRadius: 8,
+              border: "1px solid #cbd5e1",
+              background: "#0b5cff",
+              color: "#ffffff",
+              cursor: busy ? "not-allowed" : "pointer",
+              fontWeight: 700,
+              fontSize: 16,
+              lineHeight: 1.2,
+              opacity: busy ? 0.7 : 1,
+              WebkitAppearance: "none",
+              appearance: "none",
+            }}
+          >
+            {busy ? "Checking..." : "Continue"}
+          </button>
+        ) : null}
 
         {status ? (
-          <div style={{ fontSize: 13, color: result ? "#0f172a" : "#666" }}>
-            {status}
+          <div role="status" style={{ fontSize: 13, color: result ? "#0f172a" : "#666" }}>
+            {verificationReady
+              ? "Information checked. Next, request your verification email below. Your account is not activated yet."
+              : status}
           </div>
         ) : null}
 
@@ -570,14 +605,16 @@ export default function MemberActivatePage() {
             gap: 12,
           }}
         >
-          <h2 style={{ margin: 0, fontSize: 20 }}>Finish Activating</h2>
+          <h2 ref={verificationHeadingRef} tabIndex={-1} style={{ margin: 0, fontSize: 20 }}>
+            Next: Verify Your Email
+          </h2>
 
           {!magicLinkSent ? (
             <>
               <p style={{ margin: 0, color: "#475569", lineHeight: 1.5 }}>
                 We&apos;ll email a one-time secure link to finish creating your
-                EpicentraX account. No code to type in -- just open the link on
-                this device.
+                EpicentraX account. Open the link on this device, then choose
+                your password.
               </p>
 
               <label>

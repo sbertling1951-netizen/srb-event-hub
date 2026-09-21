@@ -317,18 +317,27 @@ export default function MemberLoginPage() {
 
     try {
       setRecoveryBusy(true);
+      setRecoveryStatus("Requesting a recovery email...");
 
-      await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo: `${window.location.origin}/auth/callback?purpose=recovery`,
-      });
-    } catch (err) {
-      console.error(err);
-    } finally {
-      // Deliberately generic and identical regardless of whether the
-      // email has an account, to avoid disclosing account existence.
-      setRecoveryStatus(
-        "If this email has an account, a recovery link has been sent.",
+      const { error: recoveryError } = await supabase.auth.resetPasswordForEmail(
+        normalizedEmail,
+        { redirectTo: `${window.location.origin}/auth/callback?purpose=recovery` },
       );
+
+      if (recoveryError) {
+        throw recoveryError;
+      }
+
+      // A successful request is not proof of delivery or account existence.
+      setRecoveryStatus(
+        "If recovery is available for this email, you will receive a link. Check your inbox and junk folder.",
+      );
+    } catch {
+      // Never expose provider details that could disclose account existence.
+      setRecoveryStatus(
+        "We could not request a recovery email. Please try again later.",
+      );
+    } finally {
       setRecoveryBusy(false);
     }
   }
@@ -660,7 +669,7 @@ export default function MemberLoginPage() {
         ) : null}
 
         {recoveryStatus ? (
-          <div style={{ fontSize: 13, color: "#666" }}>{recoveryStatus}</div>
+          <div role="status" style={{ fontSize: 13, color: "#666" }}>{recoveryStatus}</div>
         ) : null}
 
         {signInError ? (

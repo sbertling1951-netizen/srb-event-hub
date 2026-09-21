@@ -25,7 +25,7 @@ import { supabase } from "@/lib/supabase";
 type Purpose = "activation" | "recovery" | "organizer";
 
 const DESTINATIONS: Record<Purpose, string> = {
-  activation: "/member/account",
+  activation: "/member/account/reset-password",
   recovery: "/member/account/reset-password",
   organizer: "/organize",
 };
@@ -79,7 +79,7 @@ export default function AuthCallbackPage() {
 
         if (code) {
           const { error: exchangeError } =
-            await supabase.auth.exchangeCodeForSession(window.location.href);
+            await supabase.auth.exchangeCodeForSession(code);
 
           if (exchangeError) {
             const { data: existingSessionData } =
@@ -119,8 +119,6 @@ export default function AuthCallbackPage() {
           throw new Error("no_session_established");
         }
 
-        setStatus("Your account is verified. Opening your EpicentraX account...");
-
         if (purpose === "activation" && isFreshExchange) {
           if (!attemptToken) {
             throw new Error("missing_attempt_token");
@@ -149,6 +147,11 @@ export default function AuthCallbackPage() {
           }
         }
 
+        setStatus(
+          purpose === "organizer"
+            ? "Your account is verified. Opening your EpicentraX account..."
+            : "Opening password setup...",
+        );
         router.replace(DESTINATIONS[purpose]);
       } catch (err) {
         console.error("Auth callback error:", err);

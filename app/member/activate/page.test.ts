@@ -80,3 +80,17 @@ test("an ALREADY_ACTIVATED result routes directly to the one-time Member Login n
 test("temporary activation diagnostics are absent from the browser flow", () => {
   assert.doesNotMatch(SOURCE, /_diag|activate-diag|diagnostic \(temporary\)|setDiag/);
 });
+
+test("Continue disappears only after the server permits verification with an attempt token", () => {
+  assert.match(SOURCE, /const verificationReady = result === "CONTINUE_VERIFICATION" && !!attemptToken;/);
+  assert.match(SOURCE, /\{!verificationReady \? \(\s*<button\s*type="submit"/);
+  assert.match(SOURCE, /Your account is not activated yet\./);
+});
+
+test("accepted information focuses the email step, and editing evidence discards the stale result", () => {
+  assert.match(SOURCE, /if \(verificationReady\) \{\s*verificationHeadingRef\.current\?\.focus\(\{ preventScroll: true \}\);\s*verificationHeadingRef\.current\?\.scrollIntoView\(\{ block: "start" \}\);/);
+  const editHandler = SOURCE.slice(SOURCE.indexOf("onChange={() => {"), SOURCE.indexOf('autoComplete="on"'));
+  assert.match(editHandler, /setResult\(null\)/);
+  assert.match(editHandler, /setAttemptToken\(null\)/);
+  assert.match(editHandler, /setMagicLinkSent\(false\)/);
+});

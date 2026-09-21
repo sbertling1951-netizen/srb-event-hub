@@ -17,12 +17,12 @@ const inputStyle: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
-// Used for both:
+// Used for:
 //   - genuine password recovery (reached via /auth/callback after a
 //     "Forgot password?" magic link, which establishes a recovery
-//     session), and
-//   - a signed-in member voluntarily adding/changing a password as a
-//     backup sign-in method (Account Security).
+//     session),
+//   - a newly verified member choosing a password before entering their account,
+//   - a signed-in member voluntarily adding/changing a password (Account Security).
 // Either way, supabase.auth.updateUser({ password }) is used against
 // whatever session is already active -- no new auth user is created,
 // no password is ever sent to a custom application API or stored in a
@@ -42,12 +42,22 @@ export default function MemberAccountResetPasswordPage() {
     let cancelled = false;
 
     async function check() {
-      const { data } = await supabase.auth.getSession();
-      if (cancelled) {
-        return;
+      try {
+        const { data, error: sessionError } = await supabase.auth.getSession();
+        if (!cancelled) {
+          setHasSession(!sessionError && !!data?.session);
+        }
+      } catch {
+        if (!cancelled) {
+          setError(
+            "We could not check your sign-in session. Please reload this page and try again.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setCheckingSession(false);
+        }
       }
-      setHasSession(!!data?.session);
-      setCheckingSession(false);
     }
 
     void check();
@@ -121,8 +131,12 @@ export default function MemberAccountResetPasswordPage() {
           }}
         >
           <div style={{ fontWeight: 700 }}>
-            This link has expired or was already used.
+            {error || "You need a verified sign-in session to set a password."}
           </div>
+          <p style={{ margin: 0 }}>
+            Open your latest verification or recovery email in this browser.
+            If it no longer works, return to Member Login and request a Recovery Link.
+          </p>
           <Link href="/member/login" style={{ color: "#0b5cff", fontWeight: 700 }}>
             Back to Member Login
           </Link>
@@ -135,7 +149,8 @@ export default function MemberAccountResetPasswordPage() {
     <div style={{ padding: 24, maxWidth: 480, margin: "0 auto" }}>
       <h1 style={{ marginTop: 0 }}>Set a Password</h1>
       <p style={{ marginTop: 0, color: "#475569", lineHeight: 1.5 }}>
-        Add a password as a backup sign-in method.
+        Choose a password to sign in to your EpicentraX account next time.
+        Use at least 8 characters.
       </p>
 
       <form
@@ -156,6 +171,8 @@ export default function MemberAccountResetPasswordPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
+            required
+            minLength={8}
             style={inputStyle}
           />
         </label>
@@ -169,6 +186,8 @@ export default function MemberAccountResetPasswordPage() {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             autoComplete="new-password"
+            required
+            minLength={8}
             style={inputStyle}
           />
         </label>

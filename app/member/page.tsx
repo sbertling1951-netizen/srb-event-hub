@@ -562,13 +562,15 @@ export default function MemberDashboardPage() {
           marginTop: 12,
         }}
       >
-        <button
-          type="button"
-          onClick={() => goTo("/member/account")}
-          style={memberGridButtonStyle}
-        >
-          My Events
-        </button>
+        {workspace.isAccountSession === true ? (
+          <button
+            type="button"
+            onClick={() => goTo("/member/account")}
+            style={memberGridButtonStyle}
+          >
+            My Events
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => goTo("/member/announcements")}
