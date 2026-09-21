@@ -231,15 +231,87 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Release preparation — 2026-09-20 (Isolated deployment repair reviewed; installation pending)
+
+- **The integrated product baseline remains the focus-ring repair below.**
+  The isolated-release deployment repair is reviewed but uncommitted,
+  unpromoted and not installed. It prepares builds outside the serving
+  directory, retains shared static assets, preserves a first-install rollback
+  baseline and pinned configuration, verifies HTML/assets through local Nginx,
+  and handles candidate cleanup, rollback and bounded cancellation. Admin
+  diagnostics identify the serving directory's release metadata and recorded
+  activation time; unavailable identity/cleanliness is not reported as clean.
+- **Independent review gates closed.** LEM implemented the deployment repair
+  and F1/F2 corrections; Lun supplied an independent F1/F2 PASS. Lun implemented
+  the total verification deadline/readiness correction and B1 webhook error
+  handling; LEM independently reviewed those changes. Reported focused results:
+  lifecycle 139/139, findings 70/70, supervision 21/21, verifier 12/12, and the
+  real-HTTP B1 regression. LEM's final Linux B1 replay passed all 35 assertions.
+  These are attributed agent results; Mel verified the final source hashes and
+  cohort, not a separate rerun of every test.
+- **Linux compatibility established for the tested mechanisms.** LEM exercised
+  real PM2, Nginx, process groups, locking, web-account/ACL access and retention
+  with a synthetic application. The final targeted parity run used PM2 6.0.14,
+  Node 20.20.2, npm 10.8.2 and Nginx 1.24.0: activation, preserved-baseline
+  rollback and interrupted slow recovery passed. This does not prove the real
+  Next.js deployment, public-edge delivery, or reboot persistence. Earlier
+  TypeScript/build results retain their existing attribution and limits.
+- **Pap-supplied production preflight, 2026-09-21 01:39–01:42 UTC:** main is
+  clean at `de8e72e`; app and webhook are online; port 3001 is free; disk has
+  105 GB available. Nginx syntax and execution as `www-data` passed. Both origins
+  served HTML/CSS; `epicentrax.com` uses Cloudflare Origin CA (ordinary direct
+  curl trust failed), while `app.eventsyncapp.com` uses a publicly trusted
+  certificate. Existing `.env.local` is mode 0600 and has the required key
+  names; new `app.env`, asset store and release/state directories are absent.
+  PM2's startup unit is enabled but inactive, and its saved dump is dated
+  August 23. No production changes were made during these checks.
+- **Remaining installation work:** obtain Pap's release approval; prevent the
+  old webhook from deploying during bootstrap; prepare protected configuration
+  and both Nginx asset locations; deploy and verify the actual application,
+  rollback target, old/new assets and serving identity; then restart the
+  reviewed webhook and persist the verified PM2 process list. Inspect the
+  startup unit before persistence; no reboot or startup-unit restart is implied.
+  Keep the 12-second readiness, 20-second verifier and 45-second grace defaults;
+  near-minimum grace tuning is deferred. No database or migration work is part
+  of this release.
+- **Recorded non-blocking debt:** recovery-margin accounting for in-flight
+  probes/PM2 time; explicit verifier-argument consistency; recovery-specific
+  wording on ordinary startup; stronger delayed-start/positive-control tests;
+  asset-count wording on timeout; and B1 test cleanup diagnostics for an
+  already-exited child. These are deferred, not silently fixed or erased.
+  The separate member photo-help change remains local and outside this
+  deployment release pending its own review. Preserve both photo-help files.
+
 ### Re-anchor reconciliation — 2026-09-20 (Shared focus-ring contrast repair)
 
-- Current substantive baseline: `e0b3d61`, committed locally on top of `d44ba41`. Promotion and deployment of this repair are pending.
+- Current substantive baseline: `e0b3d61`, promoted to `origin/main` through
+  `de8e72e` on 2026-09-20. Mel performed the authorized fast-forward push and
+  independently verified remote `main` at
+  `de8e72e4cc7a5f0efd50515aabbe4bdf01b926de`. At 2026-09-20 16:05 UTC,
+  Mel independently retrieved the public homepage and its newly referenced
+  stylesheet with HTTP 200; the CSS declares `--color-focus-ring:#6b7280`.
+  This verifies public delivery of the repaired token, not complete
+  application health or the exact running build.
+- **Post-promotion stylesheet incident.** Earlier public requests referenced
+  an unavailable CSS chunk, returning HTTP 500 and then HTTP 404. Pap
+  supplied a Safari screenshot of the unstyled Admin Dashboard and reported
+  Production Status as online, commit `de8e72e`, working tree clean. The
+  later public request references a different, working CSS chunk; Pap
+  confirmed normal styling was restored after reloading the affected Safari
+  page. Root cause remains unverified. The status endpoint reads the
+  checkout's Git state and returns
+  a literal `online` value; it does not verify asset delivery, PM2 health,
+  or the running build. Read-only SSH authentication was denied, so those
+  server-side runtime facts were not independently checked. No manual
+  deployment, service restart, or database operation was performed.
 - The shared focus token changed from `rgba(37, 99, 235, 0.35)` to opaque `#6b7280`. Contrast is 3.6927–4.8345:1 across nine evaluated flat colors. `#0f172a` is supplemental coverage, not a verified Photos control background.
 - Selector scope, outline geometry, independent invalid-input indicators, container suppressions, and tenant-branding invariance remain unchanged.
 - LEM implemented the two-file repair; Lun independently reviewed it. Reported validation: 173 focused tests, targeted lint, and a production build generating 133 static pages. Mel independently verified byte-identical TypeScript output against clean HEAD with equivalent generated inputs: 16 existing diagnostics.
 - Browser evidence covers automated Chromium, Firefox, and WebKit fixtures, including corrected per-control text enlargement. WebKit keyboard coverage uses Option-Tab/Option-Shift-Tab. This does not establish native Safari, physical-device, live focus-trap, or comprehensive accessibility conformance.
 - Existing geometry findings remain open; this color-only repair neither resolves them nor establishes fixture-only findings as live-app defects.
-- Earlier deployment statements and unresolved production migration-ledger checks retain their existing attribution and limitations. No deployment or database verification occurred during this repair.
+- Earlier deployment statements and unresolved production migration-ledger
+  checks retain their existing attribution and limitations. This promotion
+  includes no migration files; no database verification was performed.
 
 ### Re-anchor reconciliation — 2026-09-19 (Central UI Standard rollout, shell navigation, behavior/authority fixes, and the shared link-button repair)
 
@@ -756,16 +828,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-20T08:55:26-07:00`
+**Generated at:** `2026-09-20T18:54:24-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `e0b3d61 fix(ui): improve shared focus-ring contrast`
-**Commit date:** `2026-09-20T08:54:49-07:00`
-**origin/main:** `d44ba41`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `de8e72e docs: reconcile shared focus-ring repair checkpoint`
+**Commit date:** `2026-09-20T08:55:52-07:00`
+**origin/main:** `de8e72e`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `9`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `12`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records

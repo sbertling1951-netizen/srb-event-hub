@@ -67,13 +67,46 @@ type EventRow = {
   status?: string | null;
 };
 
+/** How /api/admin/system-status established the reported identity. */
+type DeploymentSource = "release" | "checkout" | "unknown";
+
 type SystemStatus = {
   status: string;
+  source?: DeploymentSource;
   commit: string | null;
-  dirty: boolean;
+  /** null when cleanliness is unverified or does not apply to a release. */
+  dirty: boolean | null;
   environment: string;
-  lastDeployedAt: string;
+  /** A recorded activation time, or null. Never the request time. */
+  lastDeployedAt: string | null;
 };
+
+/**
+ * Worktree cleanliness label. An isolated release is an immutable export, so
+ * cleanliness does not apply to it; unknown state is not cleanliness either.
+ * Neither may ever be shown as "Clean".
+ */
+export function workingTreeLabel(
+  dirty: boolean | null | undefined,
+  source: DeploymentSource | undefined,
+): string {
+  if (dirty === true) {
+    return "Dirty";
+  }
+  if (dirty === false) {
+    return "Clean";
+  }
+  return source === "release" ? "Not applicable" : "Unavailable";
+}
+
+/** A recorded activation time, or an explicit absence. */
+export function lastDeployedLabel(value: string | null | undefined): string {
+  if (!value) {
+    return "Unavailable";
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "Unavailable" : parsed.toLocaleString();
+}
 
 function formatEventLabel(evt: EventRow) {
   const name = evt.name || "Untitled event";
@@ -674,7 +707,13 @@ function AdminDashboardPageInner() {
               <div>Service: {systemStatus.status}</div>
               <div>Environment: {systemStatus.environment}</div>
               <div>Commit: {systemStatus.commit || "Unavailable"}</div>
-              <div>Working tree: {systemStatus.dirty ? "Dirty" : "Clean"}</div>
+              <div>
+                Working tree:{" "}
+                {workingTreeLabel(systemStatus.dirty, systemStatus.source)}
+              </div>
+              <div>
+                Last deployed: {lastDeployedLabel(systemStatus.lastDeployedAt)}
+              </div>
             </div>
           )}
         </section>

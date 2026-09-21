@@ -1,0 +1,62 @@
+# Event Hub shared immutable-asset location -- REVIEW ARTIFACT, NOT INSTALLED.
+#
+# Purpose: keep /_next/static assets available across a release switch. Next.js
+# serves these out of the .next directory it is currently bound to, so the
+# moment PM2 moves to a new release, assets referenced by pages the previous
+# release already served stop resolving. They are sent with
+# `immutable, max-age=31536000`, so an affected client is unlikely to
+# re-request promptly -- though that alone does not prove none revalidates.
+#
+# This block serves those assets from a store shared by every retained release,
+# and falls back to the application for anything not yet published there.
+#
+# INSTALLATION: paste this single location block INSIDE the existing
+# `server { ... }` block that already terminates TLS -- for BOTH application
+# hostnames, `epicentrax.com` and `app.eventsyncapp.com`. Each server block
+# that serves the application needs its own copy; a block added to only one
+# hostname leaves the other serving assets from the release directory, which
+# is the behaviour this change removes. Do not
+# replace the server block, the TLS configuration, any authentication or
+# tenant-resolution directives, or any other location. Substitute
+# __ASSET_STORE__ with the absolute asset-store path (default
+# /srv/srb-event-hub/assets) and reload with `nginx -t && systemctl reload
+# nginx` -- reload, not restart.
+#
+# The store deliberately lives OUTSIDE any user home. The deploying user is
+# root, and /root is mode 0700, so an asset store under it could not be
+# traversed by the www-data worker and every asset request would fail. The
+# worker refuses such a path and preflights traversal before publishing.
+# Expected permissions: directories 0755, files 0644, every ancestor
+# world-traversable.
+#
+# The `^~` prefix makes this the longest-prefix winner for /_next/static/ only.
+# Every other path, including /_next/image, /_next/data and all application
+# routes, continues to reach the proxy exactly as before.
+
+location ^~ /_next/static/ {
+    alias __ASSET_STORE__/_next/static/;
+
+    # Content-hashed filenames: safe to cache hard. Matches what Next.js
+    # already sends, so client behaviour is unchanged.
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+    access_log off;
+
+    # Anything not yet in the shared store is served by the application, so a
+    # first install (empty store) and any publication gap both degrade to
+    # today's behaviour rather than to a 404.
+    try_files $uri @eventhub_app;
+}
+
+location @eventhub_app {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+
+    # Host forwarding is preserved deliberately: tenant resolution depends on
+    # the original Host, not on the upstream address.
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade           $http_upgrade;
+    proxy_set_header Connection        "upgrade";
+}

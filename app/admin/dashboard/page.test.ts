@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 
 import {
   ADMIN_LEVEL1_SUMMARY_LINKS,
+  lastDeployedLabel,
   visibleAdminSummaryLinks,
+  workingTreeLabel,
 } from "@/app/admin/dashboard/page";
 import type { AdminAccessResult } from "@/lib/getCurrentAdminAccess";
 
@@ -350,4 +352,71 @@ test("the working Event always renders visibly, even when archived, independent 
     /const selectedEvent = events\.find\(/,
     "the Working Event line must read from the full accessible events state, not the archived-filtered picker list",
   );
+});
+
+// ---------------------------------------------------------------------------
+// Deployment-status rendering. Under isolated releases the serving process is
+// an immutable export with no worktree, so cleanliness is not merely unknown
+// -- it does not apply. The previous `dirty ? "Dirty" : "Clean"` ternary
+// reported both "unknown" and "not applicable" as "Clean", which is the one
+// answer that is never true.
+// ---------------------------------------------------------------------------
+
+const dashboardSource = readFileSync(
+  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  "utf8",
+);
+
+test("a known worktree state still renders Dirty or Clean", () => {
+  assert.equal(workingTreeLabel(true, "checkout"), "Dirty");
+  assert.equal(workingTreeLabel(false, "checkout"), "Clean");
+});
+
+test("an isolated release renders Not applicable -- never Clean", () => {
+  assert.equal(workingTreeLabel(null, "release"), "Not applicable");
+});
+
+test("unknown or unverified cleanliness renders Unavailable -- never Clean", () => {
+  for (const source of ["unknown", "checkout", undefined] as const) {
+    assert.equal(workingTreeLabel(null, source), "Unavailable");
+    assert.equal(workingTreeLabel(undefined, source), "Unavailable");
+  }
+});
+
+test("no combination of null cleanliness can ever render as Clean", () => {
+  for (const source of ["release", "checkout", "unknown", undefined] as const) {
+    for (const dirty of [null, undefined] as const) {
+      assert.notEqual(workingTreeLabel(dirty, source), "Clean");
+    }
+  }
+});
+
+test("a missing or unparseable activation time renders Unavailable, never a substituted time", () => {
+  assert.equal(lastDeployedLabel(null), "Unavailable");
+  assert.equal(lastDeployedLabel(undefined), "Unavailable");
+  assert.equal(lastDeployedLabel(""), "Unavailable");
+  assert.equal(lastDeployedLabel("whenever"), "Unavailable");
+});
+
+test("a recorded activation time is rendered as a time", () => {
+  const rendered = lastDeployedLabel("2026-09-20T16:04:22Z");
+  assert.notEqual(rendered, "Unavailable");
+  assert.ok(rendered.length > 0);
+});
+
+test("the old Clean-by-default ternary is gone from the rendered output", () => {
+  assert.doesNotMatch(dashboardSource, /dirty \? "Dirty" : "Clean"/);
+  assert.match(dashboardSource, /workingTreeLabel\(systemStatus\.dirty, systemStatus\.source\)/);
+});
+
+test("Service, Environment and Commit presentation are preserved", () => {
+  assert.match(dashboardSource, /Service: \{systemStatus\.status\}/);
+  assert.match(dashboardSource, /Environment: \{systemStatus\.environment\}/);
+  assert.match(dashboardSource, /Commit: \{systemStatus\.commit \|\| "Unavailable"\}/);
+});
+
+test("the Super-Admin diagnostics gate around the panel is unchanged", () => {
+  assert.match(dashboardSource, /systemStatusState === "loading"/);
+  assert.match(dashboardSource, /Production status is currently unavailable\./);
+  assert.match(dashboardSource, /\/api\/admin\/system-status/);
 });
