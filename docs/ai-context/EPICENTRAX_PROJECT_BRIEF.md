@@ -231,14 +231,26 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Attendee import sharing-answer compatibility — 2026-09-21 (Reviewed and committed; approved release pending)
+### Attendee import sharing-answer compatibility — 2026-09-21 (Promoted and deployed; closeout and fresh import pending)
 
 - **Substantive code baseline: `fceffa5ea61cb3c62d0167568630367d41094627`.** Pap approved the
   reviewed two-file parser/test repair, checkpoint reconciliation, one deployment,
   verification and closeout after Lun's PASS and the read-only production preflight.
   Mel verified all 14 review hashes, exact two-file cohort, empty index and unchanged
   stash/input CSV. Fresh origin/main matched `1f16cf75f11771b4b8897f516869dab84cdf598c`;
-  committed source bytes match the review. No deployment result claimed yet.
+  committed source bytes match the review. Mel promoted the repair and checkpoint
+  as **`a179d4fac64c8c700ce3d4cc6be859514a95b8db`** in one fast-forward push;
+  the remote main SHA was verified.
+- **Production verification (Pap-run):** activated at **2026-09-21T20:17:02Z**
+  in `/root/srb-event-hub-releases/20260921T201507Z-a179d4fac64c`, app PID 3974391.
+  Verified rollback: `20260921T181757Z-c4044715d19f`. Both hostnames passed
+  origin HTML and 13 referenced assets, protected system-status 401, public
+  HTML/assets with ordinary TLS validation, and signed-out account-profile 401
+  with neutral body/private-no-store through both origin and public paths.
+  All 26 captured old asset URLs passed. Pointer/baseline, pinned-config and
+  cleanup/worker/port gates passed; only the webhook was paused for documentation
+  closeout and the lock was released with the application online. Webhook resume
+  and verified PM2 save await Pap's closeout output. No fresh import was performed.
 - **Behavior:** the attendee contract accepts the established `Yes, Share my email`
   and `No. Don't share my email` answers only for email sharing. Exact matching uses
   existing case/whitespace/curly-apostrophe normalization. Existing short boolean
@@ -257,10 +269,10 @@ state override this subsection whenever they disagree, per the
 - **Production preflight (Pap-run, 2026-09-21T20:12:15.218Z):** serving/controller
   `c4044715d19f3585d08bb599fc306f2502c5e20d`, app PID 3971631, webhook online,
   no worker, lock free; live/pinned/next origin all `https://epicentrax.com`.
-  Captured 26 current asset URLs for post-switch verification. Next: one promotion,
-  runtime verification, documentation closeout while webhook paused, resume/save PM2,
-  then Pap's separately executed fresh import into the intended Event and actual
-  commit/review/failure totals. This release does not itself import the CSV.
+  Captured 26 current asset URLs, subsequently verified above. Next: documentation
+  closeout while webhook paused, resume/save PM2, then Pap's separately executed
+  fresh import into the intended Event and actual commit/review/failure totals.
+  This release does not itself import the CSV.
 - **Remaining boundaries:** the failed historical run remains unchanged. Live
   canonical commit, authorization and results are not proven by local parsing.
   Separate deferred findings: sharing-template instructions incorrectly say unknown
@@ -1173,12 +1185,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-21T13:14:09-07:00`
+**Generated at:** `2026-09-21T13:19:14-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `fceffa5 fix(imports): normalize established email sharing answers`
-**Commit date:** `2026-09-21T13:13:34-07:00`
-**origin/main:** `1f16cf7`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `a179d4f docs: record approved import sharing repair release`
+**Commit date:** `2026-09-21T13:14:29-07:00`
+**origin/main:** `a179d4f`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
