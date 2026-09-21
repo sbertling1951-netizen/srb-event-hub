@@ -231,14 +231,27 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Canonical account-holder name — 2026-09-21 (Reviewed and committed; approved release pending)
+### Canonical account-holder name — 2026-09-21 (Promoted and deployed; closeout and live name acceptance pending)
 
 - **Substantive code baseline: `e7eebc52724054eabb91bd48992ce0bb0ac762e4`.** Pap approved
   the four reviewed account-name files, this checkpoint, one webhook deployment,
   verification and documentation closeout after successful production preflight.
   Mel reverified all 24 review hashes, exact four-file cohort, empty index and
   unchanged stash; fresh origin/main matched `cc6668afab89d3d5290542cfeef33eb6fa52e9e4`.
-  Committed source bytes match the reviewed hashes. Deployment is not yet proven.
+  Committed source bytes match the reviewed hashes. Mel promoted the repair and
+  checkpoint as **`c4044715d19f3585d08bb599fc306f2502c5e20d`** with one fast-forward
+  push; the remote release SHA was verified.
+- **Production verification (Pap-run):** release activated at **2026-09-21T18:19:38Z**
+  in `/root/srb-event-hub-releases/20260921T181757Z-c4044715d19f`, app PID 3971631.
+  Verified rollback: `20260921T155704Z-7f033e03f646`. Both application hostnames
+  passed through-origin HTML and 13 referenced assets, protected system-status 401,
+  and public HTML/assets with ordinary TLS validation. All 26 captured old assets
+  passed. The signed-out account-profile endpoint returned 401, a neutral body and
+  private/no-store headers through origin and public routes on both hosts. The
+  verifier confirmed pointers, original baseline and cleanup/worker/port gates,
+  paused only the webhook, and released the lock with the app online. Documentation
+  closeout is authorized; webhook resume and verified PM2 save await Pap's output.
+  Real signed-in name display remains pending Jan's observation.
 - **Behavior:** the account heading reads the signed-in account's active canonical
   Person display name through the existing governed Auth-to-Person chain. The new
   bearer-authenticated endpoint returns only `displayName`, with private/no-store
@@ -273,9 +286,9 @@ state override this subsection whenever they disagree, per the
 - **Production preflight (Pap-run, 2026-09-21T18:14:04.485Z):** serving/controller
   release `7f033e03f646312b4097ff4b39f0136233f6b8a6`, app PID 3967339, webhook online,
   no worker, lock free; live/pinned/next-deployment origin settings all match
-  `https://epicentrax.com`. Retained 26 old asset URLs. Next: promote once, verify
-  both hostnames and retained assets, pause only webhook for documentation closeout,
-  then resume/save PM2 and confirm Jan's header and event access. Signed-in profile
+  `https://epicentrax.com`. Retained 26 old asset URLs, all subsequently verified
+  above. Next: complete documentation closeout while the webhook is stopped,
+  resume/save PM2, and confirm Jan's header and event access. Signed-in profile
   behavior remains a runtime gate; mocked tests do not prove production identity.
 
 ### Member activation with password and email code — 2026-09-21 (Reviewed, promoted and deployed; live activation pending)
@@ -1121,12 +1134,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-21T11:17:08-07:00`
+**Generated at:** `2026-09-21T11:20:18-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `e7eebc5 fix(member): show canonical account holder name safely`
-**Commit date:** `2026-09-21T11:16:48-07:00`
-**origin/main:** `cc6668a`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `c404471 docs: record approved canonical account-name release`
+**Commit date:** `2026-09-21T11:17:19-07:00`
+**origin/main:** `c404471`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
