@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { importsStatusTone } from "./page";
+
 // Regression coverage for the membership-number-format consolidation
 // (docs/architecture/EPICENTRAX_ATTENDEES_MODULE_REFACTOR_AUDIT.md,
 // Section B row 4 / Q7): Imports previously hardcoded the "must start
@@ -652,12 +654,78 @@ test("status renders through the shared Alert using the new exported importsStat
 });
 
 test("importsStatusTone classifies failure/progress/success status text correctly, mirroring the established Checklist/Event Staff/Validation Rules heuristic", () => {
+  // Executed against the real exported classifier, not its source text: the
+  // source-pattern-only version of this test missed that the processed-run
+  // summary's zero counts ("0 failed validation, 0 failed to commit") were
+  // classified as a failure.
+  const summary = (
+    counts: { processed: number; committed: number; needsReview: number; validationFailed: number; commitFailed: number; warnings?: number },
+    eventName = "Sample Rally",
+  ) =>
+    `Processed ${counts.processed} rows into ${eventName}: ${counts.committed} committed, ${counts.needsReview} need review, ` +
+    `${counts.validationFailed} failed validation, ${counts.commitFailed} failed to commit` +
+    (counts.warnings ? `, ${counts.warnings} with warnings.` : ".");
+  const allCommitted = { processed: 21, committed: 21, needsReview: 0, validationFailed: 0, commitFailed: 0 };
+
+  // The exact observed shape (synthetic event name): a fully successful run is
+  // the shared Alert success tone, and the message itself is unchanged.
+  assert.equal(
+    importsStatusTone("Processed 21 rows into Sample Rally: 21 committed, 0 need review, 0 failed validation, 0 failed to commit."),
+    "success",
+  );
+  assert.equal(importsStatusTone(summary(allCommitted)), "success");
+  assert.equal(importsStatusTone(summary({ ...allCommitted, processed: 1, committed: 1 })), "success");
+
+  // The event name cannot decide the tone -- the counts do.
+  assert.equal(importsStatusTone(summary(allCommitted, "Failed Bearing Rally")), "success");
+  assert.equal(importsStatusTone(summary(allCommitted, "Rally: failed to commit 2024")), "success");
+  assert.equal(importsStatusTone(summary({ ...allCommitted, committed: 20, validationFailed: 1 }, "Sunny Meadows")), "danger");
+
+  // Real failures remain danger.
+  assert.equal(importsStatusTone(summary({ ...allCommitted, committed: 20, validationFailed: 1 })), "danger");
+  assert.equal(importsStatusTone(summary({ ...allCommitted, committed: 20, commitFailed: 1 })), "danger");
+  assert.equal(importsStatusTone(summary({ processed: 21, committed: 0, needsReview: 0, validationFailed: 21, commitFailed: 0 })), "danger");
+
+  // Unresolved review or reported warnings are never presented as an
+  // unqualified success (they keep the pre-existing classification).
+  const needsReview = importsStatusTone(summary({ ...allCommitted, committed: 20, needsReview: 1 }));
+  assert.notEqual(needsReview, "success");
+  assert.equal(needsReview, "danger");
+  const withWarnings = importsStatusTone(summary({ ...allCommitted, warnings: 2 }));
+  assert.notEqual(withWarnings, "success");
+  assert.equal(withWarnings, "danger");
+
+  // Counts that do not reconcile, or an empty run, are not a success either.
+  assert.notEqual(importsStatusTone(summary({ ...allCommitted, committed: 20 })), "success");
+  assert.notEqual(importsStatusTone(summary({ processed: 0, committed: 0, needsReview: 0, validationFailed: 0, commitFailed: 0 })), "success");
+
+  // Progress, ordinary failures, denied access, recovered/resumed and the other
+  // existing classifications are retained.
+  assert.equal(importsStatusTone("Creating governed import run..."), "info");
+  assert.equal(importsStatusTone("Opening saved attendee in Attendee Management..."), "info");
+  assert.equal(importsStatusTone("Import failed."), "danger");
+  assert.equal(importsStatusTone("Parse failed."), "danger");
+  assert.equal(importsStatusTone("Could not load events."), "danger");
+  assert.equal(importsStatusTone("Access denied."), "danger");
+  assert.equal(importsStatusTone("Recovered import run from roster.csv."), "success");
+  assert.equal(importsStatusTone("Resumed import run from a prior session."), "success");
+  assert.equal(importsStatusTone("Remaining open rows abandoned."), "success");
+  assert.equal(importsStatusTone("This run has been finalized and moved to Import History."), "success");
+  assert.equal(importsStatusTone("Loaded 21 rows from roster.csv."), "success");
+  assert.equal(importsStatusTone("Load a CSV or XLSX file to begin."), "neutral");
+  assert.equal(importsStatusTone("No rows found in file."), "neutral");
+
+  // The established heuristic is still the fallback in source.
   const source = readSource();
   const start = source.indexOf("export function importsStatusTone");
   const body = source.slice(start, source.indexOf("\nfunction fullName", start));
   assert.match(body, /lower\.includes\("failed"\) \|\|\s*\n\s*lower\.startsWith\("could not"\)/);
   assert.match(body, /lower\.endsWith\("\.\.\."\)/);
   assert.match(body, /lower\.startsWith\("loaded"\)/);
+  // The success classification comes from the shared Alert tone vocabulary,
+  // never a local color value.
+  assert.match(body, /return "success";/);
+  assert.equal(/#[0-9a-f]{3,6}\b/i.test(body), false);
 });
 
 test("the error banner is the shared Alert tone=\"danger\", preserving the exact error source and text -- no hardcoded hex error box remains in this panel", () => {

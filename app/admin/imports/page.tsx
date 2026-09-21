@@ -246,7 +246,35 @@ function saveActiveImportRunId(eventId: string, runId: string | null) {
 // a second source of any message itself (every setStatus call site is
 // unchanged). Mirrors the same heuristic already established for
 // Checklist/Event Staff/Validation Rules.
+// The processed-run summary this page itself generates (see the setStatus call
+// in handleImport): "Processed N rows into <event>: C committed, R need review,
+// V failed validation, F failed to commit." optionally followed by
+// ", W with warnings." It is recognized by its fixed tail, so the counts -- never
+// the event name -- decide its tone, and the zero counts' "failed" wording is
+// not mistaken for a failure.
+const PROCESSED_SUMMARY_MESSAGE =
+  /^Processed (\d+) rows into .*: (\d+) committed, (\d+) need review, (\d+) failed validation, (\d+) failed to commit(?:, (\d+) with warnings)?\.$/;
+
 export function importsStatusTone(message: string): AlertTone {
+  const summary = PROCESSED_SUMMARY_MESSAGE.exec(message);
+  if (summary) {
+    const [processed, committed, needsReview, validationFailed, commitFailed, warnings] =
+      summary.slice(1).map((count) => Number(count ?? 0));
+    // An unqualified success: every processed row committed, nothing awaiting
+    // review, no failures and no warnings. Any other summary keeps the
+    // classification below.
+    if (
+      processed > 0 &&
+      committed === processed &&
+      needsReview === 0 &&
+      validationFailed === 0 &&
+      commitFailed === 0 &&
+      warnings === 0
+    ) {
+      return "success";
+    }
+  }
+
   const lower = message.toLowerCase();
 
   if (
