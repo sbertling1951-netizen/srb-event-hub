@@ -231,6 +231,53 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Canonical account-holder name — 2026-09-21 (Reviewed and committed; approved release pending)
+
+- **Substantive code baseline: `e7eebc52724054eabb91bd48992ce0bb0ac762e4`.** Pap approved
+  the four reviewed account-name files, this checkpoint, one webhook deployment,
+  verification and documentation closeout after successful production preflight.
+  Mel reverified all 24 review hashes, exact four-file cohort, empty index and
+  unchanged stash; fresh origin/main matched `cc6668afab89d3d5290542cfeef33eb6fa52e9e4`.
+  Committed source bytes match the reviewed hashes. Deployment is not yet proven.
+- **Behavior:** the account heading reads the signed-in account's active canonical
+  Person display name through the existing governed Auth-to-Person chain. The new
+  bearer-authenticated endpoint returns only `displayName`, with private/no-store
+  responses. Missing or unresolved identity yields the neutral heading Account.
+  Event cards label their existing name as Registration. There is no pilot,
+  registration or email-localpart inference for the account heading, no identity
+  write, no database migration and no expansion of event access.
+- **Session lifecycle:** account changes, sign-out and unmount invalidate pending
+  results; obsolete name, email, registrations and shadow data cannot be adopted.
+  A later same-account auth event retries a previously unreadable matching session;
+  healthy token refreshes do not reload. The retry requires this tab's own readable
+  matching session. An account that remains unreadable holds neutral state until a
+  later auth event; no timer or additional retry UI was introduced.
+- **Evidence:** Lun's final scoped review passed 29/29 focused page/route tests,
+  targeted lint and diff checks, and verified all 24 hashes. LEM's retained mounted
+  evidence discriminated pre-fix recovery 1/4 from corrected Chromium 13/13 and
+  WebKit 2/2. Lun's independent browser attempts failed fixture preconditions and
+  are not mounted proof. LEM reported one successful production build and TypeScript
+  output byte-identical to the retained 16-error baseline, none in this cohort.
+  Test-only module resolver alias restoration was independently reviewed.
+- **Previous activation release now closed (Pap-run):** serving
+  `7f033e03f646312b4097ff4b39f0136233f6b8a6`, webhook online, signing secret unchanged,
+  unsigned POST 401, no worker, unchanged app PID and verified PM2 saved state.
+  Backup: `/root/pm2-closeout-backup-20260921T160045Z-uqm6u97t`. This supersedes the
+  pending closeout note below. Startup unit remains inactive; reboot recovery is
+  unproven. No startup-unit restart or reboot is part of this release.
+- **Live activation evidence (Pap-provided):** Jan completed activation and sees
+  her expected events. Pap's read-only SQL showed her account actively linked to
+  her active canonical Person. The pilot name in the heading was a display defect;
+  no identity repair was needed. These are user-provided observations, not an
+  agent-run production query. The new account heading still needs live acceptance.
+- **Production preflight (Pap-run, 2026-09-21T18:14:04.485Z):** serving/controller
+  release `7f033e03f646312b4097ff4b39f0136233f6b8a6`, app PID 3967339, webhook online,
+  no worker, lock free; live/pinned/next-deployment origin settings all match
+  `https://epicentrax.com`. Retained 26 old asset URLs. Next: promote once, verify
+  both hostnames and retained assets, pause only webhook for documentation closeout,
+  then resume/save PM2 and confirm Jan's header and event access. Signed-in profile
+  behavior remains a runtime gate; mocked tests do not prove production identity.
+
 ### Member activation with password and email code — 2026-09-21 (Reviewed, promoted and deployed; live activation pending)
 
 - **Substantive code baseline: `cdff7204a5867bb5a29e93151dc2d90ea316ccb1`.**
@@ -1074,12 +1121,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-21T08:59:21-07:00`
+**Generated at:** `2026-09-21T11:17:08-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `7f033e0 docs: record approved activation code release`
-**Commit date:** `2026-09-21T08:56:22-07:00`
-**origin/main:** `7f033e0`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**Commit:** `e7eebc5 fix(member): show canonical account holder name safely`
+**Commit date:** `2026-09-21T11:16:48-07:00`
+**origin/main:** `cc6668a`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
