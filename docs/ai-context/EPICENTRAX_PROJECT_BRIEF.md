@@ -231,6 +231,57 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Member activation with password and email code — 2026-09-21 (Reviewed; release approved, production verification pending)
+
+- **Substantive code baseline: `cdff7204a5867bb5a29e93151dc2d90ea316ccb1`.**
+  Pap approved the four-file activation flow, checkpoint reconciliation, one
+  deployment, verification and closeout after Lun's independent PASS and Pap's
+  read-only production preflight. Mel reverified all 20 review-anchor hashes,
+  exact cohort, empty index and unchanged stash; fresh `origin/main` matched
+  `e298d503991f011b49ecfb98d6a0c2d3ab4811b1` before committing. Only the activation
+  page, its test, and the new activation-flow module and test are in the source
+  commit. Promotion and verified production outcome are recorded separately;
+  approval and source validation alone do not establish deployment success.
+- **Behavior:** members enter evidence and choose/confirm a password, then enter
+  an emailed code on the same page. Continue gives way to the code step after
+  the eligible verification attempt is prepared. A fresh code establishes an
+  isolated Supabase session; the existing governed finalizer must return
+  `ACTIVATED` before Supabase saves the password and the shared client adopts
+  the session. Existing matching, eligibility, tenant and finalizer authority
+  are preserved. No migration, manual identity write, or callback-route change.
+  Passwords remain in memory until the authenticated Supabase update.
+- **Failure and retry behavior:** one synchronous operation guard prevents
+  duplicate submissions and edits during mutations. Initiation reports a
+  request, never unproven delivery. Explicit rejection and uncertain transport
+  outcomes have separate recovery paths; uncertain finalization cannot be
+  repeated blindly. Successful identity linking or password saving is retained
+  as a completed milestone for credential-only or sign-in-only retries.
+- **Review evidence:** Lun independently passed 61 focused activation/page and
+  25 neighboring tests, targeted ESLint and diff checks, and three mounted
+  Chromium scenarios with synthetic responses and no external requests. LEM's
+  retained browser evidence includes 11 Chromium and 3 WebKit scenarios; his
+  production build passed. Complete TypeScript output is byte-identical to
+  clean HEAD with 16 pre-existing diagnostics, none in the cohort. Lun reviewed
+  the retained build/type evidence rather than repeating the full build.
+- **Hosted and live gates:** Pap reports both Confirm signup and Magic Link
+  templates saved with `{{ .Token }}` and the preserved `{{ .ConfirmationURL }}`.
+  Fresh delivery, native iPhone autofill, Jan's canonical Person linkage and
+  correct account registrations remain unproven. Fixture success is not live
+  identity evidence. No email or database write was performed for this release
+  preparation. Existing legacy email-link handling remains available.
+- **Production preflight (Pap-run, 2026-09-21T15:54:23Z):** serving
+  `f022acdca4bebfe005a014a08caeab2d071f6baa` from
+  `/root/srb-event-hub-releases/20260921T133145Z-f022acdca4be`, app PID 3962930;
+  webhook online, no worker, lock free. Live, pinned and next-deployment origins
+  all match `https://epicentrax.com`; 26 old asset URLs were retained for checks
+  after the switch. This serving release is the intended rollback target.
+- **Prior origin-release closeout (Pap-run):** webhook online, signing secret
+  unchanged, unsigned POST 401, no worker, app PID unchanged and verified PM2
+  save. Backup: `/root/pm2-closeout-backup-20260921T133452Z-uw75cae7`. These facts
+  supersede the pending closeout statement in the prior entry. Startup unit
+  remains inactive; reboot recovery is unproven. No app or startup-unit restart
+  or reboot is part of this release closeout.
+
 ### Activation callback origin repair — 2026-09-21 (Reviewed, promoted and deployed; live activation pending)
 
 - **Substantive code baseline: `8cda628f6d3fa18391c102ea1b016ef3569bc1b7`.** Pap approved the
@@ -1012,12 +1063,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-21T06:34:16-07:00`
+**Generated at:** `2026-09-21T08:56:09-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `f022acd docs: record approved activation-origin repair`
-**Commit date:** `2026-09-21T06:30:24-07:00`
-**origin/main:** `f022acd`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**Commit:** `cdff720 feat(auth): finish member activation with password and email code`
+**Commit date:** `2026-09-21T08:55:46-07:00`
+**origin/main:** `e298d50`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
