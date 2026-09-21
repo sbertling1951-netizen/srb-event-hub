@@ -231,56 +231,77 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Release preparation — 2026-09-20 (Isolated deployment repair reviewed; installation pending)
+### Deployment reconciliation — 2026-09-20 (Isolated releases promoted and serving)
 
-- **The integrated product baseline remains the focus-ring repair below.**
-  The isolated-release deployment repair is reviewed but uncommitted,
-  unpromoted and not installed. It prepares builds outside the serving
-  directory, retains shared static assets, preserves a first-install rollback
-  baseline and pinned configuration, verifies HTML/assets through local Nginx,
-  and handles candidate cleanup, rollback and bounded cancellation. Admin
-  diagnostics identify the serving directory's release metadata and recorded
-  activation time; unavailable identity/cleanliness is not reported as clean.
-- **Independent review gates closed.** LEM implemented the deployment repair
-  and F1/F2 corrections; Lun supplied an independent F1/F2 PASS. Lun implemented
-  the total verification deadline/readiness correction and B1 webhook error
-  handling; LEM independently reviewed those changes. Reported focused results:
-  lifecycle 139/139, findings 70/70, supervision 21/21, verifier 12/12, and the
-  real-HTTP B1 regression. LEM's final Linux B1 replay passed all 35 assertions.
-  These are attributed agent results; Mel verified the final source hashes and
-  cohort, not a separate rerun of every test.
-- **Linux compatibility established for the tested mechanisms.** LEM exercised
-  real PM2, Nginx, process groups, locking, web-account/ACL access and retention
-  with a synthetic application. The final targeted parity run used PM2 6.0.14,
-  Node 20.20.2, npm 10.8.2 and Nginx 1.24.0: activation, preserved-baseline
-  rollback and interrupted slow recovery passed. This does not prove the real
-  Next.js deployment, public-edge delivery, or reboot persistence. Earlier
-  TypeScript/build results retain their existing attribution and limits.
-- **Pap-supplied production preflight, 2026-09-21 01:39–01:42 UTC:** main is
-  clean at `de8e72e`; app and webhook are online; port 3001 is free; disk has
-  105 GB available. Nginx syntax and execution as `www-data` passed. Both origins
-  served HTML/CSS; `epicentrax.com` uses Cloudflare Origin CA (ordinary direct
-  curl trust failed), while `app.eventsyncapp.com` uses a publicly trusted
-  certificate. Existing `.env.local` is mode 0600 and has the required key
-  names; new `app.env`, asset store and release/state directories are absent.
-  PM2's startup unit is enabled but inactive, and its saved dump is dated
-  August 23. No production changes were made during these checks.
-- **Remaining installation work:** obtain Pap's release approval; prevent the
-  old webhook from deploying during bootstrap; prepare protected configuration
-  and both Nginx asset locations; deploy and verify the actual application,
-  rollback target, old/new assets and serving identity; then restart the
-  reviewed webhook and persist the verified PM2 process list. Inspect the
-  startup unit before persistence; no reboot or startup-unit restart is implied.
-  Keep the 12-second readiness, 20-second verifier and 45-second grace defaults;
-  near-minimum grace tuning is deferred. No database or migration work is part
-  of this release.
-- **Recorded non-blocking debt:** recovery-margin accounting for in-flight
-  probes/PM2 time; explicit verifier-argument consistency; recovery-specific
-  wording on ordinary startup; stronger delayed-start/positive-control tests;
-  asset-count wording on timeout; and B1 test cleanup diagnostics for an
-  already-exited child. These are deferred, not silently fixed or erased.
-  The separate member photo-help change remains local and outside this
-  deployment release pending its own review. Preserve both photo-help files.
+- **Substantive baseline: `4a2d607ed0c9c00247acb56280a77896d7f84709`.**
+  Pap authorized and executed promotion and first installation. The 19-file
+  release was pushed to main and the actual Next.js application completed
+  deployment at **2026-09-21 02:26:09 UTC** (September 20 Pacific). Mel refreshed
+  remote main and verified that release commit. The documentation-only closeout
+  above it does not change the serving application SHA or product baseline.
+- **Production evidence supplied by Pap and inspected by Mel:** both local and
+  production builds passed (133/133 generated pages); the worker preserved and
+  verified the old build before preparing the candidate in a separate directory.
+  PM2 serves `/root/srb-event-hub-releases/20260921T022413Z-4a2d607ed0c9`,
+  `.release-sha` matches the full baseline SHA, and `.activated-at` records
+  `2026-09-21T02:26:06Z`. `current` names that release; `previous` and `baseline`
+  both name `20260921T022358Z-de8e72e4cc7a-baseline`. Port 3001 is free, there
+  are zero deployment workers, owned-candidate records or unresolved-cleanup
+  markers, and the deployment lock is released. Pap confirmed the authenticated
+  Admin Dashboard reports service online, commit `4a2d607` and working tree
+  **Not applicable**.
+- **Delivery and access checks:** both hostnames returned HTML and all 13
+  referenced CSS/JS assets with HTTP 200 and matching content types through
+  local Nginx and the public edge. All 26 pre-switch hostname/asset pairs were
+  cross-matched against those successful checks. The separate old-asset loop
+  printed only its first row because SSH consumed its input; that diagnostic
+  loop was corrected, and the complete overlapping checks establish coverage
+  without attributing 26 results to the incomplete loop. Unauthenticated
+  `/api/admin/system-status` returned 401 on both origins. These checks cover
+  the listed entry page/assets and status API, not every authenticated workflow.
+- **Bootstrap installed:** protected `/root/srb-event-hub-config/app.env`
+  (0600, parent 0700) contains 11 settings whose effective Next.js values match
+  their shell-sourced values; original `.env.local` was preserved. Shared assets
+  are served from `/srv/srb-event-hub/assets`; actual `www-data` access passed.
+  The reviewed routing block was added only to the two application TLS server
+  blocks; the www redirect and existing directives were preserved. Nginx syntax
+  and reload checks passed. Configuration and old PM2 dump backups are protected
+  under `/root/nginx-backup-20260921T021950Z-a2yozf93`. No TLS trust setting was
+  changed: the Cloudflare Origin CA distinction applies only to origin probes;
+  public checks used ordinary certificate validation.
+- **Rollback readiness:** the baseline was proven startable on the candidate
+  port before activation and retains its original build and pinned configuration.
+  The reviewed manual command is `cd /root/srb-event-hub && bash
+  scripts/deployment/rollback.sh 20260921T022358Z-de8e72e4cc7a-baseline`.
+  No discretionary live rollback or reboot was performed. Production now uses
+  the isolated release; the controller checkout is no longer the serving build.
+- **Independent review and fixture evidence retained:** Lun independently passed
+  LEM's F1/F2 corrections; LEM independently passed Lun's timing/B1 corrections.
+  Reported focused results were lifecycle 139/139, findings 70/70, supervision
+  21/21, verifier 12/12, the real-HTTP B1 regression, and Linux B1 35 assertions.
+  Real Linux PM2/Nginx/process/permission fixtures, including PM2 6.0.14 parity,
+  passed activation, preserved-baseline rollback and interrupted slow recovery.
+  Those synthetic results supplement, rather than replace, the production
+  application evidence above. No broad suite was rerun for this documentation.
+- **Operational closeout boundary:** automatic deployment was paused before
+  promotion and remains paused at the verification recorded here. The authorized
+  closeout publishes this documentation while paused, then resumes only the
+  existing webhook with its signing environment preserved, verifies unsigned
+  requests are rejected, and saves the verified PM2 list with the old dump
+  retained. Those final operator results must be reported separately; they are
+  not asserted complete by this pre-resumption checkpoint. The startup unit was
+  enabled but inactive at preflight; reboot recovery remains unproven. No unit
+  restart, reboot, database operation or migration is part of this release.
+- **Deferred debt:** retain 12-second readiness, 20-second verifier and 45-second
+  grace defaults; near-minimum grace tuning, recovery-margin accounting,
+  verifier-argument consistency, recovery-specific log wording, test positive
+  controls, timeout asset counts and B1 test cleanup diagnostics remain deferred.
+  The successful worker also emitted a misleading cleanup-during-done message;
+  verified activation and service checks, not that wording, establish the result.
+  Locked production installation reported 8 dependency advisories (1 moderate,
+  6 high, 1 critical); applicability was not assessed and no audit fix was run.
+  The two member photo-help files remain local, unchanged and excluded pending
+  their own review. The existing stash was preserved.
 
 ### Re-anchor reconciliation — 2026-09-20 (Shared focus-ring contrast repair)
 
@@ -828,16 +849,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-20T18:54:24-07:00`
+**Generated at:** `2026-09-20T19:33:03-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `de8e72e docs: reconcile shared focus-ring repair checkpoint`
-**Commit date:** `2026-09-20T08:55:52-07:00`
-**origin/main:** `de8e72e`
+**Commit:** `4a2d607 fix(deploy): isolate releases and bound deployment timing`
+**Commit date:** `2026-09-20T19:00:51-07:00`
+**origin/main:** `4a2d607`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `9`
+**Tracked modified:** `2`
 **Staged:** `0`
-**Untracked:** `12`
+**Untracked:** `1`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
