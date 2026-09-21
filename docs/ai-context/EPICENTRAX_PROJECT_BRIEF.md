@@ -231,6 +231,52 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Member account setup repair — 2026-09-20 (Reviewed; production verification pending)
+
+- **Substantive code baseline: `0125b2d462c887cc2dad702f4d898244f5bc2198`.** Pap approved committing,
+  reconciling and promoting the eight-file repair after Lun's independent PASS.
+  Mel reverified every reviewed file hash, the exact cohort, empty index and
+  unchanged stash against the review anchor, and freshly fetched origin/main
+  before committing. This checkpoint accompanies the repair for one planned
+  webhook deployment; promotion and successful production activation must be
+  established from subsequent Git and server evidence, not inferred here.
+- **Behavior:** successful member activation now opens the existing Set a
+  Password page, then opens the account only after a successful password save.
+  PKCE exchanges the authorization code rather than the entire callback URL.
+  Existing activation finalization, implicit-token handling, organizer routing
+  and authentication/identity boundaries are retained. The password page no
+  longer describes every missing session as an expired/used email link, and
+  recovery requests handle returned and thrown errors without exposing provider
+  details or claiming confirmed delivery. My Events is visible only for an
+  established account session, not Temporary Event Access or unresolved Auth.
+- **Activation feedback:** Continue shows Checking while evidence is evaluated;
+  only CONTINUE_VERIFICATION plus an attempt token hides Continue, confirms the
+  information was checked, and focuses/scrolls to the email-verification step.
+  Account activation is explicitly still pending. Editing evidence clears the
+  stale result/token/email state and restores Continue; pending evaluation
+  disables evidence fields. Input requirements and server eligibility are unchanged.
+- **Independent acceptance:** Lun reported PASS with no findings, independently
+  repeated 51/51 focused tests, clean eight-file ESLint and diff checks, and a
+  successful build with 133/133 generated pages. The complete TypeScript output
+  matches clean HEAD byte-for-byte with 16 existing diagnostics. Mel's 25 WebKit
+  scenarios use actual changed page components with synthetic Auth/framework
+  boundaries at 390px and 1280px; Lun inspected that evidence but did not rerun
+  the browser fixture. These checks do not prove live email delivery, production
+  identity finalization or native iPhone behavior.
+- **Production incidents and open gates:** Pap reported Jan's verification link
+  went to localhost:3000, and supplied a hosted Supabase screenshot showing that
+  Site URL. Pap was instructed to use https://epicentrax.com and subsequently
+  reported receiving a new link; its completed activation remains unverified.
+  Missing recovery/resend email delivery still needs safe Auth-log evidence and
+  an approved live check. This source repair does not change hosted Auth settings
+  or the existing activation-link origin construction. Pap reports Temporary
+  Event Access works after an iPhone reload and all tested links except My Events
+  work; the initial dashboard loading hang remains undiagnosed, not claimed fixed.
+  Live gates after deployment: fresh verification to password save to subsequent
+  password login, iPhone focus/scroll feedback, and My Events hidden for Temporary
+  Event Access but available for account sessions. No migration or database write
+  is part of this release. No production success is claimed at this checkpoint.
+
 ### Member photo-help release — 2026-09-20 (Reviewed, promoted and deployed)
 
 - **Substantive code baseline: `645be6bf7441a819414a967409d966f0ceb2292c`.**
@@ -893,12 +939,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-20T19:57:21-07:00`
+**Generated at:** `2026-09-20T21:44:29-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `645be6b feat(ui): add contextual help for member photo uploads`
-**Commit date:** `2026-09-20T19:48:22-07:00`
-**origin/main:** `645be6b`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**Commit:** `0125b2d fix(auth): guide verified members through password setup`
+**Commit date:** `2026-09-20T21:44:09-07:00`
+**origin/main:** `08269c1`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
