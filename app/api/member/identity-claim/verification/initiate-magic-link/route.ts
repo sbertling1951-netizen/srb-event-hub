@@ -50,6 +50,64 @@ function getSupabaseAnon() {
   });
 }
 
+/**
+ * The activation callback origin, from the deployment-controlled
+ * EPICENTRAX_APP_ORIGIN server-only configuration value, read at call time
+ * (never cached at module load, never derived from req.nextUrl.origin, the
+ * Host or X-Forwarded-Host header, the request URL, or any other
+ * caller-supplied value -- syntax-validating a client-controlled header is not
+ * an authorization decision). Returns null on anything but a strictly valid
+ * value, so the caller can fail closed before creating a pending challenge or
+ * requesting an email, rather than sending a member to an unsafe or
+ * non-finalizing destination.
+ *
+ * Validation: an absolute URL with no userinfo, query, or fragment, and no
+ * path other than none or "/". In production HTTPS is required and loopback
+ * hosts are refused -- a loopback origin there would mail every member a link
+ * to their own machine, which never reaches the callback. Outside production
+ * HTTP is accepted for localhost/127.0.0.1 only, for local development.
+ */
+function trustedAppOrigin(): string | null {
+  const raw = process.env.EPICENTRAX_APP_ORIGIN;
+
+  if (!raw) {
+    return null;
+  }
+
+  let url: URL;
+
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+
+  if (url.username || url.password || url.search || url.hash) {
+    return null;
+  }
+
+  if (url.pathname !== "" && url.pathname !== "/") {
+    return null;
+  }
+
+  const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  const isLoopback =
+    hostname === "localhost" ||
+    hostname === "::1" ||
+    hostname.endsWith(".localhost") ||
+    /^127\./.test(hostname);
+
+  if (process.env.NODE_ENV === "production") {
+    if (url.protocol !== "https:" || isLoopback) {
+      return null;
+    }
+  } else if (url.protocol !== "https:" && !(isLoopback && url.protocol === "http:")) {
+    return null;
+  }
+
+  return url.origin;
+}
+
 function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
 }
@@ -113,6 +171,20 @@ export async function POST(req: NextRequest) {
 
     const supabaseAdmin = getSupabaseAdmin();
     const supabaseAnon = getSupabaseAnon();
+    const appOrigin = trustedAppOrigin();
+
+    // Checked BEFORE the challenge RPC and before any email: a missing or
+    // invalid public origin must not leave a pending activation challenge
+    // behind, and must never fall back to a caller-derived destination. The
+    // external response stays the same generic one, so this cannot be used to
+    // probe configuration; the diagnostic below names the setting only, never
+    // its value, the destination or any token.
+    if (!appOrigin) {
+      console.error(
+        "initiate-magic-link: EPICENTRAX_APP_ORIGIN is missing or invalid; no activation challenge was created and no activation email was requested.",
+      );
+      return NextResponse.json(genericResponse);
+    }
 
     if (!supabaseAdmin || !supabaseAnon || !destinationHash) {
       return NextResponse.json(genericResponse);
@@ -150,7 +222,10 @@ export async function POST(req: NextRequest) {
     const canSendLink = row?.can_send_link === true;
 
     if (canSendLink) {
-      const redirectTo = new URL("/auth/callback", req.nextUrl.origin);
+      // Deployment-controlled origin only. Built with URL APIs so the
+      // activation purpose and the attempt token are correctly encoded and
+      // both survive into emailRedirectTo.
+      const redirectTo = new URL("/auth/callback", appOrigin);
       redirectTo.searchParams.set("purpose", "activation");
       redirectTo.searchParams.set("attempt_token", attemptToken);
 
