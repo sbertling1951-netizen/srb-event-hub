@@ -9,6 +9,7 @@ import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, Textarea } from "@/components/ui/Field";
+import { HelpButton } from "@/components/ui/HelpButton";
 import { PageSection } from "@/components/ui/PageSection";
 import { logEngagement } from "@/lib/engagement";
 import { memberIdentityRpcArgs } from "@/lib/memberSession";
@@ -702,8 +703,42 @@ function MemberPhotosPageInner() {
           in the event gallery or slideshow.
         </p>
 
-        <div style={{ marginBottom: 8, fontWeight: 600 }}>
-          Select one or more photos from your Photo Library or take a new photo.
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={{ fontWeight: 600 }}>Upload photos</span>
+          <HelpButton title="Adding photos">
+            <h3>Apple Photos on a Mac</h3>
+            <ol>
+              <li>Click Choose Files to open the selection window.</li>
+              <li>
+                Scroll down in the window’s left sidebar to Media, then click
+                Photos.
+              </li>
+              <li>Select your photos, then click Upload or Open.</li>
+            </ol>
+            <p>
+              Use the Photos entry under Media. The Photos Library.photoslibrary
+              item inside Pictures is the whole library and cannot be selected
+              as a photo. You do not need to export photos first when using the
+              Media browser.
+            </p>
+            <h3>Photos saved on your computer</h3>
+            <p>
+              Click Choose Files, open the folder containing your photos, and
+              select one or more images. Click Upload or Open to continue.
+            </p>
+            <h3>Phone or tablet</h3>
+            <p>
+              Tap the photo chooser, then choose your photo library or take a
+              photo if your device offers a camera option. The choices depend
+              on your device and browser.
+            </p>
+            <p>
+              Add an optional batch caption before choosing photos. Uploading
+              starts after you confirm your selection. Keep this page open
+              until it finishes. Photos are reviewed before appearing in the
+              event gallery or slideshow.
+            </p>
+          </HelpButton>
         </div>
         <div style={{ marginBottom: 12 }}>
           <Field
