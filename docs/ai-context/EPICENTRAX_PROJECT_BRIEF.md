@@ -231,14 +231,26 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Successful import banner — 2026-09-21 (Reviewed and committed; approved release pending)
+### Successful import banner — 2026-09-21 (Promoted and deployed; closeout pending)
 
 - **Substantive code baseline: `86f197df6dd1ff29225d66c57efeda86ba8a9e1d`.** Pap approved the
   reviewed two-file Imports page/test fix, checkpoint, one deployment, verification
   and closeout after Lun's PASS and production preflight. Mel reverified all 11
   review hashes, exact cohort, empty index and unchanged stash; fresh origin/main
   matched `7a446728c0eaa35cb864f7cc961aa89f0c106caa`. Committed source bytes match
-  review. Production deployment is not yet claimed.
+  review. Mel promoted the source and checkpoint as release
+  **`1ee77b5927b4d8e2722c2e1e9568e713b5852a75`** in one fast-forward push;
+  remote main SHA verified.
+- **Production verification (Pap-run):** activated at **2026-09-21T20:42:20Z**
+  in `/root/srb-event-hub-releases/20260921T204033Z-1ee77b5927b4`, app PID 3975997.
+  Verified rollback: `20260921T201507Z-a179d4fac64c`. Both hostnames passed
+  origin HTML/13 referenced assets, protected system-status 401, public HTML/assets
+  with ordinary TLS validation, and signed-out profile 401 with neutral body and
+  private/no-store headers on origin and public paths. All 26 captured old assets
+  passed. Release/baseline pointers and cleanup/worker/port/config gates passed;
+  verifier paused only webhook, released the lock and left the application online.
+  Webhook resume and verified PM2 save await Pap's closeout output. No import was
+  performed for verification; the production banner itself remains unobserved.
 - **Behavior:** the existing shared Alert success tone (light green) is selected
   for this page's exact processed-summary format only when processed > 0, every
   processed row committed, and review/failure/warning counts are zero. Event-name
@@ -256,8 +268,8 @@ state override this subsection whenever they disagree, per the
 - **Production preflight (Pap-run, 2026-09-21T20:36:47.592Z):** serving/controller
   `a179d4fac64c8c700ce3d4cc6be859514a95b8db`, app PID 3974391, webhook online,
   no worker, lock free; live/pinned/next origin all `https://epicentrax.com`.
-  Captured 26 asset URLs. Next: one promotion, runtime verification and guarded
-  documentation closeout, webhook resume and PM2 save. A future legitimate import
+  Captured 26 asset URLs, subsequently verified above. Next: documentation
+  closeout while webhook paused, webhook resume and PM2 save. A future legitimate import
   can establish live visual acceptance; do not repeat the already committed roster.
 
 ### Attendee import sharing-answer compatibility — 2026-09-21 (Promoted, deployed and live import accepted)
@@ -1222,12 +1234,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-21T13:39:23-07:00`
+**Generated at:** `2026-09-21T13:43:56-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `86f197d fix(imports): show successful import summaries in green`
-**Commit date:** `2026-09-21T13:38:48-07:00`
-**origin/main:** `7a44672`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `1ee77b5 docs: record approved import success banner release`
+**Commit date:** `2026-09-21T13:39:51-07:00`
+**origin/main:** `1ee77b5`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
