@@ -231,6 +231,50 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Member photo-help release — 2026-09-20 (Reviewed, promoted and deployed)
+
+- **Substantive code baseline: `645be6bf7441a819414a967409d966f0ceb2292c`.**
+  Pap approved committing, promoting and deploying the two reviewed photo-help
+  files. Mel verified their hashes against Lun's review anchor, committed only
+  those files and pushed the commit to main. That push is the single intended
+  webhook deployment trigger; no parallel manual deployment was requested.
+  Pap's subsequent server verification establishes activation at
+  **2026-09-21T02:52:11Z** in
+  `/root/srb-event-hub-releases/20260921T025032Z-645be6bf7441`, app PID 3948327.
+  The rollback target is `20260921T022413Z-4a2d607ed0c9`; the original `de8e72e`
+  baseline is preserved. Production still serves this code SHA after the
+  documentation-only closeout commit.
+- **Behavior:** member Photos has a circled information button beside Upload
+  photos. It opens the shared Dialog with Mac Media > Photos guidance, local-file
+  and mobile instructions, caption timing and moderation guidance. The component
+  uses AppButton, accessible naming, initial focus, shared dismissal/focus trapping
+  and Safari pointer-focus capture. Upload/storage/authorization behavior is unchanged.
+- **Independent acceptance:** Lun reported PASS with no findings, 35/35 focused
+  photo/Dialog/ConfirmDialog tests and 33/33 AppButton tests, zero ESLint errors
+  and two existing warnings, and a clean diff check. Mel reverified both reviewed
+  file hashes before committing; these are attributed review results, not a new
+  rerun. Author WebKit fixture coverage remains separate from native-device proof;
+  Lun did not repeat browser tests. Native Safari/iPhone/iPad operation and the
+  authenticated production help dialog remain unverified at this checkpoint.
+- **Production delivery verified (Pap-supplied output inspected by Mel):** both
+  hostnames returned HTML and all 13 CSS/JS assets through local Nginx and the
+  public edge; both origin status-API probes returned 401 unauthenticated. All 26
+  captured old asset URLs passed. Release/pointer/config-mode checks passed;
+  port 3001 was free, no worker/owned-candidate/unresolved-cleanup evidence
+  remained, and the deployment lock was released after verification.
+- **Public-probe discrepancy:** Python urllib received HTTP 403 from Cloudflare
+  for `epicentrax.com`, while ordinary curl on the same host received 200 for
+  that URL. The precise Cloudflare rule is unconfirmed. Public verification was
+  completed using curl with ordinary certificate validation; neither Cloudflare
+  settings nor TLS security was changed. This probe discrepancy did not trigger
+  another deployment or an application restart.
+- **Closeout boundary:** after successful verification, only the webhook was
+  paused for documentation publication; the application remained online at the
+  same PID. Resume the existing webhook, verify its secret/auth rejection and
+  save the process list after publication; those final operator results are
+  reported separately from this pre-resumption checkpoint. No migration,
+  dependency-version change or unrelated feature is included.
+
 ### Deployment reconciliation — 2026-09-20 (Isolated releases promoted and serving)
 
 - **Substantive baseline: `4a2d607ed0c9c00247acb56280a77896d7f84709`.**
@@ -283,15 +327,15 @@ state override this subsection whenever they disagree, per the
   passed activation, preserved-baseline rollback and interrupted slow recovery.
   Those synthetic results supplement, rather than replace, the production
   application evidence above. No broad suite was rerun for this documentation.
-- **Operational closeout boundary:** automatic deployment was paused before
-  promotion and remains paused at the verification recorded here. The authorized
-  closeout publishes this documentation while paused, then resumes only the
-  existing webhook with its signing environment preserved, verifies unsigned
-  requests are rejected, and saves the verified PM2 list with the old dump
-  retained. Those final operator results must be reported separately; they are
-  not asserted complete by this pre-resumption checkpoint. The startup unit was
-  enabled but inactive at preflight; reboot recovery remains unproven. No unit
-  restart, reboot, database operation or migration is part of this release.
+- **Operational closeout completed (Pap-supplied result, 2026-09-21 UTC):**
+  after documentation commit `ca9c62e` was published while paused, the existing
+  webhook was restarted with its signing secret unchanged; unsigned POST returned
+  401, no worker started, and the serving application PID was unchanged. PM2 saved
+  both verified online entries with correct paths. The old dump is preserved under
+  `/root/pm2-closeout-backup-20260921T024221Z-23lai7hr`. Startup executable,
+  user and PM2_HOME checks passed; the enabled unit remains inactive. No startup
+  unit restart or reboot was performed, so reboot recovery remains unproven.
+  No database operation or migration was part of this deployment.
 - **Deferred debt:** retain 12-second readiness, 20-second verifier and 45-second
   grace defaults; near-minimum grace tuning, recovery-margin accounting,
   verifier-argument consistency, recovery-specific log wording, test positive
@@ -849,16 +893,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-20T19:33:03-07:00`
+**Generated at:** `2026-09-20T19:57:21-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `4a2d607 fix(deploy): isolate releases and bound deployment timing`
-**Commit date:** `2026-09-20T19:00:51-07:00`
-**origin/main:** `4a2d607`
+**Commit:** `645be6b feat(ui): add contextual help for member photo uploads`
+**Commit date:** `2026-09-20T19:48:22-07:00`
+**origin/main:** `645be6b`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `2`
+**Tracked modified:** `1`
 **Staged:** `0`
-**Untracked:** `1`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
