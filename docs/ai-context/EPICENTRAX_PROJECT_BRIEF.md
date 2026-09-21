@@ -231,14 +231,27 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Activation callback origin repair — 2026-09-21 (Reviewed; approved for one deployment)
+### Activation callback origin repair — 2026-09-21 (Reviewed, promoted and deployed; live activation pending)
 
 - **Substantive code baseline: `8cda628f6d3fa18391c102ea1b016ef3569bc1b7`.** Pap approved the
   two-file repair and checkpoint reconciliation after Lun's independent PASS.
   Mel reverified all seven review-anchor hashes, exact cohort, empty index,
   branch and stash after a fresh fetch of main at `620ed8b`. Only the activation
-  magic-link API route and its new behavioral test changed. Promotion and
-  production activation of this repair are pending, not inferred from approval.
+  magic-link API route and its new behavioral test changed. Mel promoted the
+  source and accompanying checkpoint as release
+  **`f022acdca4bebfe005a014a08caeab2d071f6baa`** in one fast-forward push to main,
+  triggering the one approved webhook deployment.
+- **Production verification (Pap-run):** the release activated at
+  **2026-09-21T13:33:27Z** in
+  `/root/srb-event-hub-releases/20260921T133145Z-f022acdca4be`, app PID 3962930.
+  Rollback target: `20260921T044851Z-57a50e93314a`. Both hostnames passed
+  through-origin verification (HTML, 13 referenced assets each and protected
+  system-status route returning 401), public HTML/asset verification with
+  ordinary TLS validation, and all 26 retained old-asset checks. The script
+  confirmed the expected baseline, cleanup, worker/port and pinned-config gates,
+  then paused only the webhook for this documentation closeout. The app stays
+  online. Webhook resume and PM2 save await Pap's closeout output; no app or
+  startup-unit restart or reboot is required by this closeout.
 - **Behavior:** activation callbacks use validated `EPICENTRAX_APP_ORIGIN`,
   never the request origin or host headers. Production requires HTTPS and
   rejects loopback. Missing/invalid configuration returns the existing generic
@@ -270,7 +283,7 @@ state override this subsection whenever they disagree, per the
   only the homepage as the return address. This proves the callback was bypassed;
   the complete reverse-proxy-to-Supabase-fallback causal chain remains unverified.
   No real email tokens are retained in this checkpoint.
-- **Remaining live gates:** verify release health and retained assets, then one
+- **Remaining live gates:** after webhook closeout, one
   fresh activation on Jan's own device must reach the callback and establish the
   correct canonical Person before inspecting her registrations. Hosted redirect
   allowlist/template query preservation is not yet independently verified. The
@@ -999,12 +1012,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-21T06:30:14-07:00`
+**Generated at:** `2026-09-21T06:34:16-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `8cda628 fix(auth): use configured public origin for activation links`
-**Commit date:** `2026-09-21T06:29:53-07:00`
-**origin/main:** `620ed8b`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `f022acd docs: record approved activation-origin repair`
+**Commit date:** `2026-09-21T06:30:24-07:00`
+**origin/main:** `f022acd`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
