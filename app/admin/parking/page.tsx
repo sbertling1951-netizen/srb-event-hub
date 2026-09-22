@@ -263,13 +263,18 @@ function ParkingAdminPageInner() {
 
   // ─── Map viewport controls ───────────────────────────────────────────────────
 
-  const focusSite = useCallback((site: ParkingSite) => {
+  // Centers the map on a site at the current scale. An explicit `scale` is
+  // used only when the caller knows the scale the viewport is still settling
+  // toward: on locator arrival the opening scale is applied by a short
+  // animation, and reading the mid-animation scale here would freeze the
+  // viewport at that intermediate value instead of the saved opening scale.
+  const focusSite = useCallback((site: ParkingSite, scale?: number) => {
     if (site.map_x === null || site.map_y === null) {
       return;
     }
     const siteId = site.id || site.master_site_id;
     const vp = mapViewportRef.current?.getViewport();
-    mapViewportRef.current?.centerOnMarker(siteId, vp?.scale);
+    mapViewportRef.current?.centerOnMarker(siteId, scale ?? vp?.scale);
   }, []);
 
   function zoomIn() {
@@ -535,7 +540,8 @@ function ParkingAdminPageInner() {
         setSelectedSiteId(matchedSiteId);
 
         runAfterLayout(() => {
-          focusSite(matchedSite);
+          // The saved opening scale, not the mid-animation viewport scale.
+          focusSite(matchedSite, safeOpeningScale);
         });
 
         showStatus(
@@ -1732,7 +1738,7 @@ function ParkingAdminPageInner() {
             />
           </div>
           <div style={{ marginTop: "var(--space-3)", flexShrink: 0 }}>
-            <FormActions>
+            <FormActions className="parking-map-controls">
               <AppButton variant="secondary" onClick={zoomOut} aria-label="Zoom out">
                 −
               </AppButton>

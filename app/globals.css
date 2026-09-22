@@ -2238,6 +2238,29 @@ a.app-status-pill-link:focus-visible {
   }
 }
 
+/* Parking map tools are a toolbar, not a stack of form-submit actions.
+   Keep the map card's existing height budget: shorter controls give the
+   recovered height to the map while retaining full touch targets. */
+@media (max-width: 899px) {
+  .app-button-row.parking-map-controls {
+    display: grid;
+    grid-template-columns: 44px 44px minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+
+  .parking-map-controls .app-button {
+    min-height: 44px;
+    padding: var(--space-2);
+    font-size: var(--font-size-small);
+  }
+}
+
+@media (max-width: 379px) {
+  .app-button-row.parking-map-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* ===== SHARED MAP ENGINE SURFACE PROTECTION ===== */
 /* Root cause of the Stage 2B iPhone-portrait marker/overlay misalignment
    (confirmed by direct measurement, not theorized): the "MOBILE FORM
@@ -4194,6 +4217,15 @@ body.slideshow-view-mode .app-header-card {
 /* Compact headers must reserve a complete row for identity. Navigation
    cannot consume the title's width and force one-letter wrapping. */
 @media (max-width: 599px) {
+  .shell-header {
+    padding-top: calc(var(--space-2) + env(safe-area-inset-top));
+    padding-bottom: var(--space-2);
+  }
+
+  .shell-header .shell-brand-logo {
+    height: 28px;
+  }
+
   .shell-header-identity {
     width: 100%;
     flex-wrap: wrap;

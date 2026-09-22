@@ -344,7 +344,7 @@ test("the empty-filtered-queue display uses the shared EmptyState primitive with
 test("the four zoom controls (Zoom out, Zoom in, Reset Zoom, Re-center Map) remain in the same order, each with its original handler and label, now inside the shared FormActions wrapper", () => {
   assert.match(SOURCE, /import \{ FormActions \} from "@\/components\/ui\/FormActions";/);
 
-  const rowStart = SOURCE.indexOf("<FormActions>", SOURCE.indexOf("renderMarker={renderMarker}"));
+  const rowStart = SOURCE.indexOf("<FormActions", SOURCE.indexOf("renderMarker={renderMarker}"));
   assert.notEqual(rowStart, -1, "expected a FormActions-wrapped zoom-control row near the map canvas");
   const rowEnd = SOURCE.indexOf("</FormActions>", rowStart);
   const rowSource = SOURCE.slice(rowStart, rowEnd);
@@ -379,4 +379,47 @@ test("no other raw layout container, map/marker/gesture/reconciliation code, dat
   assert.match(SOURCE, /assignAttendeeToSite/);
   assert.match(SOURCE, /materialize_event_parking_site/);
   assert.match(SOURCE, /record_site_placement/);
+});
+
+// ---------------------------------------------------------------------------
+// Opening scale on locator arrival. Arriving with a stored focus-site locator
+// centers the map on that site ~90 ms after load, while the canvas is still
+// animating (140 ms) toward the saved parking_map_open_scale. Reading the
+// viewport's mid-animation scale at that moment froze the map at an
+// intermediate value (measured 0.287 / 0.279 for a saved 0.3), so the locator
+// path passes the saved opening scale explicitly. Every other focus caller is a
+// settled user interaction and keeps the current scale, as before.
+
+test("locator arrival focuses the site at the SAVED opening scale, not the mid-animation viewport scale", () => {
+  const locatorBlock = SOURCE.slice(
+    SOURCE.indexOf("const focusSiteNumber = localStorage.getItem(STORAGE_KEYS.parkingFocusSite);"),
+    SOURCE.indexOf("localStorage.removeItem(STORAGE_KEYS.parkingFocusSite);"),
+  );
+  assert.ok(locatorBlock.length > 0, "the locator arrival block must exist");
+  // Still deferred until after layout (intentional focus preserved) ...
+  assert.match(locatorBlock, /runAfterLayout\(\(\) => \{[\s\S]*?focusSite\(matchedSite, safeOpeningScale\);[\s\S]*?\}\);/);
+  // ... and the scale it passes is exactly the clamped saved opening scale that
+  // also seeds the canvas (`initialScale={defaultZoom}`).
+  assert.match(SOURCE, /const safeOpeningScale = Number\.isNaN\(openingScale\)\s*\n\s*\? 0\.6\s*\n\s*: clampZoom\(openingScale\);/);
+  assert.match(SOURCE, /setDefaultZoom\(safeOpeningScale\);/);
+  assert.match(SOURCE, /initialScale=\{defaultZoom\}/);
+});
+
+test("focusSite honors an explicit scale and otherwise keeps the current viewport scale; no other caller passes one", () => {
+  const focusFn = SOURCE.slice(
+    SOURCE.indexOf("const focusSite = useCallback("),
+    SOURCE.indexOf("}, []);", SOURCE.indexOf("const focusSite = useCallback(")),
+  );
+  assert.match(focusFn, /\(site: ParkingSite, scale\?: number\) =>/);
+  assert.match(focusFn, /centerOnMarker\(siteId, scale \?\? vp\?\.scale\)/);
+  // Search, marker tap, selected-attendee and attendee-target focus are settled
+  // interactions: they still center at the current scale.
+  const calls = [...SOURCE.matchAll(/focusSite\(([^)]*)\)/g)]
+    .map((m) => m[1].trim())
+    .filter((args) => args !== "" && !args.startsWith("site: ParkingSite"));
+  const withScale = calls.filter((args) => args.includes(","));
+  assert.deepEqual(withScale, ["matchedSite, safeOpeningScale"], `only the locator call passes a scale: ${calls.join(" | ")}`);
+  assert.ok(calls.length >= 5, `expected the existing focus callers to remain: ${calls.join(" | ")}`);
+  // The engine is not part of this repair.
+  assert.doesNotMatch(SOURCE, /setViewportTransform\(/);
 });
