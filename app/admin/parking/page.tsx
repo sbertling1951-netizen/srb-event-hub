@@ -1739,18 +1739,44 @@ function ParkingAdminPageInner() {
           </div>
           <div style={{ marginTop: "var(--space-3)", flexShrink: 0 }}>
             <FormActions className="parking-map-controls">
-              <AppButton variant="secondary" onClick={zoomOut} aria-label="Zoom out">
-                −
-              </AppButton>
-              <AppButton variant="secondary" onClick={zoomIn} aria-label="Zoom in">
-                +
-              </AppButton>
-              <AppButton variant="secondary" onClick={resetZoom}>
-                Reset Zoom
-              </AppButton>
-              <AppButton variant="secondary" onClick={recenterMap}>
-                Re-center Map
-              </AppButton>
+              {/* Two intentional pairs so the toolbar is always exactly one row
+                  of four (pairs side by side) or two rows of two (pairs
+                  stacked) -- never three-plus-one. See the .parking-map-controls
+                  rules in app/globals.css. */}
+              {/* Compact icon controls in two pairs -- zoom out/in, then reset/
+                  center. The buttons are equal squares whose size does not change
+                  with text zoom, so the toolbar stays one compact row (or exactly
+                  two rows of two on an extremely narrow viewport). Each SVG is
+                  decorative (aria-hidden/focusable=false); the accessible name is
+                  the button's aria-label. */}
+              <div className="parking-map-controls-pair parking-map-controls-zoom">
+                <AppButton variant="secondary" onClick={zoomOut} aria-label="Zoom out">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M5 12h14" />
+                  </svg>
+                </AppButton>
+                <AppButton variant="secondary" onClick={zoomIn} aria-label="Zoom in">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M12 5v14" />
+                    <path d="M5 12h14" />
+                  </svg>
+                </AppButton>
+              </div>
+              <div className="parking-map-controls-pair parking-map-controls-actions">
+                <AppButton variant="secondary" onClick={resetZoom} aria-label="Reset Zoom">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                    <polyline points="3 4 3 10 9 10" />
+                    <path d="M4.4 15a8 8 0 1 0 1.5-8.3L3 10" />
+                  </svg>
+                </AppButton>
+                <AppButton variant="secondary" onClick={recenterMap} aria-label="Re-center Map">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                    <circle cx="12" cy="12" r="8" />
+                    <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                    <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+                  </svg>
+                </AppButton>
+              </div>
             </FormActions>
           </div>
         </div>

@@ -2238,27 +2238,38 @@ a.app-status-pill-link:focus-visible {
   }
 }
 
-/* Parking map tools are a toolbar, not a stack of form-submit actions.
-   Keep the map card's existing height budget: shorter controls give the
-   recovered height to the map while retaining full touch targets. */
-@media (max-width: 899px) {
-  .app-button-row.parking-map-controls {
-    display: grid;
-    grid-template-columns: 44px 44px minmax(0, 1fr) minmax(0, 1fr);
-    gap: var(--space-3);
-  }
-
-  .parking-map-controls .app-button {
-    min-height: 44px;
-    padding: var(--space-2);
-    font-size: var(--font-size-small);
-  }
+/* Parking map toolbar: four compact icon controls in two intentional pairs
+   (zoom out/in, then reset/center). Every control is an equal square sized to
+   --touch-target-min, and the icons are SVGs whose size does not grow with text
+   zoom, so the toolbar stays ONE compact row at every text size and can only
+   ever wrap to exactly two rows of two (the two pairs) on an extremely narrow
+   viewport -- never three-plus-one. The shell's own `.app-button-row` supplies
+   the 8px between the pairs; each pair supplies the 8px between its two buttons.
+   Applies at all widths (icons are size-stable, so desktop and mobile match). */
+.app-button-row.parking-map-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
 }
 
-@media (max-width: 379px) {
-  .app-button-row.parking-map-controls {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.app-button-row.parking-map-controls .parking-map-controls-pair {
+  display: flex;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.parking-map-controls .app-button {
+  flex: 0 0 var(--touch-target-min);
+  width: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  padding: 0;
+}
+
+.parking-map-controls .app-button svg {
+  display: block;
 }
 
 /* ===== SHARED MAP ENGINE SURFACE PROTECTION ===== */

@@ -341,7 +341,7 @@ test("the empty-filtered-queue display uses the shared EmptyState primitive with
   assert.equal(/<Alert tone="neutral">No attendees match the current filters\.<\/Alert>/.test(SOURCE), false);
 });
 
-test("the four zoom controls (Zoom out, Zoom in, Reset Zoom, Re-center Map) remain in the same order, each with its original handler and label, now inside the shared FormActions wrapper", () => {
+test("the four zoom controls (Zoom out, Zoom in, Reset Zoom, Re-center Map) are compact icon buttons in the same order, grouped into two intentional pairs, with preserved handlers and accessible names and decorative SVGs hidden from assistive tech", () => {
   assert.match(SOURCE, /import \{ FormActions \} from "@\/components\/ui\/FormActions";/);
 
   const rowStart = SOURCE.indexOf("<FormActions", SOURCE.indexOf("renderMarker={renderMarker}"));
@@ -349,19 +349,48 @@ test("the four zoom controls (Zoom out, Zoom in, Reset Zoom, Re-center Map) rema
   const rowEnd = SOURCE.indexOf("</FormActions>", rowStart);
   const rowSource = SOURCE.slice(rowStart, rowEnd);
 
-  const buttons = [...rowSource.matchAll(/<AppButton variant="secondary" onClick=\{(\w+)\}(?: aria-label="([^"]+)")?>\s*\n\s*([^\n]+?)\s*\n\s*<\/AppButton>/g)];
-  assert.equal(buttons.length, 4, "expected exactly four zoom-control buttons");
+  // Each control is an AppButton with an onClick handler, an aria-label, and an
+  // inline SVG icon body (no visible text label).
+  const buttons = [...rowSource.matchAll(/<AppButton variant="secondary" onClick=\{(\w+)\} aria-label="([^"]+)">([\s\S]*?)<\/AppButton>/g)];
+  assert.equal(buttons.length, 4, "expected exactly four icon zoom-control buttons");
   assert.deepEqual(
     buttons.map((m) => m[1]),
     ["zoomOut", "zoomIn", "resetZoom", "recenterMap"],
     "handlers must remain in their original order",
   );
-  assert.equal(buttons[0][2], "Zoom out");
-  assert.equal(buttons[1][2], "Zoom in");
-  assert.equal(buttons[0][3], "−");
-  assert.equal(buttons[1][3], "+");
-  assert.equal(buttons[2][3], "Reset Zoom");
-  assert.equal(buttons[3][3], "Re-center Map");
+  // Accessible names (aria-label) are preserved for all four controls.
+  assert.deepEqual(
+    buttons.map((m) => m[2]),
+    ["Zoom out", "Zoom in", "Reset Zoom", "Re-center Map"],
+    "accessible names must be preserved",
+  );
+  // Every control's body is a decorative inline SVG hidden from assistive tech,
+  // and carries no visible text label.
+  for (const [, handler, , body] of buttons) {
+    assert.match(body, /<svg\b/, `${handler} must render an inline SVG icon`);
+    assert.match(body, /aria-hidden="true"/, `${handler}'s SVG must be aria-hidden`);
+    assert.match(body, /focusable="false"/, `${handler}'s SVG must be focusable="false"`);
+    const visibleText = body.replace(/<svg[\s\S]*?<\/svg>/g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/\s+/g, "");
+    assert.equal(visibleText, "", `${handler} must have no visible text label (icon only)`);
+  }
+
+  // Grouping: the controls are split into exactly two intentional pairs so the
+  // rendered toolbar can only ever be one row of four or two rows of two. The
+  // zoom pair holds − and +; the actions pair holds Reset Zoom and Re-center Map.
+  const zoomStart = rowSource.indexOf('parking-map-controls-zoom');
+  const actionsStart = rowSource.indexOf('parking-map-controls-actions');
+  assert.notEqual(zoomStart, -1, "expected a parking-map-controls-zoom pair group");
+  assert.notEqual(actionsStart, -1, "expected a parking-map-controls-actions pair group");
+  assert.ok(zoomStart < actionsStart, "zoom pair must come before the actions pair");
+  const pairOpens = [...rowSource.matchAll(/className="parking-map-controls-pair /g)];
+  assert.equal(pairOpens.length, 2, "expected exactly two control pairs");
+
+  const zoomGroup = rowSource.slice(zoomStart, actionsStart);
+  const actionsGroup = rowSource.slice(actionsStart);
+  const zoomHandlers = [...zoomGroup.matchAll(/onClick=\{(\w+)\}/g)].map((m) => m[1]);
+  const actionsHandlers = [...actionsGroup.matchAll(/onClick=\{(\w+)\}/g)].map((m) => m[1]);
+  assert.deepEqual(zoomHandlers, ["zoomOut", "zoomIn"], "zoom pair must contain zoom out/in only");
+  assert.deepEqual(actionsHandlers, ["resetZoom", "recenterMap"], "actions pair must contain Reset Zoom and Re-center Map only");
 });
 
 test("no hand-styled zoom-control row remains -- the former raw flex/gap/flexWrap div around the zoom buttons is gone", () => {
