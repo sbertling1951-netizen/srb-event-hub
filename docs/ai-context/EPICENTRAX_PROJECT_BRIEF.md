@@ -231,7 +231,59 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Agenda portrait header and unfinished item recovery — 2026-09-21 (Promoted and deployed; closeout pending)
+### Parking phone controls and compact header — 2026-09-21 (Approved; deployment pending)
+
+- Pap requested compact map controls (one row of two pairs, at most two rows),
+  a smaller phone header, and more visible map area. Substantive code baseline
+  **`5bec84e97d71adf20b0563007bc2511ed827b603`** adds a Parking-only toolbar class:
+  four controls in one grid row at 380–899px, two equal columns below 380px,
+  with 44px minimum tap targets. Existing labels and handlers are preserved.
+  The card height budget is unchanged; recovered control height goes to the map.
+- Shared shell phone CSS below 600px reduces vertical padding and logo height;
+  both navigation links, identity/title rows and prior wrapping fix remain.
+  This affects other compact shell headers, not just Parking. Desktop styles
+  are unchanged. No map engine, authority, assignment or data behavior changed.
+- Synthetic mounted real-page checks: Chromium and WebKit each passed 320,
+  390, 430, 844 and 1440px, at most two control rows, touch sizes, no overlap/
+  horizontal overflow, and all four map controls. At 390×844 in WebKit, map
+  height rose from 284.39 to 444.39px; header fell from 114 to 102px. Desktop
+  metrics were byte-identical. Prior 390px layout fails three layout assertions.
+  Focused Parking/header tests 44/44; lint zero errors, one unchanged warning;
+  isolated fixture-only production build passed; `git diff --check` clean.
+  Physical iPhone/Safari and production acceptance remain pending.
+- Separate carryover: LEM's two-file locator-animation repair remains intact
+  in that source commit; Lun independently passed it as a separate verdict. Pap's original oversized opening
+  view was resolved by correcting the saved value from 3 to 0.3; it requires
+  no code fix. This layout work does not claim to repair that resolved issue.
+  Prior agenda closeout documentation is retained. No database access, email
+  or import is part of this release. Evidence and review anchor:
+  `/private/tmp/epicentrax-parking-mobile-layout-run/`.
+
+- **Independent review:** Lun reported separate PASS verdicts for layout and
+  locator repair, no actionable findings; reran 44 focused tests, lint and diff
+  checks, and verified all eight anchor hashes unchanged. Supplemental synthetic
+  Chromium/WebKit header checks included a logo and long navigation/workspace/
+  title labels at 320/390/430/844px with no reported overflow. Mel reverified
+  the complete anchor before this documentation reconciliation. Pap explicitly
+  approved the three reviewed source/test files plus documentation, one
+  deployment, verification and closeout. Fresh origin/main remained
+  `6acfd049b69a8512d91f805ac193b982cadf9999`; all seven source/frozen hashes,
+  exact dirty cohort, empty index and stash matched before commit. Committed
+  source bytes match the reviewed hashes.
+- **Production preflight (Pap-run):** PASS at `2026-09-22T03:07:36.714Z`:
+  serving `65e4fae0de5a2ca8f738b45fdb2295203bc57ac8`, directory
+  `/root/srb-event-hub-releases/20260922T011204Z-65e4fae0de5a`, app PID 3978971,
+  webhook online, no worker, lock free, all three configured origins correct.
+  Captured 26 complete old asset URLs. No deployment has started at this record.
+  Release package: `/private/tmp/epicentrax-parking-mobile-release-hgrwg6o6/`.
+  Production verification and physical iPhone acceptance remain pending.
+- **Separate requested follow-up:** Pap reports Reset Zoom currently fits the
+  map instead of restoring the saved opening scale. Desired behavior: Reset
+  restores the saved opening scale; Re-center preserves the current scale.
+  This is not a blocker for the current layout/locator review and is not
+  implemented or included in this proposed release.
+
+### Agenda portrait header and unfinished item recovery — 2026-09-21 (Promoted, deployed and closed out)
 
 - **Pap requested both fixes** after an iPhone 13 Pro portrait screenshot showed
   one-letter header wrapping and the operator reported losing an incomplete,
@@ -253,7 +305,11 @@ state override this subsection whenever they disagree, per the
   HTML/assets, and signed-out profile 401 with neutral private/no-store responses.
   All 26 captured old assets passed. Release pointers and cleanup/worker/port/
   config gates passed. Verifier paused only the webhook and released the lock;
-  app stays online. Webhook resume and verified PM2 save await closeout output.
+  app stayed online. Pap subsequently confirmed successful closeout: webhook
+  online, signing secret unchanged, unsigned POST 401, no worker, unchanged app
+  PID, and PM2 saved both processes online with verified paths. Old dump retained
+  at `/root/pm2-closeout-backup-20260922T012932Z-yqh5h879`. Startup unit remains
+  inactive; no unit restart or reboot occurred and reboot recovery is unproven.
   The first attempt stopped because the temporary public verifier truncated
   `02we2ry.js533.js` at its embedded `.js`; Mel corrected only that temporary
   parser, preserved the original evidence, and Pap's full rerun passed. No
@@ -1307,12 +1363,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-21T18:27:10-07:00`
+**Generated at:** `2026-09-21T20:12:16-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `65e4fae docs: record approved agenda recovery release`
-**Commit date:** `2026-09-21T18:10:54-07:00`
-**origin/main:** `65e4fae`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**Commit:** `5bec84e fix: compact mobile parking controls and preserve locator opening zoom`
+**Commit date:** `2026-09-21T20:11:46-07:00`
+**origin/main:** `6acfd04`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
