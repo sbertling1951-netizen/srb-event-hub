@@ -88,15 +88,23 @@ function clampPan(
   const minX = Math.min(0, viewportWidth - scaledWidth) - overscrollX;
   const minY = Math.min(0, viewportHeight - scaledHeight) - overscrollY;
 
+  // Balanced resting pan for an axis smaller than the viewport: the content
+  // centered. The allowed range for an undersized axis is this centered
+  // position plus/minus the overscroll allowance -- NOT the top-left origin
+  // plus/minus overscroll, which used to reject the centered pan and pin a
+  // small image to a corner (and made zoom/drag after Center jump back to it).
+  const centeredX = (viewportWidth - scaledWidth) / 2;
+  const centeredY = (viewportHeight - scaledHeight) / 2;
+
   return {
     x:
       scaledWidth <= viewportWidth
-        ? clamp(x, -overscrollX * 1.5, overscrollX * 1.5)
+        ? clamp(x, centeredX - overscrollX * 1.5, centeredX + overscrollX * 1.5)
         : clamp(x, minX, overscrollX),
 
     y:
       scaledHeight <= viewportHeight
-        ? clamp(y, -overscrollY * 1.5, overscrollY * 1.5)
+        ? clamp(y, centeredY - overscrollY * 1.5, centeredY + overscrollY * 1.5)
         : clamp(y, minY, overscrollY),
   };
 }

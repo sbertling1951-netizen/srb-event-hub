@@ -150,14 +150,18 @@ export function clampPan(
   const overY = Math.min(40, viewport.height * 0.06);
   const minX = Math.min(0, viewport.width - scaledW) - overX;
   const minY = Math.min(0, viewport.height - scaledH) - overY;
+  // Undersized axis rests centered (balanced position +/- overscroll), matching
+  // GestureMapViewportV2.clampPan. See the note there.
+  const centeredX = (viewport.width - scaledW) / 2;
+  const centeredY = (viewport.height - scaledH) / 2;
   return {
     panX:
       scaledW <= viewport.width
-        ? clamp(panX, -overX * 1.5, overX * 1.5)
+        ? clamp(panX, centeredX - overX * 1.5, centeredX + overX * 1.5)
         : clamp(panX, minX, overX),
     panY:
       scaledH <= viewport.height
-        ? clamp(panY, -overY * 1.5, overY * 1.5)
+        ? clamp(panY, centeredY - overY * 1.5, centeredY + overY * 1.5)
         : clamp(panY, minY, overY),
   };
 }

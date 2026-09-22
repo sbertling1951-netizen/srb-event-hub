@@ -328,3 +328,30 @@ test("both map-engine-surface divs also set max-width:none as an inline !importa
   assert.match(CANVAS_MAP_CANVAS_SOURCE, /const surfaceRef = useRef<HTMLDivElement \| null>\(null\)/);
   assert.match(CANVAS_MAP_CANVAS_SOURCE, /ref={surfaceRef}[\s\S]{0,700}className="map-engine-surface"/);
 });
+
+
+test("clampPan rests an undersized axis at the centered position (balanced +/- overscroll), not the top-left origin", () => {
+  const start = SOURCE.indexOf("function clampPan(");
+  assert.ok(start >= 0, "expected the clampPan helper");
+  const body = SOURCE.slice(start, SOURCE.indexOf("\n}", start));
+  // The undersized branch clamps around the centered position.
+  assert.match(body, /const centeredX = \(viewportWidth - scaledWidth\) \/ 2;/);
+  assert.match(body, /const centeredY = \(viewportHeight - scaledHeight\) \/ 2;/);
+  assert.match(body, /clamp\(x, centeredX - overscrollX \* 1\.5, centeredX \+ overscrollX \* 1\.5\)/);
+  assert.match(body, /clamp\(y, centeredY - overscrollY \* 1\.5, centeredY \+ overscrollY \* 1\.5\)/);
+  // Oversized limits unchanged.
+  assert.match(body, /clamp\(x, minX, overscrollX\)/);
+  assert.match(body, /clamp\(y, minY, overscrollY\)/);
+  // No longer clamps an undersized axis around the origin.
+  assert.equal(/clamp\(x, -overscrollX \* 1\.5, overscrollX \* 1\.5\)/.test(body), false, "must not pin undersized X to the origin");
+  assert.equal(/clamp\(y, -overscrollY \* 1\.5, overscrollY \* 1\.5\)/.test(body), false, "must not pin undersized Y to the origin");
+});
+
+test("Center/zoom/drag centering all route through the single shared clampPan (no separate centered mode or duplicate transform state)", () => {
+  // centerOnPoint (used by centerOn/reset/zoom) still clamps; there is no
+  // dedicated bypass method.
+  const cop = SOURCE.indexOf("const centerOnPoint = (");
+  assert.match(SOURCE.slice(cop, SOURCE.indexOf("};", cop)), /clampPan\(/);
+  assert.equal(/centerContent/.test(SOURCE), false, "the dedicated centerContent bypass must be removed once normal centering is valid");
+  assert.match(SOURCE, /centerOn\(mapX, mapY, scale\) \{\s*\n\s*centerOnPoint\(mapX, mapY, scale \|\| stateRef\.current\.scale\);/);
+});
