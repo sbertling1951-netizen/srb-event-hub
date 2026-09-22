@@ -231,15 +231,19 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Parking Center and follow-up gestures — 2026-09-22 (Approved; release preparation)
+### Parking Center and follow-up gestures — 2026-09-22 (Production verified; closeout and device acceptance pending)
 
 - **Substantive code baseline:** `f0d9b42b3960f07554f888b4626be51682db68d6`. Pap approved the four reviewed
   source/test files, Brief reconciliation, commits, one push/deployment and
   verification/closeout after the production preflight below. Fresh origin/main
   was `11c2f205089a3ccbb288b45ae1fef2059bee3c56`; branch, exact dirty cohort,
   empty index, unchanged stash and all twelve reviewed/frozen hashes passed.
-  Committed repair blobs match the reviewed hashes. Promotion and deployment
-  verification are pending; this section is not a production-success claim.
+  Committed repair blobs match the reviewed hashes. Release commit
+  `e4062addc25e157c799a0d21b18ca2d2a8cc04e0` was fast-forwarded through the clean
+  isolated main checkout and pushed exactly once under Pap's approval. Remote
+  main independently verified at that SHA. The release delta is exactly the
+  four reviewed repair files plus this Brief. Production deployment and release
+  checks passed as recorded below; physical-device acceptance remains pending.
 - **Behavior:** V2 and the pure canvas coordinate helper now bound undersized
   axes around the centered position with the existing overscroll allowance.
   Center and subsequent zoom/drag therefore share a valid resting position;
@@ -278,6 +282,21 @@ state override this subsection whenever they disagree, per the
   `/private/tmp/epicentrax-parking-center-release-_aa75dl4/`.
   No deployment, restart, configuration change or database access occurred in
   preflight. No migration or database mutation is authorized for this release.
+
+- **Production verification (Pap-run):** serving
+  `e4062addc25e157c799a0d21b18ca2d2a8cc04e0`, activated
+  `2026-09-22T17:27:38Z`, directory
+  `/root/srb-event-hub-releases/20260922T172555Z-e4062addc25e`, app PID 3990149;
+  rollback `/root/srb-event-hub-releases/20260922T153219Z-21d07e410859`.
+  Matched Pap's output to `verification-20260922T172712Z.log`. Both domains passed
+  origin/public HTML and 13 referenced assets, protected system-status 401,
+  signed-out profile 401 with neutral private/no-store response, and all 26 old
+  assets. Release-pointer, cleanup, candidate-port, worker and pinned-config
+  gates passed. Verifier stopped only the webhook and released the lock;
+  application stays online. Documentation-only closeout is authorized while the
+  webhook is paused; no second application deployment. Webhook resumption and
+  PM2 save remain pending the bound closeout command. Physical Center/pinch
+  acceptance remains Pap's next application check.
 
 ### Parking icon toolbar — 2026-09-22 (Deployed and closed out; phone layout accepted; Center defect reported)
 
@@ -1520,12 +1539,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-22T10:24:33-07:00`
+**Generated at:** `2026-09-22T10:29:07-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `f0d9b42 fix(maps): keep undersized maps centered during navigation`
-**Commit date:** `2026-09-22T10:24:04-07:00`
-**origin/main:** `11c2f20`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `e4062ad docs: record approved map Center repair and release gate`
+**Commit date:** `2026-09-22T10:25:04-07:00`
+**origin/main:** `e4062ad`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
