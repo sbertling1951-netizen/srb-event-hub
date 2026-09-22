@@ -231,7 +231,60 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Successful import banner — 2026-09-21 (Promoted and deployed; closeout pending)
+### Agenda portrait header and unfinished item recovery — 2026-09-21 (Reviewed, committed; deployment approved)
+
+- **Pap requested both fixes** after an iPhone 13 Pro portrait screenshot showed
+  one-letter header wrapping and the operator reported losing an incomplete,
+  unsaved agenda item while switching apps to obtain required information.
+  **Substantive code baseline: `ae0e04e5238ca40f82e29fac6b949f94bddc1db6`.**
+  Pap approved the six reviewed source/test files, checkpoint, one deployment,
+  verification and closeout after Lun's PASS and production preflight. Mel
+  reverified fresh origin/main at `a797afc44c109d9745aca3a0a12c1a51368f1f24`,
+  exact cohort, empty index, unchanged stash and all six reviewed hashes;
+  committed source bytes match review. Promotion/production verification are
+  pending; no database mutation or migration is part of this release.
+- **Header:** shared shell CSS wraps navigation and reserves a full title row
+  below 600px; both existing navigation links remain available. Wider header
+  presentation is unchanged.
+- **Recovery:** Agenda records unsaved form values and their original baseline
+  synchronously in tab-local session storage, scoped by authenticated account
+  and Event. After a remount/reload it offers Restore / Discard only after the
+  existing Agenda access/load checks succeed. Drafts expire after 24 hours and
+  are removed on successful save, confirmed discard, and an Admin-provider
+  sign-out event. They are not published agenda records or authority inputs.
+  Required-field checks and governed mutation RPCs are retained. Restored edits
+  cannot save over a changed/deleted item; late save results cannot clear a
+  newer form/Event draft. The page is keyed by authenticated account to drop
+  the prior account's editor immediately on an account change.
+- **Validation:** 116 focused tests passed; touched TypeScript files lint clean;
+  production build passed; full TypeScript diagnostics remain byte-identical
+  to the clean starting checkout's 16-error baseline. Browser fixture uses the
+  real Agenda page, guard and shared shell with synthetic context/data/network
+  boundaries: WebKit and Chromium passed portrait 320/390px, landscape 844px,
+  desktop 1280px, guard-remount/reload recovery, account/Event isolation,
+  required-field rejection, discard and successful-save cleanup, and refusal
+  to overwrite a changed item. No external browser requests were permitted.
+- **Independent review:** Lun reported PASS with no actionable findings,
+  independently reran all 116 focused tests and `git diff --check`, and verified
+  the seven-file anchor unchanged before/after. Lun inspected the retained
+  synthetic browser evidence; this is not a new physical-device verification.
+  Mel subsequently reverified branch/HEAD/cached origin, cohort, empty index
+  and all seven reviewed hashes before this documentation-only reconciliation.
+- **Limits / retained findings:** browser tests simulate the provider's loading
+  transition; no physical-iPhone app-switch or live Supabase session-refresh
+  proof yet. Browser storage must be available; the form warns if draft writes
+  fail. A closed tab/browser storage reset can lose tab-local drafts. Existing
+  unrelated tenant-authority source-test mismatch and storage-key guard failure
+  in `lib/server/stripePassport.ts` remain unchanged. Prior banner-release
+  closeout is confirmed below. Evidence: `/private/tmp/epicentrax-agenda-mobile-repair/`.
+
+- **Production preflight (Pap-run, 2026-09-22T01:08:03.748Z):** serving/controller
+  `1ee77b5927b4d8e2722c2e1e9568e713b5852a75`, app PID 3975997, webhook online,
+  no worker, lock free; live/pinned/next origin all `https://epicentrax.com`.
+  Captured 26 old asset URLs. Release package:
+  `/private/tmp/epicentrax-agenda-mobile-release-1g3kq0za/`.
+
+### Successful import banner — 2026-09-21 (Promoted, deployed and closed out)
 
 - **Substantive code baseline: `86f197df6dd1ff29225d66c57efeda86ba8a9e1d`.** Pap approved the
   reviewed two-file Imports page/test fix, checkpoint, one deployment, verification
@@ -249,8 +302,13 @@ state override this subsection whenever they disagree, per the
   private/no-store headers on origin and public paths. All 26 captured old assets
   passed. Release/baseline pointers and cleanup/worker/port/config gates passed;
   verifier paused only webhook, released the lock and left the application online.
-  Webhook resume and verified PM2 save await Pap's closeout output. No import was
-  performed for verification; the production banner itself remains unobserved.
+  Pap supplied successful closeout on 2026-09-22 UTC: webhook online, signing
+  secret unchanged, unsigned POST 401, no worker, app PID unchanged, and PM2
+  saved both processes online with verified paths. Old dump retained at
+  `/root/pm2-closeout-backup-20260922T010017Z-uoovncvs`. Startup unit remains
+  inactive; no unit restart or reboot occurred and reboot recovery remains
+  unproven. No import was performed for verification; the production banner
+  itself remains unobserved.
 - **Behavior:** the existing shared Alert success tone (light green) is selected
   for this page's exact processed-summary format only when processed > 0, every
   processed row committed, and review/failure/warning counts are zero. Event-name
@@ -268,9 +326,9 @@ state override this subsection whenever they disagree, per the
 - **Production preflight (Pap-run, 2026-09-21T20:36:47.592Z):** serving/controller
   `a179d4fac64c8c700ce3d4cc6be859514a95b8db`, app PID 3974391, webhook online,
   no worker, lock free; live/pinned/next origin all `https://epicentrax.com`.
-  Captured 26 asset URLs, subsequently verified above. Next: documentation
-  closeout while webhook paused, webhook resume and PM2 save. A future legitimate import
-  can establish live visual acceptance; do not repeat the already committed roster.
+  Captured 26 asset URLs, subsequently verified above. Documentation closeout,
+  webhook resume and PM2 save are complete. A future legitimate import can
+  establish live visual acceptance; do not repeat the already committed roster.
 
 ### Attendee import sharing-answer compatibility — 2026-09-21 (Promoted, deployed and live import accepted)
 
@@ -1234,12 +1292,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-21T13:43:56-07:00`
+**Generated at:** `2026-09-21T18:10:47-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `1ee77b5 docs: record approved import success banner release`
-**Commit date:** `2026-09-21T13:39:51-07:00`
-**origin/main:** `1ee77b5`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**Commit:** `ae0e04e fix(agenda): recover unfinished items and wrap mobile header`
+**Commit date:** `2026-09-21T18:10:18-07:00`
+**origin/main:** `a797afc`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
