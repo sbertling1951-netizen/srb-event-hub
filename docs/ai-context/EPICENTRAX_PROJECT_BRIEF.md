@@ -231,7 +231,7 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Parking icon toolbar — 2026-09-22 (Approved; deployment pending)
+### Parking icon toolbar — 2026-09-22 (Production verified; closeout pending)
 
 - Pap approved four compact icons (minus, plus, reset arrow, center target)
   after the text-label designs failed phone acceptance or enlarged-text checks.
@@ -268,9 +268,26 @@ state override this subsection whenever they disagree, per the
   serving `36e76f51a7c5803194d183200309f4400cb7128c`, directory
   `/root/srb-event-hub-releases/20260922T031333Z-36e76f51a7c5`, app PID 3980883;
   webhook online, no worker, lock free, all three public-origin checks correct.
-  Captured 26 complete old asset URLs. No deployment has started at this record;
-  production verification and physical-iPhone acceptance remain pending.
+  Captured 26 complete old asset URLs. Mel fast-forwarded the clean isolated
+  main checkout and pushed exactly once, triggering the webhook deployment of
+  **`21d07e41085945a3b0ebe6ef469b1b309263cf53`**. Remote main independently
+  verified at that SHA. Only the three reviewed source/test files and Brief
+  differ from prior main. Production verification passed as recorded below;
+  physical-iPhone acceptance remains pending.
   No database access or migration is part of this release.
+
+- **Production verification (Pap-run):** release
+  `21d07e41085945a3b0ebe6ef469b1b309263cf53` activated at
+  `2026-09-22T15:34:10Z` in
+  `/root/srb-event-hub-releases/20260922T153219Z-21d07e410859`, app PID 3987049.
+  Rollback: `20260922T031333Z-36e76f51a7c5`. Both domains passed origin HTML
+  and 13 referenced assets, protected system-status 401, ordinary public TLS
+  and HTML/assets, and signed-out profile 401 with neutral private/no-store
+  responses. All 26 retained assets passed. Release-pointer, cleanup, worker,
+  candidate-port and pinned-config gates passed. Verifier paused only the
+  webhook and released the lock; application remains online. Documentation-only
+  closeout proceeds under Pap's existing approval while webhook is paused;
+  no second application deployment. Webhook resumption and PM2 save pending.
 
 ### Parking phone controls and compact header — 2026-09-21 (Closed out; phone toolbar acceptance FAILED)
 
@@ -1434,12 +1451,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-22T08:31:34-07:00`
+**Generated at:** `2026-09-22T08:41:19-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `1fee7b7 fix: use compact accessible icons for parking map controls`
-**Commit date:** `2026-09-22T08:31:12-07:00`
-**origin/main:** `ee6168c`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `21d07e4 docs: reconcile approved parking icon toolbar release`
+**Commit date:** `2026-09-22T08:31:39-07:00`
+**origin/main:** `21d07e4`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
