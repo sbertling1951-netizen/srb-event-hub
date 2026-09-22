@@ -231,7 +231,48 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Parking phone controls and compact header — 2026-09-21 (Production verified; closeout pending)
+### Parking icon toolbar — 2026-09-22 (Approved; deployment pending)
+
+- Pap approved four compact icons (minus, plus, reset arrow, center target)
+  after the text-label designs failed phone acceptance or enlarged-text checks.
+  LEM changed only Parking page markup/tests and Parking selectors in globals.css.
+  Four 45px square buttons retain the existing accessible names and actions,
+  two intentional pairs, 8px spacing and visible keyboard focus. Inline SVGs
+  follow existing project conventions and are decorative; no dependency added.
+  Header, map engines, locator repair, saved opening scale and authorization
+  remain unchanged. Reset Zoom semantics remain a separate excluded follow-up.
+- **Independent review:** Lun returned PASS for release approval, with physical
+  iPhone acceptance outstanding. Spacing and excessive-height findings resolved
+  in tested conditions. Mel reverified all ten anchored repository hashes,
+  branch/HEAD/cached origin `ee6168c93d3d2d848ec033d6ceea25da9f686e08`, exact
+  dirty cohort, empty index and stash before this reconciliation.
+- **Evidence:** LEM reports mounted Chromium/WebKit 14/14 each across widths
+  320/390/430/440/844/1440, short heights, rotation and injected enlarged text;
+  tested controls/toolbar remain 45px with 8px gaps. At 320×568 the map remains
+  277.8px at ordinary and injected 40px text. Simulator Safari reports the same
+  toolbar geometry at 440px. Focused suites 38/11/5/6 passed, ESLint zero errors
+  with one unchanged warning, diff checks clean, isolated fixture-only production
+  build passed. Repo next-env.d.ts unchanged. Full physical keyboard traversal
+  was not independently established; injected font sizes do not prove actual
+  Safari page zoom or iOS accessibility settings. Simulator is not device proof.
+- Repair/evidence: `/private/tmp/epicentrax-parking-toolbar-icons-run/`.
+  Prior failed attempts remain preserved. Release preflight package:
+  `/private/tmp/epicentrax-parking-icons-release-b_opfyv4`.
+  Pap approved the reviewed cohort, documentation, one deployment, verification
+  and closeout after preflight. Substantive code baseline:
+  **`1fee7b7d3cf514780357d745b6a9a61d27ddddcc`**. Fresh origin/main remained
+  `ee6168c93d3d2d848ec033d6ceea25da9f686e08`; exact cohort, empty index,
+  unchanged stash and all nine source/frozen hashes passed before commit.
+  Committed source bytes match Lun's reviewed hashes.
+- **Production preflight (Pap-run):** PASS at `2026-09-22T15:29:02.783Z`:
+  serving `36e76f51a7c5803194d183200309f4400cb7128c`, directory
+  `/root/srb-event-hub-releases/20260922T031333Z-36e76f51a7c5`, app PID 3980883;
+  webhook online, no worker, lock free, all three public-origin checks correct.
+  Captured 26 complete old asset URLs. No deployment has started at this record;
+  production verification and physical-iPhone acceptance remain pending.
+  No database access or migration is part of this release.
+
+### Parking phone controls and compact header — 2026-09-21 (Closed out; phone toolbar acceptance FAILED)
 
 - Pap requested compact map controls (one row of two pairs, at most two rows),
   a smaller phone header, and more visible map area. Substantive code baseline
@@ -250,7 +291,7 @@ state override this subsection whenever they disagree, per the
   metrics were byte-identical. Prior 390px layout fails three layout assertions.
   Focused Parking/header tests 44/44; lint zero errors, one unchanged warning;
   isolated fixture-only production build passed; `git diff --check` clean.
-  Physical iPhone/Safari and production acceptance remain pending.
+  These synthetic checks missed the physical-phone toolbar failure recorded below.
 - Separate carryover: LEM's two-file locator-animation repair remains intact
   in that source commit; Lun independently passed it as a separate verdict. Pap's original oversized opening
   view was resolved by correcting the saved value from 3 to 0.3; it requires
@@ -280,8 +321,8 @@ state override this subsection whenever they disagree, per the
   was independently verified at that SHA. Only the three reviewed source/test
   files and this Brief differ from the prior main baseline.
   Release package: `/private/tmp/epicentrax-parking-mobile-release-hgrwg6o6/`.
-  Production verification passed as recorded below; physical iPhone acceptance
-  remains pending.
+  Release health verification passed as recorded below; physical iPhone toolbar
+  acceptance subsequently FAILED.
 - **Production verification (Pap-run):** release
   `36e76f51a7c5803194d183200309f4400cb7128c` activated at
   `2026-09-22T03:15:19Z` in
@@ -293,7 +334,20 @@ state override this subsection whenever they disagree, per the
   worker/port/config checks passed. Verifier paused only the webhook and
   released the lock; application stays online. Documentation-only closeout
   proceeds under Pap's existing approval while the webhook is paused; no
-  second application deployment. Webhook resumption and PM2 save pending.
+  second application deployment. The retained Pap-run closeout log
+  `closeout-20260922T032015Z.log` confirms webhook online, unchanged signing
+  secret, unsigned POST 401, no worker, unchanged app PID and PM2 saved.
+  Old dump: `/root/pm2-closeout-backup-20260922T032018Z-1dqvsqze`.
+  Startup unit remains inactive; reboot recovery is unproven.
+- **Physical phone acceptance FAILED:** Pap's subsequent screenshot shows all
+  four controls in one row but stretched into tall columns, still consuming
+  excessive map-card height. The synthetic row-count/minimum-touch checks did
+  not protect against this outcome. Cause is not yet established. Pap requested
+  LEM rewrite the Parking toolbar. Scope: compact, bounded-height controls,
+  one row where readable or two rows of two; preserve map area, existing
+  handlers, desktop behavior, locator repair and header. Require before/after
+  screenshots and maximum-height assertions under the full production CSS.
+  No additional deployment is authorized by this repair request.
 - **Separate requested follow-up:** Pap reports Reset Zoom currently fits the
   map instead of restoring the saved opening scale. Desired behavior: Reset
   restores the saved opening scale; Re-center preserves the current scale.
@@ -1380,12 +1434,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-21T20:18:36-07:00`
+**Generated at:** `2026-09-22T08:31:34-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `36e76f5 docs: reconcile approved parking mobile release`
-**Commit date:** `2026-09-21T20:12:35-07:00`
-**origin/main:** `36e76f5`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**Commit:** `1fee7b7 fix: use compact accessible icons for parking map controls`
+**Commit date:** `2026-09-22T08:31:12-07:00`
+**origin/main:** `ee6168c`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
