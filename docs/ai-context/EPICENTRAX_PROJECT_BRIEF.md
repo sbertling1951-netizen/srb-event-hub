@@ -231,7 +231,7 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Agenda portrait header and unfinished item recovery — 2026-09-21 (Reviewed, committed; deployment approved)
+### Agenda portrait header and unfinished item recovery — 2026-09-21 (Promoted and deployed; closeout pending)
 
 - **Pap requested both fixes** after an iPhone 13 Pro portrait screenshot showed
   one-letter header wrapping and the operator reported losing an incomplete,
@@ -241,8 +241,23 @@ state override this subsection whenever they disagree, per the
   verification and closeout after Lun's PASS and production preflight. Mel
   reverified fresh origin/main at `a797afc44c109d9745aca3a0a12c1a51368f1f24`,
   exact cohort, empty index, unchanged stash and all six reviewed hashes;
-  committed source bytes match review. Promotion/production verification are
-  pending; no database mutation or migration is part of this release.
+  committed source bytes match review. Mel promoted release
+  **`65e4fae0de5a2ca8f738b45fdb2295203bc57ac8`** with one fast-forward push
+  from the clean isolated main checkout and verified remote main at that SHA.
+  Production verification passed as recorded below; no database mutation or
+  migration is part of this release.
+- **Production verification (Pap-run):** activated at **2026-09-22T01:13:44Z**
+  in `/root/srb-event-hub-releases/20260922T011204Z-65e4fae0de5a`, app PID 3978971.
+  Rollback: `20260921T204033Z-1ee77b5927b4`. Both domains passed origin HTML and
+  13 referenced assets, protected system-status 401, ordinary public TLS and
+  HTML/assets, and signed-out profile 401 with neutral private/no-store responses.
+  All 26 captured old assets passed. Release pointers and cleanup/worker/port/
+  config gates passed. Verifier paused only the webhook and released the lock;
+  app stays online. Webhook resume and verified PM2 save await closeout output.
+  The first attempt stopped because the temporary public verifier truncated
+  `02we2ry.js533.js` at its embedded `.js`; Mel corrected only that temporary
+  parser, preserved the original evidence, and Pap's full rerun passed. No
+  second deployment was started. Physical-iPhone acceptance remains pending.
 - **Header:** shared shell CSS wraps navigation and reserves a full title row
   below 600px; both existing navigation links remain available. Wider header
   presentation is unchanged.
@@ -1292,12 +1307,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-21T18:10:47-07:00`
+**Generated at:** `2026-09-21T18:27:10-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `ae0e04e fix(agenda): recover unfinished items and wrap mobile header`
-**Commit date:** `2026-09-21T18:10:18-07:00`
-**origin/main:** `a797afc`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `65e4fae docs: record approved agenda recovery release`
+**Commit date:** `2026-09-21T18:10:54-07:00`
+**origin/main:** `65e4fae`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
