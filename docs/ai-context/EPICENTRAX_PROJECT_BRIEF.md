@@ -231,7 +231,7 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Member dashboard Agenda shortcut — 2026-09-22 (Reviewed and approved; release preparation)
+### Member dashboard Agenda shortcut — 2026-09-22 (Production verified; closeout and display check pending)
 
 - **Product intent:** Pap confirmed the sidebar Agenda works and requested the
   same destination as a button on the Member dashboard. Pap approved the one
@@ -261,8 +261,24 @@ state override this subsection whenever they disagree, per the
   webhook online, no worker, lock free, three origin checks correct, 26 old
   asset URLs captured. No deployment/restart or database access in preflight.
   Package: `/private/tmp/epicentrax-member-agenda-button-release-u4d_mxss/`.
-- **Pending:** one approved push/deployment, production verification/closeout,
-  then Pap's dashboard display and Agenda click-through check for the selected
+- **Promotion:** release `a477094c0f786a3d59685b4fd019616b6b3221c5` was
+  fast-forwarded through the clean isolated main checkout and pushed once under
+  Pap's approval. Remote main independently verified at that SHA. Release delta
+  is exactly the reviewed Member page and this Brief; the bound verifier expects
+  the previous serving release as rollback. No second deployment requested.
+- **Production verification (Pap-run):** matched to retained
+  `verification-20260922T224448Z.log`. Serving `a477094c0f786a3d59685b4fd019616b6b3221c5`,
+  activated `2026-09-22T22:35:47Z`, directory
+  `/root/srb-event-hub-releases/20260922T223403Z-a477094c0f78`, app PID 4000713;
+  rollback `/root/srb-event-hub-releases/20260922T191507Z-3a8879ffe0f5`.
+  Both domains passed origin/public HTML and 13 referenced assets, protected
+  system-status 401, signed-out profile 401 with neutral private/no-store body,
+  and all 26 old assets. Release-pointer, cleanup, candidate-port, worker and
+  pinned-config gates passed. Verifier stopped only the webhook and released
+  the lock; app remains online. Documentation-only closeout is authorized while
+  the webhook is paused; no second application deployment.
+- **Pending:** guarded webhook resumption and PM2 save, then Pap's dashboard
+  display and Agenda click-through check for the selected
   Event. The deferred Agenda editor wording and Saint George map image remain
   outside this repair.
 
@@ -1680,12 +1696,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-22T15:32:48-07:00`
+**Generated at:** `2026-09-22T15:45:51-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `07b6653 fix(member): add dashboard Agenda navigation button`
-**Commit date:** `2026-09-22T15:32:20-07:00`
-**origin/main:** `fde4262`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `a477094 docs: record approved Member Agenda button release`
+**Commit date:** `2026-09-22T15:33:09-07:00`
+**origin/main:** `a477094`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
