@@ -231,7 +231,42 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Agenda automatic resume — 2026-09-22 (Production verified; closeout and device acceptance pending)
+### Member dashboard Agenda shortcut — 2026-09-22 (Reviewed and approved; release preparation)
+
+- **Product intent:** Pap confirmed the sidebar Agenda works and requested the
+  same destination as a button on the Member dashboard. Pap approved the one
+  reviewed source file, Brief reconciliation, commits, one deployment and guarded
+  verification/closeout after the read-only production preflight below.
+- **Substantive code baseline:** `07b6653247cea1403b2c767913da3810fa7f1e82`. Fresh origin/main
+  was `fde42628e66702dcd141c3f03d06dd50c4452af3`. Branch, exact one-file repair
+  plus preserved Brief, empty index, unchanged stash and reviewed source hashes
+  passed before commit; the committed page matches Lun's reviewed bytes.
+- **Behavior and scope:** seven lines added to `app/member/page.tsx`: Agenda
+  immediately before Announcements, using existing `memberGridButtonStyle` and
+  `goTo("/member/agenda")`. It is outside the account-only My Events condition,
+  so admitted Temporary Event Access users also see it. Sidebar, Agenda route,
+  Event context, authorization, shared components, CSS and other buttons are
+  unchanged. No database action, migration or dependency change.
+- **Validation/review:** LEM reports dashboard tests 14/14, clean page ESLint and
+  diff. Lun independently reports PASS, dashboard 14/14 and adjacent Agenda/
+  Announcements 20/20, clean lint/diff and unchanged anchor/Brief. Mel verified
+  the exact seven-line addition and hashes. These are source/structural-test
+  checks; no mounted display or click-through proof was performed. No new test
+  harness or full build was required for the markup-only change.
+- **Production preflight (Pap-run):** two retained runs passed, latest
+  `2026-09-22T22:30:49.930Z` in `preflight-20260922T223045Z.log`; earlier
+  `2026-09-22T22:30:32.268Z` also matched Pap's output. Serving
+  `3a8879ffe0f5b5804bce8fda60c6584c5ed82af7`, directory
+  `/root/srb-event-hub-releases/20260922T191507Z-3a8879ffe0f5`, app PID 3993788;
+  webhook online, no worker, lock free, three origin checks correct, 26 old
+  asset URLs captured. No deployment/restart or database access in preflight.
+  Package: `/private/tmp/epicentrax-member-agenda-button-release-u4d_mxss/`.
+- **Pending:** one approved push/deployment, production verification/closeout,
+  then Pap's dashboard display and Agenda click-through check for the selected
+  Event. The deferred Agenda editor wording and Saint George map image remain
+  outside this repair.
+
+### Agenda automatic resume — 2026-09-22 (Deployed, closed out and accepted for now)
 
 - **Product intent:** Pap accepted the existing recovery safeguard but requested
   that returning to Agenda reopen the unfinished item with its text already
@@ -292,11 +327,28 @@ state override this subsection whenever they disagree, per the
   system-status 401, signed-out profile 401 with neutral private/no-store body,
   and all 26 captured old assets. Release-pointer, pinned-config, cleanup,
   candidate-port and worker gates passed. Verifier stopped only the webhook
-  and released the lock; application remains online. Documentation-only closeout
-  is authorized while the webhook is paused; no second application deployment.
-- **Pending:** guarded webhook resumption and PM2 save, followed by Pap's
-  physical-iPhone app-switch acceptance. Session storage must survive
-  backgrounding/reload; a cleared or unavailable store cannot recover a draft.
+  and released the lock; application stayed online. Documentation-only closeout
+  `fde42628e66702dcd141c3f03d06dd50c4452af3` was pushed while the webhook was
+  paused; no second application deployment.
+- **Closeout (Pap-run):** matched to `closeout-20260922T202125Z.log`. Webhook online,
+  signing secret unchanged, unsigned POST rejected with 401, no worker and
+  application PID unchanged. PM2 saved app and webhook online with verified
+  paths. Previous dump retained at
+  `/root/pm2-closeout-backup-20260922T202128Z-1qgnpfei`. Startup unit remains
+  inactive; no startup-unit restart or reboot occurred, and reboot recovery
+  remains unproven. Serving release remains
+  `3a8879ffe0f5b5804bce8fda60c6584c5ed82af7`.
+- **Acceptance (Pap-reported):** after the requested phone app-switch check,
+  Pap reports it "works well enough for now." Automatic resume is accepted for
+  current use; this does not broaden the synthetic test coverage claims above.
+- **Deferred Agenda cleanup (Pap-requested):** change the editor submission label
+  from "Add Item" to "Save." The separate control that opens a new item is not
+  included by inference. Consider removing the routine "not saved yet" notice
+  or moving it below the edit panel; Pap has not selected between those options.
+  These are future cleanup requests, not changes for this release. No UI code
+  has been changed for them.
+- **Retained limits:** session storage must survive backgrounding/reload; a
+  cleared or unavailable store cannot recover a draft.
   No database access, migration, email, server autosave or cross-device draft
   behavior is included. Saint George map-image changes remain deferred.
 
@@ -1628,12 +1680,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-22T13:15:11-07:00`
+**Generated at:** `2026-09-22T15:32:48-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `3a8879f docs: record approved Agenda automatic-resume release`
-**Commit date:** `2026-09-22T12:14:09-07:00`
-**origin/main:** `3a8879f`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**Commit:** `07b6653 fix(member): add dashboard Agenda navigation button`
+**Commit date:** `2026-09-22T15:32:20-07:00`
+**origin/main:** `fde4262`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
