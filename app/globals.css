@@ -4191,6 +4191,27 @@ body.slideshow-view-mode .app-header-card {
   min-width: 0;
 }
 
+/* Compact headers must reserve a complete row for identity. Navigation
+   cannot consume the title's width and force one-letter wrapping. */
+@media (max-width: 599px) {
+  .shell-header-identity {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+
+  .shell-header-titles {
+    flex: 0 0 100%;
+  }
+
+  .shell-back-action {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+
 .shell-brand-title {
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-semibold);

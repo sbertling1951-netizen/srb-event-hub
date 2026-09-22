@@ -30,6 +30,7 @@ export const STORAGE_KEYS = {
   // --- Tier 5: canonical device-local preferences / handoffs (Cohort N2) ---
   adminEventsFilter: "epicentrax-admin-events-filter",
   adminReportPresets: "epicentrax-admin-report-presets",
+  agendaItemDraftPrefix: "epicentrax-agenda-item-draft",
 
   nearbyFavorites: "epicentrax-nearby-favorites",
   nearbySelectedAreaId: "epicentrax-nearby-selected-area-id",

@@ -42,6 +42,7 @@ import {
   recoverAgendaImportRun,
   stageGovernedAgendaImport,
 } from "@/lib/agendaImportOrchestration";
+import { type AgendaDraft, agendaDraftKey, type AgendaForm, readAgendaDraft, writeAgendaDraft } from "@/lib/agendaItemDraft";
 import { type AdminAccessResult, canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import type { ImportRunLifecycleStatus } from "@/lib/importLifecycleOrchestration";
 import { buildImportsHref } from "@/lib/importTypeRouting";
@@ -91,21 +92,7 @@ type ActiveEvent = {
   end_date: string | null;
 };
 
-type AgendaForm = {
-  id: string;
-  external_id: string;
-  title: string;
-  description: string;
-  location: string;
-  speaker: string;
-  category: string;
-  color: string;
-  agenda_date: string;
-  start_time: string;
-  end_time: string;
-  sort_order: string;
-  is_published: boolean;
-};
+
 // Shape returned by the governed list_available_agenda_templates RPC.
 // Replaces the legacy flat agenda_templates row -- a "template" the
 // admin selects is now a specific published revision of a Platform- or
@@ -613,7 +600,13 @@ function AdminAgendaPageInner() {
   const [activeEvent, setActiveEvent] = useState<ActiveEvent | null>(null);
   const [items, setItems] = useState<AgendaItem[]>([]);
   const [status, setStatus] = useState("Loading...");
-  const [form, setForm] = useState<AgendaForm>(emptyForm);
+  const [form, setFormState] = useState<AgendaForm>(emptyForm);
+  const formRef = useRef(form);
+  const draftKeyRef = useRef<string | null>(null);
+  const [recoverableDraft, setRecoverableDraft] = useState<AgendaDraft | null>(null);
+  const [draftNotice, setDraftNotice] = useState("");
+  const accountId = admin?.adminUser.user_id ?? null;
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const [filterCategory, setFilterCategory] = useState("All");
@@ -669,6 +662,13 @@ function AdminAgendaPageInner() {
     captureGeneration: captureAgendaGeneration,
     isCurrent: isAgendaScopeCurrent,
   } = useAdminWorkingEventScope(() => {
+    draftKeyRef.current = null;
+    formRef.current = emptyForm;
+    originalFormRef.current = emptyForm;
+    setFormState(emptyForm);
+    setEditorExpanded(false);
+    setRecoverableDraft(null);
+    setDraftNotice("");
     setActiveEvent(null);
     activeEventRef.current = null;
     setItems([]);
@@ -702,6 +702,56 @@ function AdminAgendaPageInner() {
   // (blank, or the selected item's values) -- compared against live
   // `form` state to gate the discard-confirmation on Cancel/Close.
   const originalFormRef = useRef<AgendaForm>(emptyForm);
+  // Draft writes happen synchronously with edits, before an app switch can
+  // unmount this page. The tab's storage is recovery-only; RPCs still own Save.
+  function setForm(action: React.SetStateAction<AgendaForm>) {
+    const next = typeof action === "function" ? action(formRef.current) : action;
+    formRef.current = next;
+    setFormState(next);
+    const eventId = getCurrentAdminEvent()?.id;
+    const key = accountId && eventId ? agendaDraftKey(accountId, eventId) : null;
+    if (!key || draftKeyRef.current !== key) {return;}
+    const dirty = !agendaItemFormsAreEqual(next, originalFormRef.current);
+    const stored = writeAgendaDraft(key, dirty ? {
+      form: next, original: originalFormRef.current, updatedAt: Date.now(),
+    } : null);
+    setDraftNotice(stored
+      ? (dirty ? "Unfinished item kept in this tab. It is not saved to the agenda yet." : "")
+      : "This browser could not keep a recovery draft. Keep this page open until you can save.");
+  }
+
+  useEffect(() => {
+    if (loading || hasAgendaAccess !== true || !accountId || !activeEvent?.id) {return;}
+    const key = agendaDraftKey(accountId, activeEvent.id);
+    if (draftKeyRef.current === key) {return;}
+    draftKeyRef.current = key;
+    originalFormRef.current = emptyForm;
+    formRef.current = emptyForm;
+    setFormState(emptyForm);
+    setEditorExpanded(false);
+    setDraftNotice("");
+    setRecoverableDraft(readAgendaDraft(key));
+  }, [accountId, activeEvent?.id, hasAgendaAccess, loading]);
+
+  function restoreDraft() {
+    if (!recoverableDraft || loading || hasAgendaAccess !== true || !accountId ||
+        draftKeyRef.current !== agendaDraftKey(accountId, getCurrentAdminEvent()?.id || "")) {return;}
+    originalFormRef.current = recoverableDraft.original;
+    setForm(recoverableDraft.form);
+    setRecoverableDraft(null);
+    setEditorExpanded(true);
+    setAgendaMode("items");
+  }
+
+  function discardRecovery() {
+    if (draftKeyRef.current && !writeAgendaDraft(draftKeyRef.current, null)) {
+      setDraftNotice("The browser could not discard the recovery draft. Please try again.");
+      return;
+    }
+    setRecoverableDraft(null);
+    setDraftNotice("");
+  }
+
   // While expanded, the outer card is no longer sticky as a whole (a
   // 1200px+ sticky card would re-obstruct the viewport) -- instead only
   // this small header (title + Add Item/Cancel) stays sticky, so it is
@@ -718,7 +768,6 @@ function AdminAgendaPageInner() {
   const [newTemplateName, setNewTemplateName] = useState("");
   const [newTemplateDescription, setNewTemplateDescription] = useState("");
   const [savingTemplate, setSavingTemplate] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [agendaMode, setAgendaMode] = useState<AgendaAdminMode>(initialAgendaMode);
   const [importStatus, setImportStatus] = useState(
@@ -824,6 +873,7 @@ function AdminAgendaPageInner() {
   // discard check in closeEditor() always compares against the right
   // baseline (blank, or the selected item's persisted values).
   function openBlankEditor() {
+    if (recoverableDraft || loading || hasAgendaAccess !== true) {return;}
     const defaultCat = agendaCategories.find((cat) => cat.is_default);
     const next = defaultCat
       ? { ...emptyForm, category: defaultCat.name, color: defaultCat.color }
@@ -850,6 +900,7 @@ function AdminAgendaPageInner() {
   // the dirty check is trivially false and this opens immediately with no
   // extra casing needed for "editor closed".
   async function requestOpenEditorForItem(item: AgendaItem) {
+    if (recoverableDraft || loading || hasAgendaAccess !== true) {return;}
     if (editorExpanded && form.id === item.id) {
       // Already open on this exact item -- nothing to switch.
       return;
@@ -1273,6 +1324,17 @@ function AdminAgendaPageInner() {
   }
 
   async function saveItem() {
+    if (loading || hasAgendaAccess !== true || !accountId || !activeEvent ||
+        getCurrentAdminEvent()?.id !== activeEvent.id ||
+        draftKeyRef.current !== agendaDraftKey(accountId, activeEvent.id)) {return;}
+    // A restored edit must never overwrite a newer or deleted server item.
+    if (form.id) {
+      const current = items.find((item) => item.id === form.id);
+      if (!current || !agendaItemFormsAreEqual(formFromItem(current), originalFormRef.current)) {
+        showError("This item changed or was removed since you started editing. Copy your unfinished text, then cancel and reopen the current item before saving.");
+        return;
+      }
+    }
     if (!activeEvent?.id) {
       showError("No admin working event selected.");
       return;
@@ -1293,6 +1355,11 @@ function AdminAgendaPageInner() {
       return;
     }
 
+    const submittedForm = form;
+    const submittedDraftKey = draftKeyRef.current;
+    const generation = captureAgendaGeneration();
+    const saveStillCurrent = () => isAgendaScopeCurrent(generation) &&
+      draftKeyRef.current === submittedDraftKey && formRef.current === submittedForm;
     const externalId = form.id ? undefined : buildExternalId(form);
 
     setSaving(true);
@@ -1315,6 +1382,8 @@ function AdminAgendaPageInner() {
           p_is_published: form.is_published,
           p_sort_order: normalizeNumber(form.sort_order),
         });
+
+        if (!saveStillCurrent()) {return;}
 
         if (error) {
           if (isStaleAgendaVersionError(new Error(error.message))) {
@@ -1347,6 +1416,8 @@ function AdminAgendaPageInner() {
           p_sort_order: normalizeNumber(form.sort_order),
           p_external_id: externalId,
         });
+
+        if (!saveStillCurrent()) {return;}
 
         if (error) {
           showError(mapAgendaRpcError(new Error(error.message), "Could not add agenda item."));
@@ -2717,6 +2788,19 @@ function AdminAgendaPageInner() {
 
       {error ? <Alert tone="danger">{error}</Alert> : null}
 
+      {recoverableDraft && !loading && hasAgendaAccess === true ? (
+        <div style={{ display: "grid", gap: "var(--space-3)" }}>
+          <Alert tone="info">
+            An unfinished agenda item is available for this account and event in this tab.
+          </Alert>
+          <FormActions>
+            <AppButton onClick={restoreDraft}>Restore unfinished item</AppButton>
+            <AppButton variant="tertiary" onClick={discardRecovery}>Discard unfinished item</AppButton>
+          </FormActions>
+        </div>
+      ) : null}
+      {draftNotice ? <Alert tone="info">{draftNotice}</Alert> : null}
+
       <div
         style={{
           display: "grid",
@@ -2882,6 +2966,7 @@ function AdminAgendaPageInner() {
                       variant="primary"
                       aria-expanded={editorExpanded}
                       aria-controls="agenda-editor-form-body"
+                      disabled={!!recoverableDraft || loading || hasAgendaAccess !== true}
                       onClick={openBlankEditor}
                     >
                       Add Item
@@ -4009,6 +4094,7 @@ function AdminAgendaPageInner() {
 }
 
 export default function AdminAgendaPage() {
+  const { admin } = useAdmin();
   // AdminRouteGuard with no requiredPermission still enforces the
   // baseline "must be an authenticated, linked admin" check (redirects
   // to login otherwise) -- only the legacy can_manage_agenda permission
@@ -4021,7 +4107,7 @@ export default function AdminAgendaPage() {
         pageTitle="Admin Agenda"
         backTarget={{ href: "/admin/dashboard", label: "Dashboard" }}
       >
-        <AdminAgendaPageInner />
+        <AdminAgendaPageInner key={admin?.adminUser.user_id ?? "signed-out"} />
       </AdminShellAdapter>
     </AdminRouteGuard>
   );

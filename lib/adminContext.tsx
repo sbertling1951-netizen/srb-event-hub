@@ -7,6 +7,7 @@ import {
   type AdminTenantAuthorityResult,
   checkAdminTenantAuthority,
 } from "@/lib/adminTenantAuthority";
+import { clearAgendaDrafts } from "@/lib/agendaItemDraft";
 import { ensureAdminIdentityLinked } from "@/lib/ensureAdminIdentityLinked";
 import { getCurrentAdminAccess } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
@@ -95,6 +96,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {clearAgendaDrafts();}
       if (!mounted) {
         return;
       }
