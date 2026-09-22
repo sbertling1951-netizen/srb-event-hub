@@ -231,7 +231,7 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Agenda automatic resume — 2026-09-22 (Reviewed and approved; release preparation)
+### Agenda automatic resume — 2026-09-22 (Production verified; closeout and device acceptance pending)
 
 - **Product intent:** Pap accepted the existing recovery safeguard but requested
   that returning to Agenda reopen the unfinished item with its text already
@@ -278,8 +278,24 @@ state override this subsection whenever they disagree, per the
   Captured 26 old asset URLs. No deployment/restart or database action occurred
   during preflight. Release package:
   `/private/tmp/epicentrax-agenda-autoresume-release-zkzqzdzr/`.
-- **Pending:** one approved release push, production verification/closeout, then
-  Pap's physical-iPhone app-switch acceptance. Session storage must survive
+- **Promotion:** release `3a8879ffe0f5b5804bce8fda60c6584c5ed82af7` was
+  fast-forwarded through the clean isolated main checkout and pushed once under
+  Pap's approval. Remote main independently verified at that SHA. Release delta
+  is exactly the two reviewed Agenda files plus this Brief. The bound verifier
+  expects the preceding serving release as rollback; no second deploy requested.
+- **Production verification (Pap-run):** PASS, matched to retained
+  `verification-20260922T201352Z.log`. Serving `3a8879ffe0f5b5804bce8fda60c6584c5ed82af7`,
+  activated `2026-09-22T19:16:57Z` in
+  `/root/srb-event-hub-releases/20260922T191507Z-3a8879ffe0f5`, app PID 3993788;
+  rollback `/root/srb-event-hub-releases/20260922T172555Z-e4062addc25e`.
+  Both domains passed origin/public HTML and 13 referenced assets, protected
+  system-status 401, signed-out profile 401 with neutral private/no-store body,
+  and all 26 captured old assets. Release-pointer, pinned-config, cleanup,
+  candidate-port and worker gates passed. Verifier stopped only the webhook
+  and released the lock; application remains online. Documentation-only closeout
+  is authorized while the webhook is paused; no second application deployment.
+- **Pending:** guarded webhook resumption and PM2 save, followed by Pap's
+  physical-iPhone app-switch acceptance. Session storage must survive
   backgrounding/reload; a cleared or unavailable store cannot recover a draft.
   No database access, migration, email, server autosave or cross-device draft
   behavior is included. Saint George map-image changes remain deferred.
@@ -1612,12 +1628,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-22T12:13:34-07:00`
+**Generated at:** `2026-09-22T13:15:11-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `31e99e8 fix(agenda): automatically resume unfinished items`
-**Commit date:** `2026-09-22T12:12:58-07:00`
-**origin/main:** `c4da95f`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `3a8879f docs: record approved Agenda automatic-resume release`
+**Commit date:** `2026-09-22T12:14:09-07:00`
+**origin/main:** `3a8879f`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
