@@ -698,6 +698,10 @@ function AdminAgendaPageInner() {
   const [editorExpanded, setEditorExpanded] = useState(false);
   const editorFormBodyRef = useRef<HTMLDivElement | null>(null);
   const editorToggleButtonRef = useRef<HTMLButtonElement | null>(null);
+  // Set true when an unfinished draft is auto-resumed, so the reopened editor is
+  // brought into view exactly once (never on subsequent edits, never focusing an
+  // input, so the phone keyboard is not forced open).
+  const resumeScrollRef = useRef(false);
   // Snapshot of the form as it stood the moment the editor was opened
   // (blank, or the selected item's values) -- compared against live
   // `form` state to gate the discard-confirmation on Cancel/Close.
@@ -968,6 +972,49 @@ function AdminAgendaPageInner() {
     ) {
       editorToggleButtonRef.current?.focus();
     }
+  }, [editorExpanded]);
+
+  // Automatic resume: on the ordinary Items route a recovered unfinished draft
+  // reopens its editor with the exact stored form and baseline, with no manual
+  // Restore click. Gated on the same confirmed account / current Event / Agenda
+  // access as manual restore (via `recoverableDraft`, which the recovery effect
+  // only sets once per scope after those checks). The explicit Import route is
+  // never hijacked (`agendaMode !== "items"` bails), and an already-open editor
+  // is left untouched (`editorExpanded` bails), so a background refresh or a
+  // repeated effect run can never overwrite newer edits.
+  useEffect(() => {
+    if (
+      !recoverableDraft ||
+      loading ||
+      hasAgendaAccess !== true ||
+      agendaMode !== "items" ||
+      editorExpanded
+    ) {
+      return;
+    }
+    // Same restore as restoreDraft(), minus the redundant mode switch (already
+    // on Items). setForm re-persists the identical draft and shows the brief
+    // "unfinished / not saved" notice; no mutation request is issued.
+    resumeScrollRef.current = true;
+    originalFormRef.current = recoverableDraft.original;
+    setForm(recoverableDraft.form);
+    setRecoverableDraft(null);
+    setEditorExpanded(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recoverableDraft, loading, hasAgendaAccess, agendaMode, editorExpanded]);
+
+  // Bring the auto-resumed editor into view a single time. Scrolls the sticky
+  // editor header (a button, not focused) so the phone keyboard stays closed and
+  // no repeated scrolling happens while the operator edits.
+  useEffect(() => {
+    if (!editorExpanded || !resumeScrollRef.current) {
+      return;
+    }
+    resumeScrollRef.current = false;
+    const frame = requestAnimationFrame(() => {
+      editorToggleButtonRef.current?.scrollIntoView({ block: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
   }, [editorExpanded]);
 
   const loadPage = useCallback(async () => {
@@ -2788,7 +2835,7 @@ function AdminAgendaPageInner() {
 
       {error ? <Alert tone="danger">{error}</Alert> : null}
 
-      {recoverableDraft && !loading && hasAgendaAccess === true ? (
+      {recoverableDraft && !loading && hasAgendaAccess === true && agendaMode === "import" ? (
         <div style={{ display: "grid", gap: "var(--space-3)" }}>
           <Alert tone="info">
             An unfinished agenda item is available for this account and event in this tab.

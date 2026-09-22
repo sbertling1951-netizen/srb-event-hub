@@ -1384,3 +1384,42 @@ test("no in-page PageHeader claims h1 on either render path, both use the shared
   assert.equal((PAGE_SOURCE.match(/<h1\b/g) || []).length, 1);
   assert.match(PAGE_SOURCE, /<h1>\$\{activeEvent\?\.name \?\? "Agenda"\}<\/h1>/);
 });
+
+test("automatic resume: an unfinished draft reopens its editor on the Items route without a manual Restore click", () => {
+  // The auto-resume effect gates on the same confirmed scope the recovery
+  // effect uses (recoverableDraft), the ordinary Items route, and a closed
+  // editor -- then reopens the editor with the stored form and baseline.
+  const idx = PAGE_SOURCE.indexOf("// Automatic resume:");
+  assert.ok(idx >= 0, "expected an automatic-resume effect");
+  const end = PAGE_SOURCE.indexOf("}, [recoverableDraft, loading, hasAgendaAccess, agendaMode, editorExpanded]);", idx);
+  assert.ok(end > idx, "expected the auto-resume effect's dependency array");
+  const body = PAGE_SOURCE.slice(idx, end);
+  assert.match(body, /!recoverableDraft \|\|/);
+  assert.match(body, /hasAgendaAccess !== true \|\|/);
+  assert.match(body, /agendaMode !== "items" \|\|/, "must not hijack the Import route");
+  assert.match(body, /editorExpanded/, "must not overwrite an already-open editor / newer edits");
+  assert.match(body, /originalFormRef\.current = recoverableDraft\.original;/, "preserves the original baseline");
+  assert.match(body, /setForm\(recoverableDraft\.form\);/, "restores every stored form value");
+  assert.match(body, /setRecoverableDraft\(null\);/);
+  assert.match(body, /setEditorExpanded\(true\);/, "reopens the editor automatically");
+  assert.match(body, /resumeScrollRef\.current = true;/, "flags the one-time scroll-into-view");
+  // No mutation/save is triggered by resuming.
+  assert.equal(/create_event_agenda_item|update_event_agenda_item|supabase\.rpc/.test(body), false, "auto-resume issues no mutation");
+});
+
+test("automatic resume brings the reopened editor into view exactly once, without focusing an input (keyboard stays closed)", () => {
+  const idx = PAGE_SOURCE.indexOf("// Bring the auto-resumed editor into view");
+  assert.ok(idx >= 0, "expected the scroll-into-view effect");
+  const end = PAGE_SOURCE.indexOf("}, [editorExpanded]);", idx);
+  const body = PAGE_SOURCE.slice(idx, end);
+  assert.match(body, /if \(!editorExpanded \|\| !resumeScrollRef\.current\)/, "only when a resume just happened");
+  assert.match(body, /resumeScrollRef\.current = false;/, "runs once");
+  assert.match(body, /editorToggleButtonRef\.current\?\.scrollIntoView\(\{ block: "nearest" \}\)/);
+  assert.equal(/\.focus\(\)/.test(body), false, "must not focus an input (no forced phone keyboard)");
+});
+
+test("the manual Restore/Discard panel is scoped to the Import route only -- the Items route resumes automatically (no routine Restore button)", () => {
+  assert.match(PAGE_SOURCE, /recoverableDraft && !loading && hasAgendaAccess === true && agendaMode === "import" \?/);
+  // The routine Items path no longer surfaces a Restore button.
+  assert.equal(/recoverableDraft && !loading && hasAgendaAccess === true \?/.test(PAGE_SOURCE), false);
+});
