@@ -573,6 +573,13 @@ export default function MemberDashboardPage() {
         ) : null}
         <button
           type="button"
+          onClick={() => goTo("/member/agenda")}
+          style={memberGridButtonStyle}
+        >
+          📅 Agenda
+        </button>
+        <button
+          type="button"
           onClick={() => goTo("/member/announcements")}
           style={memberGridButtonStyle}
         >
