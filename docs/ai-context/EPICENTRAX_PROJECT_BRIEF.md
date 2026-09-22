@@ -231,7 +231,55 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Parking icon toolbar — 2026-09-22 (Production verified; closeout pending)
+### Parking Center and follow-up gestures — 2026-09-22 (Approved; release preparation)
+
+- **Substantive code baseline:** `f0d9b42b3960f07554f888b4626be51682db68d6`. Pap approved the four reviewed
+  source/test files, Brief reconciliation, commits, one push/deployment and
+  verification/closeout after the production preflight below. Fresh origin/main
+  was `11c2f205089a3ccbb288b45ae1fef2059bee3c56`; branch, exact dirty cohort,
+  empty index, unchanged stash and all twelve reviewed/frozen hashes passed.
+  Committed repair blobs match the reviewed hashes. Promotion and deployment
+  verification are pending; this section is not a production-success claim.
+- **Behavior:** V2 and the pure canvas coordinate helper now bound undersized
+  axes around the centered position with the existing overscroll allowance.
+  Center and subsequent zoom/drag therefore share a valid resting position;
+  oversized-axis limits remain unchanged. The separate centerContent bypass
+  was removed before commit. Parking page, toolbar CSS, MapCanvas, handle types,
+  header and next-env.d.ts match the preceding baseline. Reset remains fit-scale;
+  the requested reset-to-saved-opening-scale behavior remains deferred. The shared
+  engine also serves Locations and public Coach Map; undersized-axis placement
+  changes there too. No identity, authorization, Event-context or database change.
+- **Evidence:** LEM's corrected mounted browser harness reports 10/10 in Chromium
+  and WebKit, retaining failing prior-repair zoom/drag/threshold cases. Focused
+  tests V2 20/20, coords 5/5, Parking 38/38, reconciliation/handoff 16 passed;
+  lint has zero errors with unchanged V2 warnings; complete TypeScript output
+  matches the clean-HEAD 16-error baseline; isolated fixture-only production build
+  passed. Lun independently passed Center/zoom, drag, verified active momentum,
+  threshold crossings, actual rotation and Reset fit-scale behavior.
+- **Review correction:** Lun's first locator probe pressed Center before measuring
+  startup focus; its blocker was withdrawn. The later supplement never seeded
+  the target. Mel therefore ran a separate corrected WebKit comparison against
+  git-archive HEAD and the two-source-file repair: 3/3 each, with actual locator
+  key seeding and consumption, selected target gold styling, preserved saved
+  scale and marker/image alignment. Oversized behavior stayed unchanged and
+  undersized positioning changed as intended. No locator software blocker
+  remains on that evidence. This does not prove native two-finger pinch or
+  physical-device behavior; Pap's Center/pinch acceptance remains after deployment.
+- Evidence: `/private/tmp/epicentrax-parking-center-run-20260922-093236-clampfix/`,
+  Lun's retained review/supplement artifacts, and Mel's
+  `/private/tmp/epicentrax-center-mel-locator-odl1xa64/MEL-VERIFICATION.md`.
+  Seven false boolean flags in LEM's anchor were disproved by direct HEAD byte
+  comparisons; recorded hashes matched. Prior evidence is preserved.
+- **Production preflight (Pap-run):** PASS `2026-09-22T17:21:43.228Z`, matched to
+  retained log. Serving `21d07e41085945a3b0ebe6ef469b1b309263cf53`, directory
+  `/root/srb-event-hub-releases/20260922T153219Z-21d07e410859`, app PID 3987049;
+  webhook online, no worker, lock free, three origin checks correct. Captured
+  26 complete old asset URLs. Package:
+  `/private/tmp/epicentrax-parking-center-release-_aa75dl4/`.
+  No deployment, restart, configuration change or database access occurred in
+  preflight. No migration or database mutation is authorized for this release.
+
+### Parking icon toolbar — 2026-09-22 (Deployed and closed out; phone layout accepted; Center defect reported)
 
 - Pap approved four compact icons (minus, plus, reset arrow, center target)
   after the text-label designs failed phone acceptance or enlarged-text checks.
@@ -273,7 +321,7 @@ state override this subsection whenever they disagree, per the
   **`21d07e41085945a3b0ebe6ef469b1b309263cf53`**. Remote main independently
   verified at that SHA. Only the three reviewed source/test files and Brief
   differ from prior main. Production verification passed as recorded below;
-  physical-iPhone acceptance remains pending.
+  Pap subsequently accepted the physical-iPhone layout and larger map area.
   No database access or migration is part of this release.
 
 - **Production verification (Pap-run):** release
@@ -287,7 +335,28 @@ state override this subsection whenever they disagree, per the
   candidate-port and pinned-config gates passed. Verifier paused only the
   webhook and released the lock; application remains online. Documentation-only
   closeout proceeds under Pap's existing approval while webhook is paused;
-  no second application deployment. Webhook resumption and PM2 save pending.
+  no second application deployment. Pap subsequently confirmed closeout, matched
+  by the retained log: webhook online, signing secret unchanged, unsigned POST
+  401, no worker, unchanged app PID 3987049, and PM2 saved both processes online
+  with verified paths. Previous dump retained at
+  `/root/pm2-closeout-backup-20260922T154228Z-rexp2r50`. Startup unit remains
+  inactive; no unit restart or reboot occurred and reboot recovery is unproven.
+  Serving release remains `21d07e41085945a3b0ebe6ef469b1b309263cf53`;
+  documentation-only main is `11c2f205089a3ccbb288b45ae1fef2059bee3c56`.
+  **Physical-iPhone layout acceptance (Pap-reported):** controls work and the map
+  window is larger. Pap separately reports Center/Re-center shifts the map fully
+  up and right. This position defect remains open; the icon release preserved
+  the handler and engines. Mel's source trace found that centerOnPercent(50,50)
+  delegates to V2 centerOnPoint, whose clampPan can reject the centered position
+  when the scaled image is smaller than the viewport. Executing that source
+  function with a 606×806 image at 0.3 and a synthetic 402×510 viewport changes
+  the correct (110.1,134.1) pan to (48.24,45.9). This proves a centering defect,
+  not the exact reported up/right runtime motion. Prior toolbar browser tests
+  asserted preserved scale after Center, not the image's centered position.
+  Repair must reproduce the actual position and assert image/viewport center
+  alignment while preserving current scale, compact controls and map gestures.
+  Reset Zoom semantics remain a separate deferred item. The initial report
+  involved no code or production change; subsequent repair is recorded above.
 
 ### Parking phone controls and compact header — 2026-09-21 (Closed out; phone toolbar acceptance FAILED)
 
@@ -1451,12 +1520,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-22T08:41:19-07:00`
+**Generated at:** `2026-09-22T10:24:33-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `21d07e4 docs: reconcile approved parking icon toolbar release`
-**Commit date:** `2026-09-22T08:31:39-07:00`
-**origin/main:** `21d07e4`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**Commit:** `f0d9b42 fix(maps): keep undersized maps centered during navigation`
+**Commit date:** `2026-09-22T10:24:04-07:00`
+**origin/main:** `11c2f20`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
