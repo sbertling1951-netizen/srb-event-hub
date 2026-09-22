@@ -231,7 +231,7 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Parking phone controls and compact header — 2026-09-21 (Approved; deployment pending)
+### Parking phone controls and compact header — 2026-09-21 (Production verified; closeout pending)
 
 - Pap requested compact map controls (one row of two pairs, at most two rows),
   a smaller phone header, and more visible map area. Substantive code baseline
@@ -274,14 +274,31 @@ state override this subsection whenever they disagree, per the
   serving `65e4fae0de5a2ca8f738b45fdb2295203bc57ac8`, directory
   `/root/srb-event-hub-releases/20260922T011204Z-65e4fae0de5a`, app PID 3978971,
   webhook online, no worker, lock free, all three configured origins correct.
-  Captured 26 complete old asset URLs. No deployment has started at this record.
+  Captured 26 complete old asset URLs. After approval, Mel fast-forwarded the
+  clean isolated main checkout and pushed exactly once, triggering the webhook
+  deployment of **`36e76f51a7c5803194d183200309f4400cb7128c`**. Remote main
+  was independently verified at that SHA. Only the three reviewed source/test
+  files and this Brief differ from the prior main baseline.
   Release package: `/private/tmp/epicentrax-parking-mobile-release-hgrwg6o6/`.
-  Production verification and physical iPhone acceptance remain pending.
+  Production verification passed as recorded below; physical iPhone acceptance
+  remains pending.
+- **Production verification (Pap-run):** release
+  `36e76f51a7c5803194d183200309f4400cb7128c` activated at
+  `2026-09-22T03:15:19Z` in
+  `/root/srb-event-hub-releases/20260922T031333Z-36e76f51a7c5`, app PID 3980883.
+  Rollback: `20260922T011204Z-65e4fae0de5a`. Both domains passed origin HTML
+  and 13 referenced assets, protected system-status 401, ordinary public TLS
+  and HTML/assets, and signed-out profile 401 with neutral private/no-store
+  responses. All 26 captured old assets passed. Release pointers and cleanup/
+  worker/port/config checks passed. Verifier paused only the webhook and
+  released the lock; application stays online. Documentation-only closeout
+  proceeds under Pap's existing approval while the webhook is paused; no
+  second application deployment. Webhook resumption and PM2 save pending.
 - **Separate requested follow-up:** Pap reports Reset Zoom currently fits the
   map instead of restoring the saved opening scale. Desired behavior: Reset
   restores the saved opening scale; Re-center preserves the current scale.
   This is not a blocker for the current layout/locator review and is not
-  implemented or included in this proposed release.
+  implemented or included in this release.
 
 ### Agenda portrait header and unfinished item recovery — 2026-09-21 (Promoted, deployed and closed out)
 
@@ -1363,12 +1380,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-21T20:12:16-07:00`
+**Generated at:** `2026-09-21T20:18:36-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `5bec84e fix: compact mobile parking controls and preserve locator opening zoom`
-**Commit date:** `2026-09-21T20:11:46-07:00`
-**origin/main:** `6acfd04`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `36e76f5 docs: reconcile approved parking mobile release`
+**Commit date:** `2026-09-21T20:12:35-07:00`
+**origin/main:** `36e76f5`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
