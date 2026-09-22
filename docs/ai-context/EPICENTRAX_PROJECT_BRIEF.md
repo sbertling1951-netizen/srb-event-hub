@@ -231,7 +231,60 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Parking Center and follow-up gestures — 2026-09-22 (Production verified; closeout and device acceptance pending)
+### Agenda automatic resume — 2026-09-22 (Reviewed and approved; release preparation)
+
+- **Product intent:** Pap accepted the existing recovery safeguard but requested
+  that returning to Agenda reopen the unfinished item with its text already
+  present, without a Restore click. Pap approved this behavior, then explicitly
+  approved the two reviewed Agenda files, Brief reconciliation, commits, one
+  push/deployment and guarded verification/closeout after the preflight below.
+- **Substantive code baseline:** `31e99e8ba9ffb35a627d804050de62e7bd230b97`. Fresh origin/main
+  was `c4da95f93421953b41151665fe5bb1932a82bf73`; exact branch, two-file repair
+  cohort plus preserved Brief, empty index, unchanged stash and reviewed hashes
+  passed before commit. Committed source blobs match the reviewed hashes.
+- **Behavior:** the Items view automatically reopens a recovered unfinished
+  item after the existing account/Event/access/load gates, restoring both form
+  values and the original baseline. It brings the editor header into view once
+  without focusing an input. An open editor is preserved; explicit Import keeps
+  its manual Restore/Discard fallback. Recovery does not save or publish the
+  item. Storage remains tab-local, account/Event-scoped and governed by the
+  existing expiry, discard, save, sign-out and stale-item protections.
+- **Scope:** only `app/admin/agenda/page.tsx` and `page.test.ts` changed in the
+  product commit. Draft library/tests, auth/provider, shell, CSS, map engines,
+  `next-env.d.ts`, database and dependencies are unchanged.
+- **Evidence:** LEM reports page 108/108, draft 4/4, ShellHeader 6/6 and adminContext
+  1/1; clean lint/diff; full TypeScript output byte-identical to clean HEAD with
+  16 pre-existing diagnostics; isolated fixture-only production build passed.
+  Mounted real-page fixtures in WebKit/Chromium reproduce the prior manual step
+  and exercise automatic resume, incomplete/new/existing items, preservation of
+  newer edits, scope/access checks, Import behavior, cleanup, stale-item refusal
+  and zero server mutation during restoration. These are synthetic browser
+  fixtures, not live authentication or physical-device evidence.
+- **Independent review:** Lun reports no release-blocking findings, 113/113
+  focused tests and clean lint. A stricter Import probe confirms exactly one
+  Restore control and working restoration. Immediate-switch samples report no
+  old editor. That scope probe switches account, then Event in the new account;
+  it does not exhaust asynchronous interleavings. Mel reverified exact source,
+  frozen files, preserved Brief and retained evidence hashes; no architecture
+  conflict was found with the Constitution and ADR-006.
+- Evidence: `/private/tmp/epicentrax-agenda-autoresume-run-20260922-110036/`,
+  `/private/tmp/epicentrax-agenda-autoresume-review-20260922-120000/` and
+  `/private/tmp/epicentrax-agenda-autoresume-release-zkzqzdzr/LUN-REVIEW.txt`.
+- **Production preflight (Pap-run):** PASS `2026-09-22T19:11:19.085Z`, matched
+  to retained `preflight-20260922T191111Z.log`. Serving
+  `e4062addc25e157c799a0d21b18ca2d2a8cc04e0`, directory
+  `/root/srb-event-hub-releases/20260922T172555Z-e4062addc25e`, app PID 3990149;
+  webhook online, no worker, free lock, all three configured origins correct.
+  Captured 26 old asset URLs. No deployment/restart or database action occurred
+  during preflight. Release package:
+  `/private/tmp/epicentrax-agenda-autoresume-release-zkzqzdzr/`.
+- **Pending:** one approved release push, production verification/closeout, then
+  Pap's physical-iPhone app-switch acceptance. Session storage must survive
+  backgrounding/reload; a cleared or unavailable store cannot recover a draft.
+  No database access, migration, email, server autosave or cross-device draft
+  behavior is included. Saint George map-image changes remain deferred.
+
+### Parking Center and follow-up gestures — 2026-09-22 (Closed out; Center accepted; Saint George image deferred)
 
 - **Substantive code baseline:** `f0d9b42b3960f07554f888b4626be51682db68d6`. Pap approved the four reviewed
   source/test files, Brief reconciliation, commits, one push/deployment and
@@ -268,7 +321,8 @@ state override this subsection whenever they disagree, per the
   scale and marker/image alignment. Oversized behavior stayed unchanged and
   undersized positioning changed as intended. No locator software blocker
   remains on that evidence. This does not prove native two-finger pinch or
-  physical-device behavior; Pap's Center/pinch acceptance remains after deployment.
+  physical-device behavior; Pap's subsequent Center acceptance is recorded below.
+  Physical pinch behavior was not separately confirmed.
 - Evidence: `/private/tmp/epicentrax-parking-center-run-20260922-093236-clampfix/`,
   Lun's retained review/supplement artifacts, and Mel's
   `/private/tmp/epicentrax-center-mel-locator-odl1xa64/MEL-VERIFICATION.md`.
@@ -293,10 +347,29 @@ state override this subsection whenever they disagree, per the
   signed-out profile 401 with neutral private/no-store response, and all 26 old
   assets. Release-pointer, cleanup, candidate-port, worker and pinned-config
   gates passed. Verifier stopped only the webhook and released the lock;
-  application stays online. Documentation-only closeout is authorized while the
-  webhook is paused; no second application deployment. Webhook resumption and
-  PM2 save remain pending the bound closeout command. Physical Center/pinch
-  acceptance remains Pap's next application check.
+  application stayed online. Documentation-only closeout
+  `c4da95f93421953b41151665fe5bb1932a82bf73` was pushed while the webhook was
+  paused; no second application deployment. The first closeout SSH connection
+  closed with an empty log; Pap's subsequent read-only status check confirmed
+  unchanged app PID 3990149, webhook stopped and no worker. The guarded retry
+  completed, matched to `closeout-20260922T173604Z.log`: webhook online, signing
+  secret unchanged, unsigned POST rejected with 401, no worker, app PID unchanged,
+  and PM2 saved the verified app and webhook paths/status. Previous dump retained
+  at `/root/pm2-closeout-backup-20260922T173606Z-jvfuatxl`. Startup unit remains
+  inactive; no unit restart or reboot occurred and reboot recovery is unproven.
+  Serving release remains `e4062addc25e157c799a0d21b18ca2d2a8cc04e0`.
+  **Device acceptance (Pap-reported):** Center now centers successfully. Pap
+  separately observes that the background map photo/artwork still looks off-center
+  and suspects the low-quality, odd-sized imported image. The image bounds versus
+  artwork bounds have not been inspected; uneven internal margins are a possible
+  explanation, not a confirmed diagnosis. Low resolution alone does not explain
+  positional offset. No further viewport or image changes have been made for this
+  observation. Pap subsequently reported Branson's park map centers correctly
+  at every size while Saint George retains a rightward visual offset and large
+  left-side blank area. The cause remains unverified. Pap explicitly deferred
+  changing Saint George's image because the event is too close: leave the image
+  and its coordinate alignment unchanged for this event; revisit afterward.
+  Pinch/drag acceptance was not separately confirmed.
 
 ### Parking icon toolbar — 2026-09-22 (Deployed and closed out; phone layout accepted; Center defect reported)
 
@@ -1539,12 +1612,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-22T10:29:07-07:00`
+**Generated at:** `2026-09-22T12:13:34-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `e4062ad docs: record approved map Center repair and release gate`
-**Commit date:** `2026-09-22T10:25:04-07:00`
-**origin/main:** `e4062ad`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**Commit:** `31e99e8 fix(agenda): automatically resume unfinished items`
+**Commit date:** `2026-09-22T12:12:58-07:00`
+**origin/main:** `c4da95f`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
