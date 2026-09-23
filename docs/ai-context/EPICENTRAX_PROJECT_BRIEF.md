@@ -231,7 +231,68 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Member dashboard Agenda shortcut — 2026-09-22 (Production verified; closeout and display check pending)
+### Event-specific Agenda locations — 2026-09-22 (Approved release; production verification pending)
+
+- **Product intent and approval:** Pap requested Event-specific agenda columns
+  derived from item locations, with existing-location selection to prevent typo
+  columns. Pap explicitly approved the reviewed changes, Brief reconciliation,
+  commits and one release after the production preflight below. Saint George's
+  requested location is **MAIN BUILDING**; its stored items have not been
+  inspected or corrected by this work. No event-specific name is hard-coded.
+- **Substantive code baseline:** `17aba3cfcb6018434af8b4c2e6412ffbe605e0d1`.
+  Fresh origin/main was `67f4c85902d52aa7da7a543b26b48393c0f73020`.
+  Mel verified all 25 cumulative recorded hashes, exactly twelve source/test
+  files plus the preserved Brief, an empty index and unchanged stash before
+  committing. Committed source blobs match the reviewed hashes.
+- **Behavior and ownership:** `agenda_items.location` remains the sole stored
+  source. Admin and import Edit Row offer existing Event locations and explicit
+  Add, reuse exact case/whitespace variants, and block unchosen new names in
+  their save paths. Likely import typos require reuse through the existing
+  governed correction or an explicit transient Keep choice, invalidated by
+  changed run/Event/row revision/location/options and rechecked at confirmation.
+  This browser safeguard is not persisted review state or server authority.
+  Source payloads, correction history, authorization, revision/version fences,
+  atomic commit and the single governed import writer remain unchanged.
+- **Member schedule:** hard-coded Morton/Pioneer headings are replaced by
+  columns derived from the selected Event's published items. Blank locations
+  appear under Location not specified. Shared chronological time-slot rows
+  align simultaneous items across locations; phones read in chronological
+  order with location labels. Many desktop columns scroll inside the schedule.
+  Filters, details and existing card behavior are preserved.
+- **Validation and review:** LEM and Lun report 239/239 affected tests, clean
+  lint/diff checks, full TypeScript output byte-identical to clean HEAD (16
+  pre-existing diagnostics), and a successful isolated fixture-only build.
+  Lun's final independent verdict is PASS with no blocking findings. Reported
+  Chromium/WebKit probes cover aligned schedule geometry and phone ordering,
+  real Admin editor Save/Enter, new/existing draft recovery, account/Event
+  isolation, explicit selection and stale import acknowledgment sequences,
+  including governed correction followed by recovered-candidate commit.
+  Auth/navigation/Supabase/RPC boundaries were synthetic; this is not live
+  database/import, full-shell authorization or physical iPhone/iPad proof.
+- **Evidence:** original location run
+  `/private/tmp/epicentrax-agenda-locations-run-20260922-171028/`, correction
+  `/private/tmp/epicentrax-agenda-locations-correct-20260922-202730/`, final
+  alignment/integration `/private/tmp/epicentrax-agenda-member-align-20260922-205503/`.
+  Mel matched the retained results and cumulative anchors; test/browser results
+  above remain attributed to LEM/Lun, not newly rerun by Mel for promotion.
+- **Production preflight (Pap-run):** retained `preflight-20260923T043353Z.log`
+  passed at `2026-09-23T04:33:59.757Z`. Serving
+  `a477094c0f786a3d59685b4fd019616b6b3221c5`, directory
+  `/root/srb-event-hub-releases/20260922T223403Z-a477094c0f78`, app PID 4000713;
+  webhook online, no worker, lock free, three origin checks matched and 26 old
+  assets captured. No production write, restart or database access in preflight.
+  Package: `/private/tmp/epicentrax-agenda-locations-release-702le1n3/`.
+- **Release gate:** approved for one normal push/deployment after this record
+  is committed. Exact serving release, runtime verification and closeout remain
+  pending; do not infer them from local tests or this approved code baseline.
+- **Separate pending work:** Admin Agenda's permanent Catalog/Templates column
+  still reserves blank space; no layout repair is bundled. Saint George's
+  MAIN BUILDING data correction remains unperformed and must use governed
+  controls after release. Physical-device and production acceptance remain
+  pending. Prior deferred Agenda wording, park-image changes and unproven
+  reboot recovery are unchanged. No migration, dependency or database action.
+
+### Member dashboard Agenda shortcut — 2026-09-22 (Deployed and closed out; display check pending)
 
 - **Product intent:** Pap confirmed the sidebar Agenda works and requested the
   same destination as a button on the Member dashboard. Pap approved the one
@@ -275,10 +336,16 @@ state override this subsection whenever they disagree, per the
   system-status 401, signed-out profile 401 with neutral private/no-store body,
   and all 26 old assets. Release-pointer, cleanup, candidate-port, worker and
   pinned-config gates passed. Verifier stopped only the webhook and released
-  the lock; app remains online. Documentation-only closeout is authorized while
-  the webhook is paused; no second application deployment.
-- **Pending:** guarded webhook resumption and PM2 save, then Pap's dashboard
-  display and Agenda click-through check for the selected
+  the lock; app stayed online. Documentation-only closeout
+  `67f4c85902d52aa7da7a543b26b48393c0f73020` was pushed with the webhook paused;
+  no second application deployment.
+- **Closeout (Pap-run):** matched to `closeout-20260922T224817Z.log`. Webhook online,
+  signing secret unchanged, unsigned POST 401, no worker and app PID unchanged.
+  PM2 saved app and webhook online with verified paths. Previous dump retained
+  at `/root/pm2-closeout-backup-20260922T224819Z-rhla95qb`. Startup unit remains
+  inactive; no unit restart or reboot performed, and reboot recovery remains
+  unproven. Serving release remains `a477094c0f786a3d59685b4fd019616b6b3221c5`.
+- **Pending:** Pap's dashboard display and Agenda click-through check for the selected
   Event. The deferred Agenda editor wording and Saint George map image remain
   outside this repair.
 
@@ -1696,12 +1763,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-22T15:45:51-07:00`
+**Generated at:** `2026-09-22T21:37:47-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `a477094 docs: record approved Member Agenda button release`
-**Commit date:** `2026-09-22T15:33:09-07:00`
-**origin/main:** `a477094`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**Commit:** `17aba3c feat(agenda): use event locations with deliberate selection and aligned schedules`
+**Commit date:** `2026-09-22T21:37:11-07:00`
+**origin/main:** `67f4c85`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
