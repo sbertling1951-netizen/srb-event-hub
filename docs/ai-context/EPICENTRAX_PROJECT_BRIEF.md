@@ -231,7 +231,59 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Event-specific Agenda locations — 2026-09-22 (Deployed and verified; closeout pending)
+### Admin Agenda full-width schedule — 2026-09-23 (Approved release; production verification pending)
+
+- **Product intent and approval:** Pap requested removal of the wasted strip
+  beside the Admin Agenda. The permanent Catalog/Templates column reserved
+  300–360px even below the template content. Pap approved the two reviewed
+  files, Brief reconciliation, commits and one release after preflight.
+- **Substantive code baseline:** `aec41dbfe51fff318d49f3d3ee3f6a3d1c5b7481`.
+  Fresh origin/main was `5fe3bd3c15f9ad0032bd191acecfc1b274b458d0`.
+  Exact two-file cohort plus preserved Brief, all 19 recorded hashes, empty
+  index and unchanged stash passed before commit. Committed source blobs match
+  Lun's reviewed bytes. Only Admin Agenda page.tsx and page.test.ts changed.
+- **Behavior:** the working agenda takes the full content width at every
+  viewport. Catalog & Templates and Recent Template Activity sit in an initially
+  closed, page-local disclosure above it. Opening stacks content in the same
+  column, never reserving a side column. Page-owned template inputs survive
+  close/reopen; actions, authority checks and confirmations remain wired.
+  Import mode, draft automatic resume, location safeguards, calendar time axis,
+  item selection, drag/resize and Member Agenda are preserved. No shared CSS,
+  template component, dependency, database or migration change.
+- **Validation and independent review:** LEM and Lun report 115/115 focused
+  tests, clean lint/diff, full TypeScript output identical to clean HEAD (16
+  pre-existing errors), and a successful isolated fixture-only production
+  build. Lun's final verdict is PASS, with no blocking defects. LEM's original
+  after-geometry selector measured a shallow 75px ancestor; Lun independently
+  measured the actual calendar: at 1440px, surface 1086px and day track 992px,
+  unchanged after scrolling below templates. Tablet/phone scroll internally
+  without document overflow. Mounted Chromium/WebKit probes preserve entered
+  values, keyboard/touch disclosure operation, Save confirmation, Import,
+  draft resume, selection and identical before/after drag/resize target times.
+  Synthetic auth/navigation/Supabase boundaries only; no live database or
+  physical-device acceptance is claimed. Mel verified hashes and scope, not
+  a fresh independent rerun of these reported tests.
+- **Evidence:** `/private/tmp/epicentrax-admin-agenda-width-run-20260922-215141/`
+  and Lun's `/private/tmp/epicentrax-admin-agenda-width-independent-20260923/`.
+  Lun's alleged stale Constitution filenames were not corroborated in the
+  current source index, which correctly points to ADR-000; no path edit bundled.
+- **Production preflight (Pap-run):** retained `preflight-20260923T133647Z.log`
+  passed at `2026-09-23T13:36:53.886Z`. Serving
+  `b37f4d16564b724d620d7d4a39f6698e25bb8888`, directory
+  `/root/srb-event-hub-releases/20260923T043923Z-b37f4d16564b`, app PID 4008015;
+  webhook online, no worker, lock free, three origins matched, 26 old assets
+  captured. Remote inspection only; no restart or database access.
+  Package: `/private/tmp/epicentrax-admin-agenda-width-release-xfhgm1j0/`.
+- **Release gate:** approved for one normal push/deployment after this record
+  is committed. Serving release, runtime verification, closeout and Pap's live
+  display acceptance remain pending; no second deployment is requested.
+- **Scope boundary:** Pap already accepted the preceding location release and
+  edited Saint George's items to Main. No agent data correction is pending.
+  Deferred Agenda wording, park-image changes and reboot recovery remain
+  unchanged. This record also carries forward the previous release closeout
+  and Pap acceptance previously preserved in Mel's uncommitted Brief.
+
+### Event-specific Agenda locations — 2026-09-22 (Deployed, closed out and accepted by Pap)
 
 - **Product intent and approval:** Pap requested Event-specific agenda columns
   derived from item locations, with existing-location selection to prevent typo
@@ -300,13 +352,26 @@ state override this subsection whenever they disagree, per the
   system-status 401, signed-out profile 401 with neutral private/no-store body,
   and all 26 old assets. Release-pointer, cleanup, candidate-port, worker and
   pinned-config gates passed. Verifier stopped only the webhook and released
-  the lock; app stayed online. Documentation closeout is next, followed by
-  guarded webhook resume and PM2 save. These checks do not prove authenticated
+  the lock; app stayed online. Documentation-only closeout
+  `5fe3bd3c15f9ad0032bd191acecfc1b274b458d0` was pushed with the webhook paused;
+  no second application deployment. These checks do not prove authenticated
   location editing, live imports or physical-device acceptance.
-- **Separate pending work:** Admin Agenda's permanent Catalog/Templates column
-  still reserves blank space; no layout repair is bundled. Saint George location
-  edits are Pap-owned through the existing editor; no agent data correction is
-  pending or included. Physical-device and production acceptance remain
+- **Closeout (Pap-run):** matched to `closeout-20260923T044344Z.log`. Webhook
+  online, signing secret unchanged, unsigned POST 401, no worker and app PID
+  unchanged. PM2 saved app and webhook online with verified paths. Previous
+  dump retained at `/root/pm2-closeout-backup-20260923T044347Z-w4vpnl8q`.
+  Startup unit remains inactive; no unit restart or reboot performed, and
+  reboot recovery remains unproven. Serving release remains
+  `b37f4d16564b724d620d7d4a39f6698e25bb8888`.
+- **Pap acceptance:** Pap reported "looks good and i added main to the items."
+  This records user-observed live acceptance and Pap's own Saint George location
+  edits, not an independent database inspection or live-import acceptance.
+- **Separate pending work:** Pap reconfirmed the Admin Agenda blank left strip
+  with a screenshot. Source still reserves 300–360px for Catalog/Templates on
+  wide screens. Mel scoped a separate page-local layout repair: full-width
+  working agenda, templates/history in an initially closed disclosure above it;
+  preserve the calendar time axis, drag/resize and all governed actions. No
+  layout repair is deployed yet. No agent Saint George data correction is
   pending. Prior deferred Agenda wording, park-image changes and unproven
   reboot recovery are unchanged. No migration, dependency or database action.
 
@@ -1781,12 +1846,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-22T21:42:31-07:00`
+**Generated at:** `2026-09-23T06:39:19-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `b37f4d1 docs: record approved Agenda locations release`
-**Commit date:** `2026-09-22T21:38:10-07:00`
-**origin/main:** `b37f4d1`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**Commit:** `aec41db fix(agenda): reclaim admin schedule width with template disclosure`
+**Commit date:** `2026-09-23T06:38:44-07:00`
+**origin/main:** `5fe3bd3`
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
