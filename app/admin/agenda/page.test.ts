@@ -588,7 +588,7 @@ test("the page-local isMobile/MOBILE_BREAKPOINT resize-listener state is gone --
   assert.equal(/addEventListener\(\s*["']resize["']/.test(PAGE_SOURCE), false);
   assert.match(
     PAGE_SOURCE,
-    /const \{ isCompact, viewportClass \} = useShellInterfaceCapabilities\(\);/,
+    /const \{ isCompact \} = useShellInterfaceCapabilities\(\);/,
   );
 });
 
@@ -621,18 +621,59 @@ test("the printDayFilter utility control is the one documented raw <select> exce
   assert.match(PAGE_SOURCE, /aria-label="Filter print by day"/);
 });
 
-test("the two-pane responsive workflow grid only activates at the shell's 'wide' tier -- empirically, 'standard' width (900-1199px, e.g. 1024px) leaves too little real content width for two panes once the shell's own sidebar/padding is accounted for", () => {
-  assert.match(PAGE_SOURCE, /const showTwoColumnAgendaLayout = viewportClass === "wide";/);
+test("the Event Agenda working pane takes the full content width -- the permanent 300-360px Catalog/Templates side column and its wide-tier switch are gone", () => {
+  assert.equal(/showTwoColumnAgendaLayout/.test(PAGE_SOURCE), false);
+  assert.equal(/minmax\(300px, 360px\)/.test(PAGE_SOURCE), false);
+  assert.equal(/viewportClass/.test(PAGE_SOURCE), false);
+  // The workflow container is a single column; the working pane keeps minWidth: 0.
   assert.match(
     PAGE_SOURCE,
-    /agendaMode === "items" && showTwoColumnAgendaLayout[\s\S]{0,100}\? "minmax\(300px, 360px\) 1fr"[\s\S]{0,30}: "1fr"/,
+    /<div\s*\n\s*style=\{\{\s*\n\s*display: "grid",\s*\n\s*gap: "var\(--space-5\)",\s*\n\s*alignItems: "start",\s*\n\s*minWidth: 0,\s*\n\s*\}\}\s*\n\s*>\s*\n\s*\{\/\* Catalog & Templates/,
   );
-});
-
-test("the Catalog & Templates pane reorders after the Event Agenda working pane whenever the single-column layout is active, via CSS order, not a UA/orientation branch", () => {
-  assert.match(PAGE_SOURCE, /order: showTwoColumnAgendaLayout \? 0 : 1/);
   assert.equal(/navigator\.userAgent/.test(PAGE_SOURCE), false);
   assert.equal(/orientation/i.test(PAGE_SOURCE), false);
+});
+
+test("Catalog & Templates and Recent Template Activity live in one initially closed, accessible disclosure above the working pane (page-local, mirroring the item editor's toggle) -- expanding never creates a side column", () => {
+  assert.match(PAGE_SOURCE, /const \[catalogExpanded, setCatalogExpanded\] = useState\(false\);/);
+  assert.match(
+    PAGE_SOURCE,
+    /<AppButton\s*\n\s*variant="secondary"\s*\n\s*aria-expanded=\{catalogExpanded\}\s*\n\s*aria-controls="agenda-catalog-templates-body"\s*\n\s*onClick=\{\(\) => setCatalogExpanded\(\(open\) => !open\)\}/,
+  );
+  assert.match(PAGE_SOURCE, /\{catalogExpanded \? "Hide Templates" : "Show Templates"\}/);
+  // Body is conditionally rendered (like #agenda-editor-form-body), stacked in the same column.
+  const bodyStart = PAGE_SOURCE.indexOf('id="agenda-catalog-templates-body"');
+  assert.notEqual(bodyStart, -1);
+  const bodyBlock = PAGE_SOURCE.slice(bodyStart, PAGE_SOURCE.indexOf("Event Agenda working pane", bodyStart));
+  assert.match(bodyBlock, /<AgendaTemplatePanel/);
+  assert.match(bodyBlock, /Recent Template Activity/);
+  assert.equal(/gridTemplateColumns/.test(bodyBlock), false);
+  // Only rendered in Items mode -- Import mode is untouched.
+  assert.match(PAGE_SOURCE, /\{agendaMode === "items" \? \(\s*\n\s*<PageSection variant="section">\s*\n\s*<PageHeader/);
+});
+
+test("every AgendaTemplatePanel prop, handler and confirmation stays wired inside the disclosure -- values live in page state so closing/reopening preserves them", () => {
+  for (const prop of [
+    "activeEvent={activeEvent}",
+    "itemCount={items.length}",
+    "templates={templates}",
+    "selectedTemplateId={selectedTemplateId}",
+    "newTemplateName={newTemplateName}",
+    "newTemplateDescription={newTemplateDescription}",
+    "savingTemplate={savingTemplate}",
+    "applyingTemplate={applyingTemplate}",
+    "replacingFromTemplate={replacingFromTemplate}",
+    "setSelectedTemplateId={setSelectedTemplateId}",
+    "setNewTemplateName={setNewTemplateName}",
+    "setNewTemplateDescription={setNewTemplateDescription}",
+    "onSaveTemplate={saveCurrentAgendaAsTemplate}",
+    "onApplyTemplate={applyTemplateToEvent}",
+    "onReplaceFromTemplate={replaceEventFromTemplate}",
+  ]) {
+    assert.ok(PAGE_SOURCE.includes(prop), `expected ${prop}`);
+  }
+  assert.match(PAGE_SOURCE, /const \[newTemplateName, setNewTemplateName\] = useState/);
+  assert.match(PAGE_SOURCE, /const \[newTemplateDescription, setNewTemplateDescription\] = useState/);
 });
 
 test("the Published/Hidden item pill renders through the shared StatusBadge, not a hand-rolled pill", () => {
@@ -711,7 +752,7 @@ test("every governed Agenda RPC name and the agenda_items/agenda_categories tabl
   }
 });
 
-test("AgendaTemplatePanel no longer takes an isMobile prop -- it always stacks vertically now that it lives in the page's own narrow Catalog column", () => {
+test("AgendaTemplatePanel no longer takes an isMobile prop -- it always stacks vertically (now inside the page's Catalog & Templates disclosure)", () => {
   assert.equal(/isMobile/.test(TEMPLATE_PANEL_SOURCE), false);
   assert.equal(/isMobile=\{isMobile\}/.test(PAGE_SOURCE), false);
   assert.match(TEMPLATE_PANEL_SOURCE, /import \{ PageSection \} from "@\/components\/ui\/PageSection";/);

@@ -684,17 +684,15 @@ function AdminAgendaPageInner() {
     agendaReloadRef.current();
   });
 
-  const { isCompact, viewportClass } = useShellInterfaceCapabilities();
-  // The two-pane Catalog/Working-pane split only earns its keep at the
-  // shell's "wide" tier (>=1200px). Measured with the real shell chrome
-  // (persistent sidebar + content padding) in place, "standard" width
-  // (900-1199px, e.g. 1024px tablet landscape) leaves so little real
-  // width for the two panes together that the working pane's own content
-  // overflows -- collapsing it to the same single-column stack as
-  // "compact" is the workflow-driven choice the migration brief asks for
-  // ("evaluate whether full desktop multi-column layout remains genuinely
-  // useful... collapse... when columns become cramped"), not a shortcut.
-  const showTwoColumnAgendaLayout = viewportClass === "wide";
+  const { isCompact } = useShellInterfaceCapabilities();
+  // Catalog & Templates lives in an initially closed disclosure above the
+  // Event Agenda working pane at every width, so the working pane always
+  // takes the full content width -- there is no reserved side column.
+  // Mirrors the item editor's own page-local disclosure (a labelled toggle
+  // with aria-expanded/aria-controls and a conditionally rendered body);
+  // the template inputs are page state, so entered values survive
+  // closing and reopening.
+  const [catalogExpanded, setCatalogExpanded] = useState(false);
   // Agenda-local on-demand item editor (2026-08-23: extended to every
   // viewport so the editor never permanently consumes agenda viewing
   // space -- originally a compact-only disclosure from the 2026-08-21
@@ -2907,19 +2905,37 @@ function AdminAgendaPageInner() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns:
-            agendaMode === "items" && showTwoColumnAgendaLayout
-              ? "minmax(300px, 360px) 1fr"
-              : "1fr",
           gap: "var(--space-5)",
           alignItems: "start",
+          minWidth: 0,
         }}
       >
-        {/* Catalog & Templates pane -- reusable agenda templates, not a
-            per-item edit surface. Ordered after the working pane on
-            compact widths so Event Agenda stays the primary workflow. */}
+        {/* Catalog & Templates -- reusable agenda templates, not a per-item
+            edit surface. An initially closed disclosure above the working
+            pane; expanding it stacks the content in this same column and
+            never creates a side column. */}
         {agendaMode === "items" ? (
-        <div style={{ display: "grid", gap: "var(--space-5)", order: showTwoColumnAgendaLayout ? 0 : 1 }}>
+        <PageSection variant="section">
+          <PageHeader
+            headingLevel="h2"
+            titleStyle={{ margin: 0 }}
+            title="Catalog & Templates"
+            actions={
+              <AppButton
+                variant="secondary"
+                aria-expanded={catalogExpanded}
+                aria-controls="agenda-catalog-templates-body"
+                onClick={() => setCatalogExpanded((open) => !open)}
+              >
+                {catalogExpanded ? "Hide Templates" : "Show Templates"}
+              </AppButton>
+            }
+          />
+          {catalogExpanded ? (
+          <div
+            id="agenda-catalog-templates-body"
+            style={{ display: "grid", gap: "var(--space-5)", marginTop: "var(--space-4)" }}
+          >
           <AgendaTemplatePanel
             activeEvent={activeEvent}
             itemCount={items.length}
@@ -2955,7 +2971,9 @@ function AdminAgendaPageInner() {
               </div>
             </PageSection>
           )}
-        </div>
+          </div>
+          ) : null}
+        </PageSection>
         ) : null}
 
         {/* Event Agenda working pane -- the primary workflow: import (when
