@@ -344,7 +344,9 @@ test("Stage C separates upload/staging from the explicit confirmed Agenda commit
   assert.doesNotMatch(upload, /commitAgendaImportRun/);
   assert.match(commit, /commitAgendaImportRun/);
   assert.match(IMPORT_REVIEW_SOURCE, /<ConfirmDialog/);
-  assert.match(IMPORT_REVIEW_SOURCE, /onClick=\{\(\) => setConfirmCommitOpen\(true\)\}/);
+  // The Import button routes through beginCommit, which gates on unresolved
+  // location typos before opening the governed commit confirmation.
+  assert.match(IMPORT_REVIEW_SOURCE, /onClick=\{beginCommit\}/);
 });
 
 test("Agenda staging passes the selected Event schedule to the single Stage A interpretation path", () => {
@@ -1422,4 +1424,70 @@ test("the manual Restore/Discard panel is scoped to the Import route only -- the
   assert.match(PAGE_SOURCE, /recoverableDraft && !loading && hasAgendaAccess === true && agendaMode === "import" \?/);
   // The routine Items path no longer surfaces a Restore button.
   assert.equal(/recoverableDraft && !loading && hasAgendaAccess === true \?/.test(PAGE_SOURCE), false);
+});
+
+// --- Event-specific Agenda location picker (searchable selection + add new) ---
+
+test("the item editor Location field is the searchable AgendaLocationPicker, not a bare text Input", () => {
+  assert.match(PAGE_SOURCE, /import \{ AgendaLocationPicker \} from "@\/components\/admin\/agenda\/AgendaLocationPicker";/);
+  assert.match(
+    PAGE_SOURCE,
+    /<Field\s*\n\s*label="Location"[\s\S]*?<AgendaLocationPicker\s*\n\s*controlProps=\{controlProps\}\s*\n\s*value=\{form\.location\}\s*\n\s*options=\{existingLocations\}/,
+  );
+  // The old raw Location <Input> is gone.
+  assert.equal(
+    /value=\{form\.location\}\s*\n\s*onChange=\{\(e\) =>\s*\n\s*setForm\(\(prev\) => \(\{ \.\.\.prev, location: e\.target\.value \}\)\)/.test(
+      PAGE_SOURCE,
+    ),
+    false,
+  );
+});
+
+test("existing locations are derived from THIS event's agenda items through the shared comparison rules, with no separate registry or persistence", () => {
+  assert.match(PAGE_SOURCE, /collectAgendaLocations,?\s*\n?[\s\S]*?\} from "@\/lib\/agendaLocations";/);
+  assert.match(
+    PAGE_SOURCE,
+    /const existingLocations = useMemo\(\s*\n\s*\(\) => collectAgendaLocations\(items\.map\(\(item\) => item\.location\)\),\s*\n\s*\[items\],\s*\n\s*\);/,
+  );
+});
+
+test("choosing a location only updates form state (recovery-preserving); it never triggers a save or discards editor text", () => {
+  // The picker's onChange writes location back through setForm, exactly like
+  // every other editor field -- no RPC, no submit, no reset of the form. It
+  // also records only an explicit "add" as a deliberate choice.
+  assert.match(PAGE_SOURCE, /setForm\(\(prev\) => \(\{ \.\.\.prev, location: next \}\)\);/);
+  assert.match(
+    PAGE_SOURCE,
+    /setLocationAckKey\(\s*\n\s*source === "add" \? locationComparisonKey\(next\) : null,\s*\n\s*\);/,
+  );
+});
+
+test("the governed Agenda import review receives this event's existing locations so imports compare against them", () => {
+  assert.match(PAGE_SOURCE, /existingLocations=\{existingLocations\}/);
+});
+
+// --- Deliberate location choice enforced in the Admin save path (Lun #1) ---
+
+test("saveItem enforces a deliberate location choice before writing (not merely the picker)", () => {
+  const save = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("async function saveItem"),
+    PAGE_SOURCE.indexOf("async function saveItem") + 4000,
+  );
+  // Resolve the typed location against existing options + the item's original
+  // value + an explicit acknowledgment; block save when a choice is needed.
+  assert.match(save, /resolveLocationChoiceForSave\(\s*\n\s*form\.location,\s*\n\s*existingLocations,/);
+  assert.match(save, /originalValue: form\.id \? originalFormRef\.current\.location : "",/);
+  assert.match(save, /acknowledgedNewKey: locationAckKey,/);
+  assert.match(save, /if \(locationResolution\.status !== "ok"\) \{/);
+  assert.match(save, /return;/);
+  // The governed RPC uses the RESOLVED spelling, not the raw typed text.
+  assert.match(PAGE_SOURCE, /p_location: normalizeText\(resolvedLocation\)/);
+  assert.doesNotMatch(PAGE_SOURCE, /p_location: normalizeText\(form\.location\)/);
+});
+
+test("an add-new acknowledgment is scoped to the current edit and reset when the item or editor state changes", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /useEffect\(\(\) => \{\s*\n\s*setLocationAckKey\(null\);\s*\n\s*setLocationChoiceError\(null\);\s*\n\s*\}, \[form\.id, editorExpanded\]\);/,
+  );
 });

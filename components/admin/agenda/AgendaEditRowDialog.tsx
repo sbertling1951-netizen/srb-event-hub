@@ -27,7 +27,14 @@ import {
   getEffectiveAgendaImportCandidate,
   interpretAgendaCorrection,
 } from "@/lib/agendaImportOrchestration";
+import {
+  type AgendaLocationOption,
+  locationComparisonKey,
+  resolveLocationChoiceForSave,
+} from "@/lib/agendaLocations";
 import { describeLifecycleError } from "@/lib/importLifecycleOrchestration";
+
+import { AgendaLocationPicker } from "./AgendaLocationPicker";
 
 export type AgendaEditRowFields = {
   Title: string;
@@ -159,6 +166,10 @@ export type AgendaEditRowDialogProps = {
   row: AgendaImportRowResult;
   eventDateContext: AgendaImportEventDateContext;
   categoryOptions: readonly AgendaImportCategoryOption[];
+  /** Existing locations (this Event's items plus the other rows of this
+   * import) offered so a corrected location can reuse an existing spelling
+   * instead of introducing a capitalization/spacing variant. */
+  locationOptions?: readonly AgendaLocationOption[];
   onCancel: () => void;
   onSaved: (message: string, shouldClose: boolean) => void | Promise<void>;
   onError: (message: string) => void;
@@ -169,6 +180,7 @@ export function AgendaEditRowDialog({
   row,
   eventDateContext,
   categoryOptions,
+  locationOptions = [],
   onCancel,
   onSaved,
   onError,
@@ -180,6 +192,13 @@ export function AgendaEditRowDialog({
     useState<AgendaImportCorrectionReasonCode>(DEFAULT_CORRECTION_REASON);
   const [saving, setSaving] = useState(false);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  // Deliberate-location-choice gate for the governed correction: the key of a
+  // NEW location the operator explicitly added via the picker, and the inline
+  // error shown when a save is blocked for want of a choice.
+  const [locationAckKey, setLocationAckKey] = useState<string | null>(null);
+  const [locationChoiceError, setLocationChoiceError] = useState<string | null>(
+    null,
+  );
   const savingGuardRef = useRef(false);
 
   // Re-preload from the best available candidate every time this dialog is
@@ -192,30 +211,36 @@ export function AgendaEditRowDialog({
     setFields(getAgendaEditRowFields(row));
     setReasonCode(DEFAULT_CORRECTION_REASON);
     setDiscardConfirmOpen(false);
+    setLocationAckKey(null);
+    setLocationChoiceError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, row.rowId, row.correctionRevision]);
 
-  const interpretation = interpretAgendaCorrection(
-    {
-      Title: fields.Title,
-      Description: fields.Description,
-      Location: fields.Location,
-      Speaker: fields.Speaker,
-      "Agenda Date": fields["Agenda Date"],
-      "Start Time": fields["Start Time"],
-      "End Time": fields["End Time"],
-      Category: fields.Category,
-      Color: fields.Color,
-      Published: fields.Published ? "Yes" : "",
-      "Sort Order": fields["Sort Order"],
-    },
-    {
-      source_row_number: row.sourceRowNumber,
-      default_sort_order: row.sourceRowNumber,
-      event_start_date: eventDateContext.event_start_date,
-      event_end_date: eventDateContext.event_end_date,
-    },
-  );
+  function interpretFields(nextFields: AgendaEditRowFields) {
+    return interpretAgendaCorrection(
+      {
+        Title: nextFields.Title,
+        Description: nextFields.Description,
+        Location: nextFields.Location,
+        Speaker: nextFields.Speaker,
+        "Agenda Date": nextFields["Agenda Date"],
+        "Start Time": nextFields["Start Time"],
+        "End Time": nextFields["End Time"],
+        Category: nextFields.Category,
+        Color: nextFields.Color,
+        Published: nextFields.Published ? "Yes" : "",
+        "Sort Order": nextFields["Sort Order"],
+      },
+      {
+        source_row_number: row.sourceRowNumber,
+        default_sort_order: row.sourceRowNumber,
+        event_start_date: eventDateContext.event_start_date,
+        event_end_date: eventDateContext.event_end_date,
+      },
+    );
+  }
+
+  const interpretation = interpretFields(fields);
   const willBeValid = interpretation.validation_state === "valid";
   const categoryIsUnresolved =
     fields.Category !== "" &&
@@ -235,15 +260,41 @@ export function AgendaEditRowDialog({
     if (savingGuardRef.current) {
       return;
     }
+    // Deliberate location choice, enforced on Save (covers mouse/touch Save and
+    // Enter with no highlighted option): a typed new name or likely typo is
+    // blocked unless it matches an existing location, is unchanged, is blank,
+    // or was explicitly added. A case/whitespace variant resolves to the
+    // existing spelling without a blur.
+    const locationResolution = resolveLocationChoiceForSave(
+      fields.Location,
+      locationOptions,
+      {
+        originalValue: getAgendaEditRowFields(row).Location,
+        acknowledgedNewKey: locationAckKey,
+      },
+    );
+    if (locationResolution.status !== "ok") {
+      const suggestion = locationResolution.suggestions[0]?.label;
+      setLocationChoiceError(
+        suggestion
+          ? `“${locationResolution.typed}” looks like “${suggestion}”. Choose the existing location, or use “Add new location” to keep this name.`
+          : `Choose an existing location, or use “Add new location” to keep “${locationResolution.typed}”.`,
+      );
+      return;
+    }
+    const effective = interpretFields({
+      ...fields,
+      Location: locationResolution.value,
+    });
     savingGuardRef.current = true;
     setSaving(true);
     try {
       const result = await correctAgendaImportRow({
         rowId: row.rowId,
         expectedRevision: row.correctionRevision,
-        candidate: interpretation.candidate,
-        validationState: interpretation.validation_state,
-        issues: interpretation.issues,
+        candidate: effective.candidate,
+        validationState: effective.validation_state,
+        issues: effective.issues,
         reasonCode,
       });
       const shouldClose = shouldCloseAgendaEditAfterSave(result.rowState);
@@ -347,13 +398,24 @@ export function AgendaEditRowDialog({
             gap: "var(--space-3)",
           }}
         >
-          <Field label="Location">
+          <Field
+            label="Location"
+            help="Reuse a location already used by this event or import, or keep a new name."
+            error={locationChoiceError}
+          >
             {(controlProps) => (
-              <Input
-                {...controlProps}
+              <AgendaLocationPicker
+                controlProps={{ ...controlProps, disabled: saving }}
                 value={fields.Location}
+                options={locationOptions}
                 disabled={saving}
-                onChange={(e) => update("Location", e.target.value)}
+                onChange={(next, source) => {
+                  update("Location", next);
+                  setLocationAckKey(
+                    source === "add" ? locationComparisonKey(next) : null,
+                  );
+                  setLocationChoiceError(null);
+                }}
               />
             )}
           </Field>

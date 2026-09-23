@@ -10,6 +10,7 @@ import { ActiveRunsPanel } from "@/app/admin/imports/ActiveRunsPanel";
 import { ImportHistoryPanel } from "@/app/admin/imports/ImportHistoryPanel";
 import AgendaImportPanel from "@/components/admin/agenda/AgendaImportPanel";
 import { AgendaImportReviewWorkspace } from "@/components/admin/agenda/AgendaImportReviewWorkspace";
+import { AgendaLocationPicker } from "@/components/admin/agenda/AgendaLocationPicker";
 import AgendaTemplatePanel from "@/components/admin/agenda/AgendaTemplatePanel";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
@@ -43,6 +44,11 @@ import {
   stageGovernedAgendaImport,
 } from "@/lib/agendaImportOrchestration";
 import { type AgendaDraft, agendaDraftKey, type AgendaForm, readAgendaDraft, writeAgendaDraft } from "@/lib/agendaItemDraft";
+import {
+  collectAgendaLocations,
+  locationComparisonKey,
+  resolveLocationChoiceForSave,
+} from "@/lib/agendaLocations";
 import { type AdminAccessResult, canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import type { ImportRunLifecycleStatus } from "@/lib/importLifecycleOrchestration";
 import { buildImportsHref } from "@/lib/importTypeRouting";
@@ -696,6 +702,22 @@ function AdminAgendaPageInner() {
   // exists yet in components/ui; this remains the smallest Agenda-local
   // implementation, still a future Central UI standardization candidate.
   const [editorExpanded, setEditorExpanded] = useState(false);
+  // Deliberate-location-choice gate: the comparison key of a NEW location name
+  // the operator explicitly chose to add via the picker. Typing alone never
+  // sets this, so a save cannot silently accept a typed new name (or a likely
+  // typo). It is scoped to the current editor form and reset whenever the
+  // edited item or the editor open-state changes.
+  const [locationAckKey, setLocationAckKey] = useState<string | null>(null);
+  const [locationChoiceError, setLocationChoiceError] = useState<string | null>(
+    null,
+  );
+  // Switching items or closing/reopening the editor invalidates any prior
+  // "add new location" acknowledgment and clears the gate error, so an
+  // acknowledgment never leaks across a different edit.
+  useEffect(() => {
+    setLocationAckKey(null);
+    setLocationChoiceError(null);
+  }, [form.id, editorExpanded]);
   const editorFormBodyRef = useRef<HTMLDivElement | null>(null);
   const editorToggleButtonRef = useRef<HTMLButtonElement | null>(null);
   // Set true when an unfinished draft is auto-resumed, so the reopened editor is
@@ -1402,6 +1424,31 @@ function AdminAgendaPageInner() {
       return;
     }
 
+    // Deliberate location choice (enforced in the SAVE path, not only the
+    // picker): a typed new name or a likely typo cannot be saved unless it
+    // matches an existing location, is unchanged, is blank, or was explicitly
+    // added. A case/whitespace variant resolves to the existing spelling even
+    // without a blur.
+    const locationResolution = resolveLocationChoiceForSave(
+      form.location,
+      existingLocations,
+      {
+        originalValue: form.id ? originalFormRef.current.location : "",
+        acknowledgedNewKey: locationAckKey,
+      },
+    );
+    if (locationResolution.status !== "ok") {
+      const suggestion = locationResolution.suggestions[0]?.label;
+      setLocationChoiceError(
+        suggestion
+          ? `“${locationResolution.typed}” looks like “${suggestion}”. Choose the existing location, or use “Add new location” to keep this name.`
+          : `Choose an existing location, or use “Add new location” to keep “${locationResolution.typed}”.`,
+      );
+      showError("Choose or add the location before saving.");
+      return;
+    }
+    const resolvedLocation = locationResolution.value;
+
     const submittedForm = form;
     const submittedDraftKey = draftKeyRef.current;
     const generation = captureAgendaGeneration();
@@ -1419,7 +1466,7 @@ function AdminAgendaPageInner() {
           p_expected_agenda_version: agendaVersionRef.current,
           p_title: form.title.trim(),
           p_description: normalizeText(form.description),
-          p_location: normalizeText(form.location),
+          p_location: normalizeText(resolvedLocation),
           p_speaker: normalizeText(form.speaker),
           p_category: normalizeText(form.category),
           p_color: getAgendaColor(form.category, form.color),
@@ -1452,7 +1499,7 @@ function AdminAgendaPageInner() {
           p_event_id: activeEvent.id,
           p_title: form.title.trim(),
           p_description: normalizeText(form.description),
-          p_location: normalizeText(form.location),
+          p_location: normalizeText(resolvedLocation),
           p_speaker: normalizeText(form.speaker),
           p_category: normalizeText(form.category),
           p_color: getAgendaColor(form.category, form.color),
@@ -1635,6 +1682,15 @@ function AdminAgendaPageInner() {
     ) as string[];
     return ["All", ...values.sort((a, b) => a.localeCompare(b))];
   }, [items]);
+
+  // Locations already used by THIS Event's agenda items, deduped by the shared
+  // case/space comparison rules. This is the searchable selection the item
+  // editor and the import correction reuse; agenda_items.location remains the
+  // sole source -- there is no separate location registry.
+  const existingLocations = useMemo(
+    () => collectAgendaLocations(items.map((item) => item.location)),
+    [items],
+  );
 
   const filteredItems = useMemo(() => {
     if (filterCategory === "All") {
@@ -2946,6 +3002,7 @@ function AdminAgendaPageInner() {
                 event_end_date: activeEvent?.end_date ?? null,
               }}
               categoryOptions={agendaCategories}
+              existingLocations={existingLocations}
               onRowsChanged={refreshAgendaImportRun}
               onCommit={commitCurrentAgendaImportRun}
               onFinalized={handleAgendaImportFinalized}
@@ -3059,14 +3116,23 @@ function AdminAgendaPageInner() {
                   )}
                 </Field>
 
-                <Field label="Location">
+                <Field
+                  label="Location"
+                  help="Reuse a location already on this event's agenda, or add a new one."
+                  error={locationChoiceError}
+                >
                   {(controlProps) => (
-                    <Input
-                      {...controlProps}
+                    <AgendaLocationPicker
+                      controlProps={controlProps}
                       value={form.location}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, location: e.target.value }))
-                      }
+                      options={existingLocations}
+                      onChange={(next, source) => {
+                        setForm((prev) => ({ ...prev, location: next }));
+                        setLocationAckKey(
+                          source === "add" ? locationComparisonKey(next) : null,
+                        );
+                        setLocationChoiceError(null);
+                      }}
                       placeholder="Location"
                     />
                   )}

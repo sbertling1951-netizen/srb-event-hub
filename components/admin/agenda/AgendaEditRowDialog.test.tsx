@@ -150,3 +150,32 @@ test("dirty detection preserves edits until an explicit confirmed discard", () =
   assert.match(DIALOG_SOURCE, /onClose=\{requestClose\}/);
   assert.match(DIALOG_SOURCE, /<AppButton onClick=\{requestClose\}/);
 });
+
+test("the Location correction field is the shared searchable picker fed the run's location options, not a bare Input", () => {
+  assert.match(DIALOG_SOURCE, /import \{ AgendaLocationPicker \} from "\.\/AgendaLocationPicker";/);
+  assert.match(DIALOG_SOURCE, /<AgendaLocationPicker/);
+  assert.match(DIALOG_SOURCE, /options=\{locationOptions\}/);
+  assert.match(DIALOG_SOURCE, /onChange=\{\(next, source\) => \{/);
+  assert.match(DIALOG_SOURCE, /update\("Location", next\)/);
+  // locationOptions is an optional prop defaulting to [] so existing callers
+  // keep working; the correction still flows through interpretAgendaCorrection.
+  assert.match(DIALOG_SOURCE, /locationOptions = \[\],/);
+});
+
+test("the governed correction enforces a deliberate location choice on Save (covers mouse/touch and Enter with no highlight)", () => {
+  // Resolution runs in handleSave, before correctAgendaImportRow, and blocks
+  // when a choice is needed (return before the RPC).
+  const save = DIALOG_SOURCE.slice(
+    DIALOG_SOURCE.indexOf("async function handleSave"),
+    DIALOG_SOURCE.indexOf("async function requestClose"),
+  );
+  assert.match(save, /resolveLocationChoiceForSave\(\s*\n\s*fields\.Location,\s*\n\s*locationOptions,/);
+  assert.match(save, /originalValue: getAgendaEditRowFields\(row\)\.Location,/);
+  assert.match(save, /acknowledgedNewKey: locationAckKey,/);
+  assert.match(save, /if \(locationResolution\.status !== "ok"\) \{/);
+  // The corrected candidate is interpreted from the RESOLVED location.
+  assert.match(save, /interpretFields\(\{\s*\n\s*\.\.\.fields,\s*\n\s*Location: locationResolution\.value,\s*\n\s*\}\)/);
+  assert.match(save, /candidate: effective\.candidate,/);
+  // The acknowledgment resets on (re)open / row-revision change.
+  assert.match(DIALOG_SOURCE, /setLocationAckKey\(null\);\s*\n\s*setLocationChoiceError\(null\);/);
+});

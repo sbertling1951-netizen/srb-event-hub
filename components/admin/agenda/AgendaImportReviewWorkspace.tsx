@@ -8,6 +8,7 @@ import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { Dialog } from "@/components/ui/Dialog";
 import { FormActions } from "@/components/ui/FormActions";
 import { PageSection } from "@/components/ui/PageSection";
 import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
@@ -24,6 +25,13 @@ import {
   getEffectiveAgendaImportIssues,
   summarizeAgendaImportRows,
 } from "@/lib/agendaImportOrchestration";
+import {
+  type AgendaLocationOption,
+  collectAgendaLocations,
+  findSimilarLocations,
+  locationComparisonKey,
+  locationOptionsSignature,
+} from "@/lib/agendaLocations";
 import {
   ABANDONMENT_REASON_OPTIONS,
   describeLifecycleError,
@@ -85,8 +93,24 @@ function abandonmentReasonLabel(code: string | null) {
   );
 }
 
-function AgendaCandidateDetails({ row }: { row: AgendaImportRowResult }) {
+function AgendaCandidateDetails({
+  row,
+  locationOptions,
+}: {
+  row: AgendaImportRowResult;
+  locationOptions: readonly AgendaLocationOption[];
+}) {
   const candidate = getEffectiveAgendaImportCandidate(row);
+  // Advisory only. `findSimilarLocations` excludes the row's own exact-key
+  // match, so this flags a location that is a likely typo of a DIFFERENT
+  // existing location (this Event's items or another row of this import). It
+  // never changes the persisted validation/review state -- resolution is the
+  // governed Edit Row correction, where the operator reuses the existing
+  // spelling or deliberately keeps this name.
+  const isSettled = row.rowState === "committed" || row.abandonedAt !== null;
+  const similarLocations = isSettled
+    ? []
+    : findSimilarLocations(candidate.location, locationOptions);
 
   return (
     <div style={{ display: "grid", gap: "var(--space-2)", minWidth: 0 }}>
@@ -106,6 +130,17 @@ function AgendaCandidateDetails({ row }: { row: AgendaImportRowResult }) {
         Category: {candidate.category || "None"} · Color: {candidate.color || "None"} · Location: {candidate.location || "None"}
         {candidate.speaker ? ` · Speaker: ${candidate.speaker}` : ""}
       </div>
+      {similarLocations.length > 0 ? (
+        <div
+          className="app-field-error"
+          role="note"
+          aria-label={`Source row ${row.sourceRowNumber} possible location typo`}
+        >
+          Possible location typo: “{candidate.location}” is similar to existing{" "}
+          {similarLocations.map((option) => `“${option.label}”`).join(", ")}. Use Edit
+          Row to reuse an existing location or deliberately keep this name.
+        </div>
+      ) : null}
       <div className="app-subtle-text">
         Sort order: {candidate.sort_order ?? "Not set"} · Published: {candidate.is_published ? "Yes" : "No"}
       </div>
@@ -157,6 +192,7 @@ function AgendaRowAction({
   runStatus,
   eventDateContext,
   categoryOptions,
+  locationOptions,
   onRowsChanged,
   onError,
 }: {
@@ -164,6 +200,7 @@ function AgendaRowAction({
   runStatus: ImportRunLifecycleStatus;
   eventDateContext: AgendaImportEventDateContext;
   categoryOptions: readonly AgendaImportCategoryOption[];
+  locationOptions: readonly AgendaLocationOption[];
   onRowsChanged: (message: string) => void | Promise<void>;
   onError: (message: string) => void;
 }) {
@@ -227,6 +264,7 @@ function AgendaRowAction({
           row={row}
           eventDateContext={eventDateContext}
           categoryOptions={categoryOptions}
+          locationOptions={locationOptions}
           onCancel={() => setEditOpen(false)}
           onSaved={async (message, shouldClose) => {
             if (shouldClose) {
@@ -259,6 +297,10 @@ type AgendaImportReviewWorkspaceProps = {
   committing: boolean;
   eventDateContext: AgendaImportEventDateContext;
   categoryOptions: readonly AgendaImportCategoryOption[];
+  /** Locations already used by this Event's agenda items, deduped by the
+   * shared comparison rules. Combined here with the import's own rows so a
+   * correction can reuse an existing spelling and typos can be flagged. */
+  existingLocations: readonly AgendaLocationOption[];
   onRowsChanged: (message: string) => void | Promise<void>;
   onCommit: () => void | Promise<void>;
   onFinalized: (result: {
@@ -276,13 +318,107 @@ export function AgendaImportReviewWorkspace({
   committing,
   eventDateContext,
   categoryOptions,
+  existingLocations,
   onRowsChanged,
   onCommit,
   onFinalized,
   onError,
 }: AgendaImportReviewWorkspaceProps) {
   const [confirmCommitOpen, setConfirmCommitOpen] = useState(false);
+  // Transient "keep this spelling" acknowledgments -- in-memory only, never
+  // persisted. Each entry is a signature bound to the exact Event, run, row,
+  // correction revision, effective location key, and comparison-options set;
+  // when any of those change the signature no longer matches and the row is
+  // unresolved again. A reload/recovery remounts this component with an empty
+  // set, so recovery never silently implies acknowledgment.
+  const [keepAcks, setKeepAcks] = useState<ReadonlySet<string>>(new Set());
+  const [locationWarningsOpen, setLocationWarningsOpen] = useState(false);
+  // The row whose governed Edit Row correction is open from the warnings
+  // dialog's "Reuse existing" action (reuse goes through the same governed
+  // correction + recovered persisted candidate as everywhere else).
+  const [reuseEditRowId, setReuseEditRowId] = useState<string | null>(null);
   const summary = summarizeAgendaImportRows(run.rows);
+  // The location universe for this run: the Event's existing agenda-item
+  // locations plus every staged row's own effective location, deduped by the
+  // shared comparison rules. Drives the Edit Row picker, the per-row
+  // possible-typo advisory, and the pre-commit resolution gate (never a
+  // persisted validation change).
+  const runLocationOptions = collectAgendaLocations([
+    ...existingLocations.map((option) => option.label),
+    ...run.rows.map((row) => getEffectiveAgendaImportCandidate(row).location),
+  ]);
+  const optionsSignature = locationOptionsSignature(runLocationOptions);
+
+  function keepAckSignature(row: AgendaImportRowResult): string {
+    const location = locationComparisonKey(
+      getEffectiveAgendaImportCandidate(row).location,
+    );
+    return [
+      run.eventId,
+      run.runId,
+      row.rowId,
+      row.correctionRevision,
+      location,
+      optionsSignature,
+    ].join("");
+  }
+
+  // A row that would actually be committed (not merely displayed).
+  function isCommitEligible(row: AgendaImportRowResult): boolean {
+    return (
+      row.abandonedAt === null &&
+      (row.rowState === "approved" || row.rowState === "commit_failed")
+    );
+  }
+
+  // A commit-eligible row whose location is a likely typo of a DIFFERENT
+  // location (findSimilarLocations excludes its own key, so a row's own
+  // appearance in the options never counts as resolution) and which has not
+  // been reused (corrected) or deliberately kept.
+  const unresolvedTypoRows = run.rows.filter(
+    (row) =>
+      isCommitEligible(row) &&
+      findSimilarLocations(
+        getEffectiveAgendaImportCandidate(row).location,
+        runLocationOptions,
+      ).length > 0 &&
+      !keepAcks.has(keepAckSignature(row)),
+  );
+
+  function acknowledgeKeep(row: AgendaImportRowResult) {
+    const signature = keepAckSignature(row);
+    setKeepAcks((previous) => {
+      const next = new Set(previous);
+      next.add(signature);
+      return next;
+    });
+  }
+
+  // Clicking Import first requires an explicit reuse-or-keep choice for every
+  // eligible row with an unresolved likely-duplicate location.
+  function beginCommit() {
+    if (unresolvedTypoRows.length > 0) {
+      setLocationWarningsOpen(true);
+      return;
+    }
+    setConfirmCommitOpen(true);
+  }
+
+  // Re-checked again at confirmation (not only when the Import button
+  // rendered): a row corrected/changed since the button appeared is caught.
+  function confirmCommit() {
+    if (unresolvedTypoRows.length > 0) {
+      setConfirmCommitOpen(false);
+      setLocationWarningsOpen(true);
+      return Promise.resolve();
+    }
+    return Promise.resolve(onCommit()).then(() => setConfirmCommitOpen(false));
+  }
+
+  const reuseEditRow = reuseEditRowId
+    ? run.rows.find((row) => row.rowId === reuseEditRowId) ?? null
+    : null;
+
   const retryCount = summary.commitFailed;
   const importableCount = summary.approvedPendingCommit + retryCount;
   const hasStaleFailure = run.rows.some(
@@ -370,7 +506,7 @@ export function AgendaImportReviewWorkspace({
             <AppButton
               variant="primary"
               loading={committing}
-              onClick={() => setConfirmCommitOpen(true)}
+              onClick={beginCommit}
             >
               {retryCount > 0
                 ? `Retry Agenda Import (${importableCount})`
@@ -379,18 +515,108 @@ export function AgendaImportReviewWorkspace({
           </FormActions>
         ) : null}
 
+        {unresolvedTypoRows.length > 0 && canCommit ? (
+          <Alert tone="warning">
+            {unresolvedTypoRows.length} eligible row
+            {unresolvedTypoRows.length === 1 ? " has" : "s have"} a location that
+            looks like a possible duplicate. Import will ask you to reuse an
+            existing location or deliberately keep each one before it runs.
+          </Alert>
+        ) : null}
+
         <ConfirmDialog
           open={confirmCommitOpen}
           title={retryCount > 0 ? "Retry Agenda Import" : "Import Agenda"}
           message={`Import ${importableCount} eligible Agenda row${importableCount === 1 ? "" : "s"}? This creates or updates canonical Agenda items through the governed atomic batch and will not overwrite an Agenda that changed after this run was staged.`}
           confirmLabel={retryCount > 0 ? "Retry Import" : "Import Agenda"}
           busy={committing}
-          onConfirm={async () => {
-            await onCommit();
-            setConfirmCommitOpen(false);
-          }}
+          onConfirm={confirmCommit}
           onCancel={() => (committing ? null : setConfirmCommitOpen(false))}
         />
+
+        <Dialog
+          open={locationWarningsOpen}
+          onClose={() => setLocationWarningsOpen(false)}
+          dismissOnBackdrop={false}
+          title="Resolve possible duplicate locations"
+          description="Each eligible row below has a location that looks like a possible duplicate. Reuse an existing location (a governed correction), or deliberately keep the new spelling, before importing."
+          footer={
+            <>
+              <AppButton onClick={() => setLocationWarningsOpen(false)}>
+                Close
+              </AppButton>
+              <AppButton
+                variant="primary"
+                disabled={unresolvedTypoRows.length > 0}
+                onClick={() => {
+                  setLocationWarningsOpen(false);
+                  setConfirmCommitOpen(true);
+                }}
+              >
+                {unresolvedTypoRows.length > 0
+                  ? `${unresolvedTypoRows.length} left to resolve`
+                  : "Continue to Import"}
+              </AppButton>
+            </>
+          }
+        >
+          {unresolvedTypoRows.length === 0 ? (
+            <Alert tone="success">
+              All flagged locations are resolved. Continue to import.
+            </Alert>
+          ) : (
+            <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: "var(--space-3)" }}>
+              {unresolvedTypoRows.map((row) => {
+                const candidate = getEffectiveAgendaImportCandidate(row);
+                const similar = findSimilarLocations(
+                  candidate.location,
+                  runLocationOptions,
+                );
+                return (
+                  <li
+                    key={row.rowId}
+                    style={{ border: "1px solid var(--color-border)", borderRadius: 8, padding: "var(--space-3)", display: "grid", gap: "var(--space-2)" }}
+                  >
+                    <div>
+                      <strong>Source row {row.sourceRowNumber}</strong> — location
+                      “{candidate.location || "None"}” is similar to{" "}
+                      {similar.map((option) => `“${option.label}”`).join(", ")}.
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
+                      <AppButton
+                        variant="secondary"
+                        onClick={() => setReuseEditRowId(row.rowId)}
+                      >
+                        Reuse existing (Edit Row)
+                      </AppButton>
+                      <AppButton onClick={() => acknowledgeKeep(row)}>
+                        Keep “{candidate.location}”
+                      </AppButton>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Dialog>
+
+        {reuseEditRow ? (
+          <AgendaEditRowDialog
+            open={reuseEditRowId !== null}
+            row={reuseEditRow}
+            eventDateContext={eventDateContext}
+            categoryOptions={categoryOptions}
+            locationOptions={runLocationOptions}
+            onCancel={() => setReuseEditRowId(null)}
+            onSaved={async (message, shouldClose) => {
+              if (shouldClose) {
+                setReuseEditRowId(null);
+              }
+              await onRowsChanged(message);
+            }}
+            onError={onError}
+          />
+        ) : null}
 
         <div>
           <h3 id="agenda-import-candidates" style={{ marginTop: 0 }}>
@@ -404,8 +630,8 @@ export function AgendaImportReviewWorkspace({
                     <div className="responsive-list-item-title">Source row {row.sourceRowNumber}</div>
                     <AgendaRowOutcome row={row} />
                   </div>
-                  <AgendaCandidateDetails row={row} />
-                  <AgendaRowAction row={row} runStatus={status} eventDateContext={eventDateContext} categoryOptions={categoryOptions} onRowsChanged={onRowsChanged} onError={onError} />
+                  <AgendaCandidateDetails row={row} locationOptions={runLocationOptions} />
+                  <AgendaRowAction row={row} runStatus={status} eventDateContext={eventDateContext} categoryOptions={categoryOptions} locationOptions={runLocationOptions} onRowsChanged={onRowsChanged} onError={onError} />
                 </li>
               ))}
             </ResponsiveList>
@@ -424,13 +650,13 @@ export function AgendaImportReviewWorkspace({
                   <tr key={row.rowId}>
                     <td>{row.sourceRowNumber}</td>
                     <td>
-                      <AgendaCandidateDetails row={row} />
+                      <AgendaCandidateDetails row={row} locationOptions={runLocationOptions} />
                     </td>
                     <td>
                       <AgendaRowOutcome row={row} />
                     </td>
                     <td>
-                      <AgendaRowAction row={row} runStatus={status} eventDateContext={eventDateContext} categoryOptions={categoryOptions} onRowsChanged={onRowsChanged} onError={onError} />
+                      <AgendaRowAction row={row} runStatus={status} eventDateContext={eventDateContext} categoryOptions={categoryOptions} locationOptions={runLocationOptions} onRowsChanged={onRowsChanged} onError={onError} />
                     </td>
                   </tr>
                 ))}

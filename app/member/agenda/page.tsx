@@ -11,6 +11,7 @@ import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSection } from "@/components/ui/PageSection";
 import { getAgendaColor } from "@/lib/agendaColors";
+import { groupItemsByLocation } from "@/lib/agendaLocations";
 import { logEngagement } from "@/lib/engagement";
 import { memberIdentityRpcArgs } from "@/lib/memberSession";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
@@ -541,26 +542,24 @@ function MemberAgendaPageInner() {
       ) : (
         <div style={{ display: "grid", gap: 18 }}>
           {groupedAgenda.map((group) => {
-            // Partition items into Morton, Pioneer, Other
-            const mortonItems = group.items.filter((item) =>
-              (item.location || "").toLowerCase().includes("morton"),
+            // Location columns are derived from THIS group's published
+            // items: one column per distinct location (compared case- and
+            // spacing-insensitively), each item under its actual location
+            // exactly once, and a blank location under "Location not
+            // specified." Column order follows first appearance in the
+            // already date/time-sorted list.
+            const locationGroups = groupItemsByLocation(
+              group.items,
+              (item) => item.location,
             );
-            const pioneerOnly = group.items.filter(
-              (item) =>
-                (item.location || "").toLowerCase().includes("pioneer") &&
-                !(item.location || "").toLowerCase().includes("morton"),
-            );
-            const otherItems = group.items.filter(
-              (item) =>
-                !(item.location || "").toLowerCase().includes("morton") &&
-                !(item.location || "").toLowerCase().includes("pioneer"),
-            );
-            const pioneerItems = [...pioneerOnly, ...otherItems];
+
+            // Distinct start times for this day, chronological, with
+            // unscheduled items last. These are the shared schedule rows: an
+            // item at a given time occupies the same row across every location
+            // column, so equal-time items line up and gaps stay empty.
             const timeSlotKeys = Array.from(
               new Set(
-                [...mortonItems, ...pioneerItems].map(
-                  (item) => item.start_time || "unscheduled",
-                ),
+                group.items.map((item) => item.start_time || "unscheduled"),
               ),
             ).sort((a, b) => {
               if (a === "unscheduled") {
@@ -572,22 +571,19 @@ function MemberAgendaPageInner() {
               return a.localeCompare(b);
             });
 
-            // Helper to render agenda cards
+            function cellItemsFor(
+              locationGroup: (typeof locationGroups)[number],
+              slot: string,
+            ) {
+              return locationGroup.items.filter(
+                (item) => (item.start_time || "unscheduled") === slot,
+              );
+            }
+
+            // Renders the cards for one schedule cell (one location at one
+            // time). A cell may hold more than one item; an empty cell renders
+            // nothing so the grid position stays blank.
             function renderAgendaCards(items: AgendaItem[]) {
-              if (items.length === 0) {
-                return (
-                  <div
-                    style={{
-                      color: "#888",
-                      fontSize: 13,
-                      padding: "8px 0",
-                      textAlign: "center",
-                    }}
-                  >
-                    No scheduled items.
-                  </div>
-                );
-              }
               return items.map((item) => {
                 const itemStatus = getItemStatus(item, now);
                 const resolvedAgendaColor = getAgendaColor(
@@ -754,94 +750,87 @@ function MemberAgendaPageInner() {
                 >
                   {group.label}
                 </div>
-                <div style={{ display: "grid", gap: 0, minWidth: 0 }}>
-  <div
-    style={{
-      display: "grid",
-      gridTemplateColumns: isCompact ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))",
-      gap: 10,
-      position: "sticky",
-      top: 0,
-      zIndex: 5,
-      background: "white",
-    }}
-  >
-    {isCompact ? null : (
-      <>
-        <div
-          style={{
-            fontWeight: 700,
-            fontSize: 16,
-            borderBottom: "1px solid #e5e7eb",
-            marginBottom: 12,
-            paddingBottom: 6,
-            color: "#22223b",
-            letterSpacing: 0.2,
-            minWidth: 0,
-          }}
-        >
-          Morton Building
-        </div>
-
-        <div
-          style={{
-            fontWeight: 700,
-            fontSize: 16,
-            borderBottom: "1px solid #e5e7eb",
-            marginBottom: 12,
-            paddingBottom: 6,
-            color: "#22223b",
-            letterSpacing: 0.2,
-            minWidth: 0,
-          }}
-        >
-          Pioneer Building
-        </div>
-      </>
-    )}
-  </div>
-
-  {timeSlotKeys.map((timeSlot) => {
-    const mortonSlotItems = mortonItems.filter(
-      (item) => (item.start_time || "unscheduled") === timeSlot,
-    );
-
-    const pioneerSlotItems = pioneerItems.filter(
-      (item) => (item.start_time || "unscheduled") === timeSlot,
-    );
-
-    return (
-      <div
-        key={timeSlot}
-        style={{
-          display: "grid",
-          gridTemplateColumns: isCompact ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))",
-          gap: 10,
-          alignItems: "start",
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          {isCompact && mortonSlotItems.length > 0 ? (
-            <div style={compactLocationHeadingStyle}>Morton Building</div>
-          ) : null}
-          {mortonSlotItems.length > 0
-            ? renderAgendaCards(mortonSlotItems)
-            : null}
-        </div>
-
-        <div style={{ minWidth: 0 }}>
-          {isCompact && pioneerSlotItems.length > 0 ? (
-            <div style={compactLocationHeadingStyle}>Pioneer Building</div>
-          ) : null}
-          {pioneerSlotItems.length > 0
-            ? renderAgendaCards(pioneerSlotItems)
-            : null}
-        </div>
-      </div>
-    );
-  })}
-  </div>
-</section>
+                {isCompact ? (
+                  // Phones: read the day in time order. For each time slot,
+                  // show only the locations that have an item then, each with
+                  // its location label. An entire location's day is never
+                  // stacked ahead of an earlier item elsewhere.
+                  <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
+                    {timeSlotKeys.map((slot) => (
+                      <div key={slot} style={{ display: "grid", gap: 10, minWidth: 0 }}>
+                        {locationGroups.map((locationGroup) => {
+                          const cellItems = cellItemsFor(locationGroup, slot);
+                          if (cellItems.length === 0) {
+                            return null;
+                          }
+                          return (
+                            <div
+                              key={locationGroup.key || "unspecified"}
+                              style={{ minWidth: 0 }}
+                            >
+                              <div style={locationColumnHeadingStyle}>
+                                📍 {locationGroup.label}
+                              </div>
+                              {renderAgendaCards(cellItems)}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  // Desktop: one column per location, one grid row per time
+                  // slot. Explicit row placement keeps equal-time items on the
+                  // same row (aligned tops) with empty positions preserved.
+                  // Many locations scroll horizontally within this wrapper
+                  // rather than wrapping (which would break alignment) or
+                  // overflowing the page.
+                  <div style={{ overflowX: "auto", minWidth: 0 }}>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: `repeat(${locationGroups.length}, minmax(220px, 1fr))`,
+                        columnGap: 12,
+                        rowGap: 4,
+                        alignItems: "start",
+                      }}
+                    >
+                      {locationGroups.map((locationGroup, colIndex) => (
+                        <div
+                          key={`head-${locationGroup.key || "unspecified"}`}
+                          style={{
+                            ...locationColumnHeadingStyle,
+                            gridColumn: colIndex + 1,
+                            gridRow: 1,
+                          }}
+                        >
+                          📍 {locationGroup.label}
+                        </div>
+                      ))}
+                      {timeSlotKeys.map((slot, slotIndex) =>
+                        locationGroups.map((locationGroup, colIndex) => {
+                          const cellItems = cellItemsFor(locationGroup, slot);
+                          if (cellItems.length === 0) {
+                            return null;
+                          }
+                          return (
+                            <div
+                              key={`${slot}-${locationGroup.key || "unspecified"}`}
+                              style={{
+                                gridColumn: colIndex + 1,
+                                gridRow: slotIndex + 2,
+                                minWidth: 0,
+                              }}
+                            >
+                              {renderAgendaCards(cellItems)}
+                            </div>
+                          );
+                        }),
+                      )}
+                    </div>
+                  </div>
+                )}
+              </section>
 );
 })}
 </div>
@@ -945,9 +934,14 @@ export default function MemberAgendaPage() {
   );
 }
 
-const compactLocationHeadingStyle = {
-  fontSize: 12,
+const locationColumnHeadingStyle = {
   fontWeight: 700,
-  color: "#475569",
-  marginBottom: 6,
+  fontSize: 15,
+  color: "#22223b",
+  letterSpacing: 0.2,
+  borderBottom: "1px solid #e5e7eb",
+  paddingBottom: 6,
+  marginBottom: 10,
+  minWidth: 0,
+  overflowWrap: "anywhere" as const,
 };

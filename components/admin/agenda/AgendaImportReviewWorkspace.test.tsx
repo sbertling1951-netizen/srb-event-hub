@@ -92,7 +92,11 @@ function run(rows: AgendaImportRowResult[]): AgendaImportRunResult {
 
 function renderWorkspace(
   rows: AgendaImportRowResult[],
-  options: { status?: "staging" | "ready_for_review"; compact?: boolean } = {},
+  options: {
+    status?: "staging" | "ready_for_review";
+    compact?: boolean;
+    existingLocations?: { key: string; label: string }[];
+  } = {},
 ) {
   return renderToStaticMarkup(
     <AgendaImportReviewWorkspace
@@ -102,6 +106,7 @@ function renderWorkspace(
       committing={false}
       eventDateContext={EVENT_DATE_CONTEXT}
       categoryOptions={CATEGORY_OPTIONS}
+      existingLocations={options.existingLocations ?? []}
       onRowsChanged={noop}
       onCommit={noop}
       onFinalized={noop}
@@ -414,8 +419,8 @@ test("commit is offered only after staging is closed and remains confirmation-ga
     renderWorkspace([row()], { status: "ready_for_review" }),
     />Import Agenda \(1\)</,
   );
-  assert.match(SOURCE, /onClick=\{\(\) => setConfirmCommitOpen\(true\)\}/);
-  assert.match(SOURCE, /<ConfirmDialog[\s\S]*onConfirm=\{async \(\) =>/);
+  assert.match(SOURCE, /onClick=\{beginCommit\}/);
+  assert.match(SOURCE, /<ConfirmDialog[\s\S]*onConfirm=\{confirmCommit\}/);
 });
 
 test("ready review exposes the shared run-wide Skip bulk action and the row-level Delete Row action, both confirmation-gated", () => {
@@ -489,4 +494,130 @@ test("the Edit Row dialog itself is the sole editor, calls the governed correcti
   assert.match(dialogSource, /interpretAgendaCorrection/);
   assert.match(dialogSource, /getEffectiveAgendaImportCandidate/);
   assert.doesNotMatch(dialogSource, /supabase|\.rpc\(|\.from\(/);
+});
+
+// --- Event-specific location comparison: import typo advisory (browser-only) ---
+
+test("a staged location that is a likely typo of an existing Event location is visibly flagged with a resolution path", () => {
+  const html = renderWorkspace(
+    [row({ candidate: { ...row().candidate, location: "Main Hal" } })],
+    { existingLocations: [{ key: "main hall", label: "Main Hall" }] },
+  );
+  assert.match(html, /Possible location typo/);
+  assert.match(html, /Main Hall/);
+  // The resolution is the governed Edit Row correction, not an automatic merge.
+  assert.match(html, /Use Edit\s*Row to reuse an existing location or deliberately keep this name\./);
+});
+
+test("the typo advisory is advisory-only: it never changes the row's governed status badge", () => {
+  const html = renderWorkspace(
+    [row({ rowState: "approved", candidate: { ...row().candidate, location: "Main Hal" } })],
+    { existingLocations: [{ key: "main hall", label: "Main Hall" }] },
+  );
+  // Still Ready to Import -- the advisory does not downgrade validation/review.
+  assert.match(html, /Ready to Import/);
+});
+
+test("two staged rows whose locations are typos of each other flag each other, with no Event locations configured", () => {
+  const html = renderWorkspace([
+    row({ sourceRowNumber: 2, candidate: { ...row().candidate, location: "Auditorium" } }),
+    row({ sourceRowNumber: 3, candidate: { ...row().candidate, location: "Auditrium" } }),
+  ]);
+  assert.match(html, /Possible location typo/);
+});
+
+test("a genuinely distinct location raises no false typo flag", () => {
+  const html = renderWorkspace(
+    [row({ candidate: { ...row().candidate, location: "Auditorium" } })],
+    { existingLocations: [{ key: "main hall", label: "Main Hall" }] },
+  );
+  assert.doesNotMatch(html, /Possible location typo/);
+});
+
+test("a committed row is not re-flagged for a typo (advisory is a pre-import aid)", () => {
+  const html = renderWorkspace(
+    [
+      row({
+        rowState: "committed",
+        canonicalAgendaItemId: crypto.randomUUID(),
+        candidate: { ...row().candidate, location: "Main Hal" },
+      }),
+    ],
+    { existingLocations: [{ key: "main hall", label: "Main Hall" }] },
+  );
+  assert.doesNotMatch(html, /Possible location typo/);
+});
+
+test("the Edit Row correction uses the shared governed location picker, fed this Event's and the import's own locations", () => {
+  const dialogSource = readFileSync(
+    fileURLToPath(new URL("./AgendaEditRowDialog.tsx", import.meta.url)),
+    "utf8",
+  );
+  // The dialog's Location field is the searchable picker, not a bare Input.
+  assert.match(dialogSource, /<AgendaLocationPicker/);
+  assert.match(dialogSource, /options=\{locationOptions\}/);
+  // The workspace builds the picker's options from the Event's existing
+  // locations plus every staged row's own effective location, deduped by the
+  // shared comparison rules, and passes them into the dialog.
+  assert.match(SOURCE, /collectAgendaLocations\(\[/);
+  assert.match(SOURCE, /existingLocations\.map\(\(option\) => option\.label\)/);
+  assert.match(SOURCE, /getEffectiveAgendaImportCandidate\(row\)\.location/);
+  assert.match(SOURCE, /locationOptions=\{runLocationOptions\}/);
+});
+
+// --- Resolve import typo warnings before confirmation (Lun #2) ---
+
+test("an eligible row with an unresolved likely-duplicate location shows a pre-commit gate before Import runs", () => {
+  const html = renderWorkspace(
+    [row({ rowState: "approved", candidate: { ...row().candidate, location: "Main Hal" } })],
+    { status: "ready_for_review", existingLocations: [{ key: "main hall", label: "Main Hall" }] },
+  );
+  // The import is still offered, but a gate warns it will require a choice.
+  assert.match(html, />Import Agenda \(1\)</);
+  assert.match(html, /looks like a possible duplicate/);
+});
+
+test("no gate warning when the eligible row's location is genuinely distinct", () => {
+  const html = renderWorkspace(
+    [row({ rowState: "approved", candidate: { ...row().candidate, location: "Auditorium" } })],
+    { status: "ready_for_review", existingLocations: [{ key: "main hall", label: "Main Hall" }] },
+  );
+  assert.match(html, />Import Agenda \(1\)</);
+  assert.doesNotMatch(html, /looks like a possible duplicate/);
+});
+
+test("Import is gated behind an explicit reuse-or-keep choice, re-checked at confirmation, before invoking the governed commit", () => {
+  // The Import button routes through beginCommit, not straight to the confirm.
+  assert.match(SOURCE, /onClick=\{beginCommit\}/);
+  // beginCommit opens the resolution dialog when any eligible row is unresolved.
+  assert.match(SOURCE, /function beginCommit\(\) \{\s*\n\s*if \(unresolvedTypoRows\.length > 0\) \{\s*\n\s*setLocationWarningsOpen\(true\);/);
+  // confirmCommit re-checks at confirmation, not only at render.
+  assert.match(SOURCE, /function confirmCommit\(\) \{\s*\n\s*if \(unresolvedTypoRows\.length > 0\) \{\s*\n\s*setConfirmCommitOpen\(false\);\s*\n\s*setLocationWarningsOpen\(true\);/);
+  assert.match(SOURCE, /return Promise\.resolve\(onCommit\(\)\)/);
+});
+
+test("only commit-eligible rows gate, and a row's own appearance in the options is never treated as resolution", () => {
+  assert.match(SOURCE, /row\.rowState === "approved" \|\| row\.rowState === "commit_failed"/);
+  assert.match(SOURCE, /row\.abandonedAt === null/);
+  // Similarity excludes the row's own key (findSimilarLocations), so a row
+  // being in the options can never mark its own typo resolved.
+  assert.match(SOURCE, /findSimilarLocations\(\s*\n\s*getEffectiveAgendaImportCandidate\(row\)\.location,\s*\n\s*runLocationOptions,\s*\n\s*\)\.length > 0/);
+});
+
+test("Reuse goes through the governed Edit Row correction; Keep is a transient acknowledgment bound to Event/run/row/revision/location/options", () => {
+  // Reuse opens the same governed AgendaEditRowDialog and refreshes recovery.
+  assert.match(SOURCE, /Reuse existing \(Edit Row\)/);
+  assert.match(SOURCE, /setReuseEditRowId\(row\.rowId\)/);
+  assert.match(SOURCE, /<AgendaEditRowDialog[\s\S]*onSaved=\{async \(message, shouldClose\) => \{[\s\S]*await onRowsChanged\(message\)/);
+  // Keep records a transient in-memory ack signature bound to the exact facts.
+  assert.match(SOURCE, /function keepAckSignature\(row: AgendaImportRowResult\): string \{/);
+  assert.match(SOURCE, /run\.eventId,\s*\n\s*run\.runId,\s*\n\s*row\.rowId,\s*\n\s*row\.correctionRevision,\s*\n\s*location,\s*\n\s*optionsSignature,/);
+  assert.match(SOURCE, /function acknowledgeKeep\(row: AgendaImportRowResult\)/);
+});
+
+test("the keep acknowledgment is in-memory only -- never a persisted browser store", () => {
+  assert.match(SOURCE, /useState<ReadonlySet<string>>\(new Set\(\)\)/);
+  assert.doesNotMatch(SOURCE, /localStorage|sessionStorage|indexedDB/);
+  // No alternate writer / persistence is introduced for acknowledgments.
+  assert.doesNotMatch(SOURCE, /supabase/);
 });

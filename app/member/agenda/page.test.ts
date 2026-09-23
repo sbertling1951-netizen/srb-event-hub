@@ -98,9 +98,49 @@ test("Slice 1 leaves both copies of the Happening now / Upcoming status pills un
   assert.equal(upcomingPills.length, 2, "expected exactly two identical 'Upcoming' pill renderings");
 });
 
-test("Slice 1 leaves the Morton/Pioneer two-column layout and sticky slot headers untouched", () => {
-  assert.match(source, /Morton Building/);
-  assert.match(source, /Pioneer Building/);
-  assert.match(source, /position: "sticky",\s*\n\s*top: 0,\s*\n\s*zIndex: 5,/);
-  assert.match(source, /No scheduled items\./);
+test("the hard-coded Morton/Pioneer partitioning stays removed while dynamic time-slot rows are restored", () => {
+  assert.doesNotMatch(source, /Morton/i);
+  assert.doesNotMatch(source, /Pioneer/i);
+  assert.doesNotMatch(source, /No scheduled items\./);
+  // The shared chronological schedule rows are back (dynamic, not the old
+  // two-building matrix): distinct start times, unscheduled last.
+  assert.match(source, /const timeSlotKeys = Array\.from\(/);
+  assert.match(source, /item\.start_time \|\| "unscheduled"/);
+});
+
+test("location columns are derived from the group's published items via the shared grouping helper", () => {
+  assert.match(source, /import \{ groupItemsByLocation \} from "@\/lib\/agendaLocations";/);
+  assert.match(
+    source,
+    /const locationGroups = groupItemsByLocation\(\s*\n\s*group\.items,\s*\n\s*\(item\) => item\.location,\s*\n\s*\);/,
+  );
+  // A cell is one location at one time slot; empty cells render nothing so the
+  // grid position stays blank.
+  assert.match(source, /function cellItemsFor\(/);
+  assert.match(source, /\{renderAgendaCards\(cellItems\)\}/);
+  assert.match(source, /if \(cellItems\.length === 0\) \{\s*\n\s*return null;\s*\n\s*\}/);
+  // A blank location shows the shared "Location not specified." heading and
+  // each column carries a heading.
+  assert.match(source, /\{locationGroup\.label\}/);
+  assert.match(source, /const locationColumnHeadingStyle = \{/);
+});
+
+test("desktop shares chronological time-slot rows across dynamic location columns (equal-time items aligned); phones read in time order; many locations scroll without page overflow or wrapping", () => {
+  // Desktop: one explicit grid column per location, one grid row per time
+  // slot. Equal-time items share a row (aligned tops); empty cells preserved.
+  assert.match(
+    source,
+    /gridTemplateColumns: `repeat\(\$\{locationGroups\.length\}, minmax\(220px, 1fr\)\)`/,
+  );
+  assert.match(source, /gridColumn: colIndex \+ 1,\s*\n\s*gridRow: slotIndex \+ 2,/);
+  // Many locations scroll horizontally within this wrapper -- never an
+  // auto-fit grid (which wraps and destroys time alignment) or page overflow.
+  assert.match(source, /overflowX: "auto"/);
+  assert.doesNotMatch(source, /auto-fit/);
+  // Phones: time slot is the outer loop (chronological), location the inner
+  // loop, so a whole location's day is never stacked before an earlier item.
+  assert.match(
+    source,
+    /isCompact \? \(\s*\n[\s\S]*?\{timeSlotKeys\.map\(\(slot\) => \(\s*\n[\s\S]*?locationGroups\.map\(\(locationGroup\) => \{/,
+  );
 });
