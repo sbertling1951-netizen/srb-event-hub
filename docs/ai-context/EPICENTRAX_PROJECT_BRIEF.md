@@ -231,14 +231,16 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Event-specific Agenda locations — 2026-09-22 (Approved release; production verification pending)
+### Event-specific Agenda locations — 2026-09-22 (Deployed and verified; closeout pending)
 
 - **Product intent and approval:** Pap requested Event-specific agenda columns
   derived from item locations, with existing-location selection to prevent typo
   columns. Pap explicitly approved the reviewed changes, Brief reconciliation,
-  commits and one release after the production preflight below. Saint George's
-  requested location is **MAIN BUILDING**; its stored items have not been
-  inspected or corrected by this work. No event-specific name is hard-coded.
+  commits and one release after the production preflight below. Pap subsequently
+  clarified that he will edit Saint George's item locations himself; a separate
+  MAIN BUILDING data correction is no longer requested. Its stored items have
+  not been inspected or corrected by this work. No event-specific name is
+  hard-coded.
 - **Substantive code baseline:** `17aba3cfcb6018434af8b4c2e6412ffbe605e0d1`.
   Fresh origin/main was `67f4c85902d52aa7da7a543b26b48393c0f73020`.
   Mel verified all 25 cumulative recorded hashes, exactly twelve source/test
@@ -282,13 +284,29 @@ state override this subsection whenever they disagree, per the
   webhook online, no worker, lock free, three origin checks matched and 26 old
   assets captured. No production write, restart or database access in preflight.
   Package: `/private/tmp/epicentrax-agenda-locations-release-702le1n3/`.
-- **Release gate:** approved for one normal push/deployment after this record
-  is committed. Exact serving release, runtime verification and closeout remain
-  pending; do not infer them from local tests or this approved code baseline.
+- **Promotion:** release `b37f4d16564b724d620d7d4a39f6698e25bb8888` was
+  fast-forwarded through the clean isolated main checkout and pushed once under
+  Pap's approval. Remote main independently verified at that SHA. Release delta
+  is exactly the twelve reviewed source/test files and this Brief; the bound
+  verifier expects `a477094c0f786a3d59685b4fd019616b6b3221c5` as rollback.
+  No second deployment is requested and no live feature acceptance is claimed.
+- **Production verification (Pap-run):** matched to retained
+  `verification-20260923T044022Z.log`. Serving
+  `b37f4d16564b724d620d7d4a39f6698e25bb8888`, activated `2026-09-23T04:41:16Z`,
+  directory `/root/srb-event-hub-releases/20260923T043923Z-b37f4d16564b`,
+  app PID 4008015; rollback
+  `/root/srb-event-hub-releases/20260922T223403Z-a477094c0f78`.
+  Both domains passed origin/public HTML and 13 referenced assets, protected
+  system-status 401, signed-out profile 401 with neutral private/no-store body,
+  and all 26 old assets. Release-pointer, cleanup, candidate-port, worker and
+  pinned-config gates passed. Verifier stopped only the webhook and released
+  the lock; app stayed online. Documentation closeout is next, followed by
+  guarded webhook resume and PM2 save. These checks do not prove authenticated
+  location editing, live imports or physical-device acceptance.
 - **Separate pending work:** Admin Agenda's permanent Catalog/Templates column
-  still reserves blank space; no layout repair is bundled. Saint George's
-  MAIN BUILDING data correction remains unperformed and must use governed
-  controls after release. Physical-device and production acceptance remain
+  still reserves blank space; no layout repair is bundled. Saint George location
+  edits are Pap-owned through the existing editor; no agent data correction is
+  pending or included. Physical-device and production acceptance remain
   pending. Prior deferred Agenda wording, park-image changes and unproven
   reboot recovery are unchanged. No migration, dependency or database action.
 
@@ -1763,12 +1781,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-22T21:37:47-07:00`
+**Generated at:** `2026-09-22T21:42:31-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `17aba3c feat(agenda): use event locations with deliberate selection and aligned schedules`
-**Commit date:** `2026-09-22T21:37:11-07:00`
-**origin/main:** `67f4c85`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `b37f4d1 docs: record approved Agenda locations release`
+**Commit date:** `2026-09-22T21:38:10-07:00`
+**origin/main:** `b37f4d1`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
