@@ -231,7 +231,7 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Admin Agenda full-width schedule — 2026-09-23 (Approved release; production verification pending)
+### Admin Agenda full-width schedule — 2026-09-23 (Deployed and verified; closeout pending)
 
 - **Product intent and approval:** Pap requested removal of the wasted strip
   beside the Admin Agenda. The permanent Catalog/Templates column reserved
@@ -274,9 +274,25 @@ state override this subsection whenever they disagree, per the
   webhook online, no worker, lock free, three origins matched, 26 old assets
   captured. Remote inspection only; no restart or database access.
   Package: `/private/tmp/epicentrax-admin-agenda-width-release-xfhgm1j0/`.
-- **Release gate:** approved for one normal push/deployment after this record
-  is committed. Serving release, runtime verification, closeout and Pap's live
-  display acceptance remain pending; no second deployment is requested.
+- **Promotion:** release `ecf369611db36c5094eab19dc08bd8f0f30a527f` was
+  fast-forwarded through the clean isolated main checkout and pushed once under
+  Pap's approval. Remote main independently verified at that SHA. Release delta
+  is exactly the two reviewed Admin Agenda files and this Brief; bound verifier
+  expects `b37f4d16564b724d620d7d4a39f6698e25bb8888` as rollback. No second
+  deployment is requested; Pap's live display acceptance remains pending.
+- **Production verification (Pap-run):** matched to retained
+  `verification-20260923T134119Z.log`. Serving
+  `ecf369611db36c5094eab19dc08bd8f0f30a527f`, activated `2026-09-23T13:42:24Z`,
+  directory `/root/srb-event-hub-releases/20260923T134026Z-ecf369611db3`,
+  app PID 4018106; rollback
+  `/root/srb-event-hub-releases/20260923T043923Z-b37f4d16564b`.
+  Both domains passed origin/public HTML and 13 referenced assets, protected
+  system-status 401, signed-out profile 401 with neutral private/no-store body,
+  and all 26 old assets. Release-pointer, cleanup, candidate-port, worker and
+  pinned-config gates passed. Verifier stopped only the webhook and released
+  the lock; app stayed online. Documentation closeout is next, followed by
+  guarded webhook resume and PM2 save. These checks do not prove the
+  authenticated Admin layout or physical-device acceptance.
 - **Scope boundary:** Pap already accepted the preceding location release and
   edited Saint George's items to Main. No agent data correction is pending.
   Deferred Agenda wording, park-image changes and reboot recovery remain
@@ -1846,12 +1862,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-23T06:39:19-07:00`
+**Generated at:** `2026-09-23T06:43:39-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `aec41db fix(agenda): reclaim admin schedule width with template disclosure`
-**Commit date:** `2026-09-23T06:38:44-07:00`
-**origin/main:** `5fe3bd3`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `ecf3696 docs: record approved Admin Agenda width release`
+**Commit date:** `2026-09-23T06:39:43-07:00`
+**origin/main:** `ecf3696`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `1`
 **Staged:** `0`
