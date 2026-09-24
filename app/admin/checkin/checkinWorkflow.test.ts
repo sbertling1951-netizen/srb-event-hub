@@ -5,8 +5,10 @@ import {
   type CheckinBrowseAttendee,
   checkinServerFingerprint,
   filterCheckinBrowseAttendees,
+  isCheckinEligible,
   reconcileCheckinEditState,
   selectedAttendeeChangedRemotely,
+  selectEligibleCheckinAttendees,
   sortCheckinBrowseAttendees,
 } from "@/app/admin/checkin/checkinWorkflow";
 
@@ -14,6 +16,9 @@ function attendee(
   id: string,
   hasArrived: boolean,
   pilotLast: string,
+  eligibility: Partial<
+    Pick<CheckinBrowseAttendee, "is_active" | "registration_status">
+  > = {},
 ): CheckinBrowseAttendee {
   return {
     id,
@@ -27,6 +32,9 @@ function attendee(
     arrival_status: hasArrived ? "arrived" : "not_arrived",
     coach_make: null,
     coach_model: null,
+    is_active: true,
+    registration_status: "registered",
+    ...eligibility,
   };
 }
 
@@ -109,4 +117,142 @@ test("server fingerprint covers arrival and governed sharing state, but never pl
     checkinServerFingerprint({ ...row, has_arrived: true }, ["email", "phone"]),
   );
   assert.notEqual(initial, checkinServerFingerprint(row, ["email"]));
+});
+
+// --- Registration eligibility (Admin operational-summary rule) -------------
+
+test("the eligibility predicate is exactly the Admin operational-summary rule", () => {
+  // Eligible: active record, any non-cancelled status.
+  assert.equal(
+    isCheckinEligible({ is_active: true, registration_status: "registered" }),
+    true,
+  );
+  assert.equal(
+    isCheckinEligible({ is_active: true, registration_status: "active" }),
+    true,
+  );
+  // A non-cancelled status the Member roster's stricter allowlist would reject
+  // deliberately retains its existing Admin eligibility.
+  assert.equal(
+    isCheckinEligible({ is_active: true, registration_status: "waitlisted" }),
+    true,
+  );
+  assert.equal(
+    isCheckinEligible({ is_active: true, registration_status: null }),
+    true,
+  );
+
+  // Cancelled status is excluded even while the record is active.
+  assert.equal(
+    isCheckinEligible({ is_active: true, registration_status: "cancelled" }),
+    false,
+  );
+  // An inactive record is excluded whatever its status.
+  assert.equal(
+    isCheckinEligible({ is_active: false, registration_status: "registered" }),
+    false,
+  );
+  // Missing activity is excluded, never assumed active.
+  assert.equal(
+    isCheckinEligible({ is_active: null, registration_status: "registered" }),
+    false,
+  );
+  assert.equal(
+    isCheckinEligible({ is_active: undefined as unknown as null, registration_status: "registered" }),
+    false,
+  );
+});
+
+test("23 loaded registrations with one cancelled reduce to 22 eligible, and the cancelled record is the only one removed", () => {
+  const loaded = [
+    ...Array.from({ length: 22 }, (_, index) =>
+      attendee(`eligible-${index}`, false, `Name${String(index).padStart(2, "0")}`),
+    ),
+    attendee("cancelled-1", false, "Zulu", { registration_status: "cancelled" }),
+  ];
+  assert.equal(loaded.length, 23);
+
+  const eligible = selectEligibleCheckinAttendees(loaded);
+  assert.equal(eligible.length, 22);
+  assert.ok(!eligible.some((row) => row.id === "cancelled-1"));
+
+  // The waiting count operators read comes from the same reduction.
+  const waiting = filterCheckinBrowseAttendees(eligible, "", false);
+  assert.equal(waiting.length, 22);
+  assert.ok(!waiting.some((row) => row.id === "cancelled-1"));
+});
+
+test("neither search nor show-already-checked-in can surface a cancelled or inactive registration", () => {
+  const cancelled = attendee("cancelled-1", false, "Widmore", {
+    registration_status: "cancelled",
+  });
+  const inactive = attendee("inactive-1", false, "Wendell", { is_active: false });
+  const arrivedCancelled = attendee("cancelled-2", true, "Wyatt", {
+    registration_status: "cancelled",
+  });
+  const eligibleWaiting = attendee("eligible-1", false, "Waters");
+  const rows = [cancelled, inactive, arrivedCancelled, eligibleWaiting];
+
+  // Default browse.
+  assert.deepEqual(
+    filterCheckinBrowseAttendees(rows, "", false).map((row) => row.id),
+    ["eligible-1"],
+  );
+  // Show already checked-in must not reveal the arrived-but-cancelled record.
+  assert.deepEqual(
+    filterCheckinBrowseAttendees(rows, "", true).map((row) => row.id),
+    ["eligible-1"],
+  );
+  // Searching by name, by email, and by a shared prefix finds nothing ineligible.
+  for (const query of ["Widmore", "Wendell", "Wyatt", "cancelled-1@example.com", "W"]) {
+    const found = filterCheckinBrowseAttendees(rows, query, true);
+    assert.ok(
+      !found.some((row) => row.id.startsWith("cancelled") || row.id === "inactive-1"),
+      `query ${query} surfaced an ineligible registration`,
+    );
+  }
+  // An exact-id search for a cancelled record still yields nothing.
+  assert.equal(filterCheckinBrowseAttendees(rows, "Widmore", true).length, 0);
+});
+
+test("eligible checked-in records keep their existing reachability, and waiting-first ordering is unchanged", () => {
+  const rows = [
+    attendee("arrived-eligible", true, "Able"),
+    attendee("waiting-eligible", false, "Baker"),
+    attendee("arrived-cancelled", true, "Cutter", {
+      registration_status: "cancelled",
+    }),
+  ];
+
+  // Default browse hides arrived records but keeps the eligible waiting one.
+  assert.deepEqual(
+    filterCheckinBrowseAttendees(rows, "", false).map((row) => row.id),
+    ["waiting-eligible"],
+  );
+  // Show-arrived brings back only the eligible arrived record.
+  assert.deepEqual(
+    filterCheckinBrowseAttendees(rows, "", true).map((row) => row.id),
+    ["waiting-eligible", "arrived-eligible"],
+  );
+  // Search reaches the eligible arrived record, as before.
+  assert.deepEqual(
+    filterCheckinBrowseAttendees(rows, "Able", false).map((row) => row.id),
+    ["arrived-eligible"],
+  );
+});
+
+test("eligibility is applied without disturbing the eligible set's order or contents", () => {
+  const rows = [
+    attendee("b", false, "Bravo"),
+    attendee("x", false, "Xray", { is_active: false }),
+    attendee("a", false, "Alpha"),
+  ];
+  assert.deepEqual(
+    selectEligibleCheckinAttendees(rows).map((row) => row.id),
+    ["b", "a"],
+  );
+  assert.deepEqual(
+    sortCheckinBrowseAttendees(selectEligibleCheckinAttendees(rows)).map((row) => row.id),
+    ["a", "b"],
+  );
 });

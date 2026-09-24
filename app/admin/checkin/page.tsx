@@ -8,6 +8,7 @@ import {
   filterCheckinBrowseAttendees,
   reconcileCheckinEditState,
   selectedAttendeeChangedRemotely,
+  selectEligibleCheckinAttendees,
 } from "@/app/admin/checkin/checkinWorkflow";
 import { AdminReturnLink } from "@/components/admin/AdminReturnLink";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
@@ -46,6 +47,13 @@ import { supabase } from "@/lib/supabase";
 // Stage A). complete_admin_checkin no longer accepts or performs any
 // placement action -- these are the codes it, and the Event lifecycle guard
 // it now enforces, can actually return.
+// The write boundary rejects an ineligible target rather than mutating it.
+// This exact string is what classifyCheckinFailure matches on, so the message
+// and its classification cannot drift apart silently -- page.test.ts asserts
+// the pairing.
+const REGISTRATION_NOT_CURRENT_MESSAGE =
+  "This registration is no longer current -- it was cancelled or made inactive. The roster has been refreshed.";
+
 const CHECKIN_ERROR_MESSAGES: Record<string, string> = {
   unauthorized: "You do not have check-in authority for this event.",
   authorization_denied: "You do not have check-in authority for this event.",
@@ -54,6 +62,7 @@ const CHECKIN_ERROR_MESSAGES: Record<string, string> = {
   event_archived: "This Event is archived and can no longer be modified.",
   event_lifecycle_indeterminate:
     "This Event's lifecycle state could not be determined. Contact an administrator.",
+  registration_not_current: REGISTRATION_NOT_CURRENT_MESSAGE,
   unknown_share_field:
     "One of the sharing choices was not recognized. Please try again.",
 };
@@ -80,6 +89,8 @@ type AttendeeRow = {
   handicap_parking: boolean | null;
   volunteer: boolean | null;
   first_time: boolean | null;
+  is_active: boolean | null;
+  registration_status: string | null;
 };
 
 // The four attendee-chosen optional sharing fields, per the governed
@@ -169,6 +180,13 @@ function placementPresentation(attendee: {
 
 function classifyCheckinFailure(error: unknown): CheckinOperationFailure {
   const message = error instanceof Error ? error.message : "Check-In failed.";
+  // Checked first, and by exact mapped message rather than an incidental
+  // keyword: an ineligible registration is a state conflict, never a
+  // connectivity problem, so it must never reach the retryable fallthrough
+  // below. Retrying cannot change the stored registration.
+  if (message === REGISTRATION_NOT_CURRENT_MESSAGE) {
+    return { category: "conflict", message, retry: null };
+  }
   if (/archived|lifecycle/i.test(message)) {
     return { category: "lifecycle", message, retry: null };
   }
@@ -400,7 +418,9 @@ function AdminCheckinPageInner() {
   arrival_status,
   handicap_parking,
   volunteer:wants_to_volunteer,
-  first_time:is_first_timer
+  first_time:is_first_timer,
+  is_active,
+  registration_status
 `,
           )
           .eq("event_id", loadedEvent.id)
@@ -505,7 +525,16 @@ function AdminCheckinPageInner() {
       }
 
       if (!options.silent) {
-        showStatus(`Loaded ${attendeeList.length} attendees for check-in.`);
+        // The loaded count states what Check-In can actually act on, so it
+        // counts eligible registrations only. It is derived from the freshly
+        // loaded rows through the one approved helper -- not from `attendees`
+        // state, which this load has not committed yet, and not from a second
+        // copy of the predicate. Eligible registrations that have already
+        // arrived are included here; only the separate waiting count below
+        // excludes them, and neither search nor show-arrived affects this
+        // number.
+        const eligibleLoaded = selectEligibleCheckinAttendees(attendeeList);
+        showStatus(`Loaded ${eligibleLoaded.length} attendees for check-in.`);
       }
     } catch (err: any) {
       console.error("loadPage error:", err);
@@ -527,9 +556,18 @@ function AdminCheckinPageInner() {
     return map;
   }, [householdMembers]);
 
+  // Cancelled and inactive registrations stay loaded for nothing: every
+  // Check-In surface below reads this eligible set, never `attendees`, so a
+  // record excluded from browse can never be counted, searched, selected, or
+  // submitted. Admin Attendees keeps the full roster and its history.
+  const eligibleAttendees = useMemo(
+    () => selectEligibleCheckinAttendees(attendees),
+    [attendees],
+  );
+
   const filteredAttendees = useMemo(
     () =>
-      filterCheckinBrowseAttendees(attendees, search, showArrived, (attendee) =>
+      filterCheckinBrowseAttendees(eligibleAttendees, search, showArrived, (attendee) =>
         (householdByAttendee.get(attendee.id) || [])
           .map((member) =>
             [
@@ -544,17 +582,22 @@ function AdminCheckinPageInner() {
           )
           .join(" "),
       ),
-    [attendees, householdByAttendee, search, showArrived],
+    [eligibleAttendees, householdByAttendee, search, showArrived],
   );
 
+  // A selection cannot outlive eligibility: once a reload reveals the
+  // registration was cancelled or made inactive, it resolves to null and its
+  // action workspace disappears with it.
   const selectedAttendee = useMemo(
     () =>
-      attendees.find((attendee) => attendee.id === selectedAttendeeId) || null,
-    [attendees, selectedAttendeeId],
+      eligibleAttendees.find((attendee) => attendee.id === selectedAttendeeId) ||
+      null,
+    [eligibleAttendees, selectedAttendeeId],
   );
 
   function selectAttendee(attendeeId: string) {
-    const attendee = attendees.find((row) => row.id === attendeeId) || null;
+    const attendee =
+      eligibleAttendees.find((row) => row.id === attendeeId) || null;
     selectedAttendeeIdRef.current = attendeeId;
     selectedIsDirtyRef.current = false;
     selectedBaselineRef.current = attendee
@@ -849,6 +892,22 @@ function AdminCheckinPageInner() {
         retry: retryable ? { attendeeId: attendee.id, nextHasArrived } : null,
       });
       showError(`${failure.category}: ${failure.message}`);
+
+      // The write boundary refused because the stored registration is no
+      // longer current. Reload from the server and drop the stale selection so
+      // the record leaves the eligible set instead of staying actionable, then
+      // leave the operator on a browse list that matches the database.
+      // The reload is silent: a normal reload ends in showStatus(), which
+      // clears the error, and the operator must still be told why the
+      // check-in was refused.
+      if (failure.message === REGISTRATION_NOT_CURRENT_MESSAGE) {
+        selectedIsDirtyRef.current = false;
+        setSelectedIsDirty(false);
+        setSelectedConflict(null);
+        setSharingRetry(null);
+        closeSelectedAttendee();
+        await loadPage({ silent: true });
+      }
     } finally {
       setSavingId(null);
     }
@@ -886,7 +945,7 @@ function AdminCheckinPageInner() {
               <AppButton
                 variant="primary"
                 onClick={() => {
-                  const retryAttendee = attendees.find(
+                  const retryAttendee = eligibleAttendees.find(
                     (attendee) =>
                       attendee.id === operationFailure.retry?.attendeeId,
                   );

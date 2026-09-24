@@ -537,3 +537,152 @@ test("no workspace section, nav-model change, authority change, or data/filter/c
   // mutation entry point -- unchanged by this pass.
   assert.match(source, /complete_admin_checkin/);
 });
+
+// --- Registration eligibility ---------------------------------------------
+
+test("the attendee query selects both eligibility columns, and AttendeeRow carries them", () => {
+  const query = source.slice(
+    source.indexOf('.from("attendees")'),
+    source.indexOf('.eq("event_id", loadedEvent.id)'),
+  );
+  assert.match(query, /\n\s*is_active,/);
+  assert.match(query, /\n\s*registration_status\n/);
+  // Arrival state remains selected and distinct from eligibility.
+  assert.match(query, /\n\s*has_arrived,/);
+  assert.match(query, /\n\s*arrival_status,/);
+
+  const rowType = source.slice(
+    source.indexOf("type AttendeeRow = {"),
+    source.indexOf("type CheckinFailureCategory"),
+  );
+  assert.match(rowType, /is_active: boolean \| null;/);
+  assert.match(rowType, /registration_status: string \| null;/);
+});
+
+test("eligibility is reduced once, through the tested workflow helper, and no Check-In surface reads the raw loaded array", () => {
+  assert.match(source, /selectEligibleCheckinAttendees,?\n/);
+  assert.match(
+    source,
+    /const eligibleAttendees = useMemo\(\s*\n\s*\(\) => selectEligibleCheckinAttendees\(attendees\),\s*\n\s*\[attendees\],\s*\n\s*\);/,
+  );
+  // The page must not re-implement the predicate locally.
+  assert.doesNotMatch(source, /registration_status !== "cancelled"/);
+  assert.doesNotMatch(source, /is_active === true/);
+
+  // Every consumer reads the eligible set: browse/search, waiting counts,
+  // selected-record resolution, selection, and the retry lookup.
+  assert.match(
+    source,
+    /filterCheckinBrowseAttendees\(eligibleAttendees, search, showArrived,/,
+  );
+  assert.match(
+    source,
+    /eligibleAttendees\.find\(\(attendee\) => attendee\.id === selectedAttendeeId\)/,
+  );
+  assert.match(
+    source,
+    /const attendee =\s*\n\s*eligibleAttendees\.find\(\(row\) => row\.id === attendeeId\) \|\| null;/,
+  );
+  assert.match(source, /const retryAttendee = eligibleAttendees\.find\(/);
+  // No remaining lowercase `attendees.find(` / `attendees.length` read.
+  assert.doesNotMatch(source, /[^e]attendees\.find\(/);
+  assert.doesNotMatch(source, /[^e]attendees\.length/);
+});
+
+test("the waiting count describes the actual displayed set and never labels arrived results as waiting", () => {
+  // The "waiting to check in" wording is reachable only when neither a search
+  // term nor show-arrived is active -- exactly the state in which the browse
+  // list contains only eligible, not-yet-arrived registrations.
+  assert.match(
+    source,
+    /\{search\.trim\(\) \|\| showArrived\s*\n\s*\? `Showing \$\{filteredAttendees\.length\} matching attendee\$\{filteredAttendees\.length === 1 \? "" : "s"\}\.`\s*\n\s*: `\$\{filteredAttendees\.length\} attendee\$\{filteredAttendees\.length === 1 \? "" : "s"\} waiting to check in\.`\}/,
+  );
+  // Both branches count the displayed set, never the loaded roster.
+  assert.equal((source.match(/waiting to check in/g) || []).length, 1);
+});
+
+test("the distinct eligibility rejection is mapped to plain language through the one error map", () => {
+  assert.match(
+    source,
+    /const REGISTRATION_NOT_CURRENT_MESSAGE =\s*\n\s*"This registration is no longer current -- it was cancelled or made inactive\. The roster has been refreshed\.";/,
+  );
+  assert.match(source, /registration_not_current: REGISTRATION_NOT_CURRENT_MESSAGE,/);
+  // Mapping still flows through mapCheckinError, so the rejection code never
+  // reaches the operator raw.
+  assert.match(source, /CHECKIN_ERROR_MESSAGES\[raw\] \|\| raw \|\| fallback/);
+});
+
+test("the eligibility rejection is classified after message mapping, as a non-retryable conflict -- never connectivity", () => {
+  // Classification keys on the exact mapped message, checked before every
+  // other branch, so it cannot reach the retryable connectivity fallthrough.
+  assert.match(
+    source,
+    /function classifyCheckinFailure\(error: unknown\): CheckinOperationFailure \{\s*\n\s*const message = error instanceof Error \? error\.message : "Check-In failed\.";\s*\n(?:\s*\/\/.*\n)*\s*if \(message === REGISTRATION_NOT_CURRENT_MESSAGE\) \{\s*\n\s*return \{ category: "conflict", message, retry: null \};\s*\n\s*\}/,
+  );
+  // Retry remains offered for connectivity only, so a conflict gets no Retry.
+  assert.match(source, /const retryable = failure\.category === "connectivity";/);
+  assert.match(
+    source,
+    /retry: retryable \? \{ attendeeId: attendee\.id, nextHasArrived \} : null,/,
+  );
+});
+
+test("a rejected outcome cannot reach the sharing RPC, and the eligibility rejection clears the stale selection and refreshes", () => {
+  // The rejected-outcome throw precedes the sharing call in source order, so
+  // an ineligible target never reaches saveSharingPreferences.
+  const rejectedThrow = source.indexOf('checkinResult.outcome === "rejected"');
+  const sharingCall = source.indexOf("const sharingFailure = await saveSharingPreferences(");
+  assert.ok(rejectedThrow > 0 && sharingCall > rejectedThrow);
+  assert.match(
+    source,
+    /if \(!checkinResult \|\| checkinResult\.outcome === "rejected"\) \{\s*\n\s*throw new Error\(\s*\n\s*mapCheckinError\(\s*\n\s*new Error\(checkinResult\?\.rejection_code \|\| "unknown"\),/,
+  );
+
+  // Recovery: drop the stale actionable selection and reload from the server.
+  // The reload must be silent -- a non-silent loadPage ends in showStatus(),
+  // which calls setError(null) and would erase the explanation.
+  assert.match(source, /function showStatus\(message: string\) \{\s*\n\s*setError\(null\);/);
+  assert.match(
+    source,
+    /if \(failure\.message === REGISTRATION_NOT_CURRENT_MESSAGE\) \{\s*\n\s*selectedIsDirtyRef\.current = false;\s*\n\s*setSelectedIsDirty\(false\);\s*\n\s*setSelectedConflict\(null\);\s*\n\s*setSharingRetry\(null\);\s*\n\s*closeSelectedAttendee\(\);\s*\n\s*await loadPage\(\{ silent: true \}\);\s*\n\s*\}/,
+  );
+});
+
+test("Check-In still never writes registration status, activity, or cancellation metadata", () => {
+  const rpcArgs = source.slice(
+    source.indexOf('"complete_admin_checkin"'),
+    source.indexOf("if (checkinError)"),
+  );
+  for (const field of ["registration_status", "is_active", "cancelled_at", "cancelled_by"]) {
+    assert.ok(!rpcArgs.includes(field), `${field} must not be submitted by Check-In`);
+  }
+  // No direct table write to attendees anywhere on the page.
+  assert.doesNotMatch(source, /from\("attendees"\)\s*\n?\s*\.update\(/);
+});
+
+test("the load-status count reports eligible registrations, derived from the freshly loaded rows through the approved helper", () => {
+  // Derived from attendeeList (the rows this load just fetched), never from
+  // `attendees` state, which setAttendees has not necessarily flushed yet.
+  assert.match(
+    source,
+    /const eligibleLoaded = selectEligibleCheckinAttendees\(attendeeList\);\s*\n\s*showStatus\(`Loaded \$\{eligibleLoaded\.length\} attendees for check-in\.`\);/,
+  );
+  // The pre-correction form must be gone: no raw loaded-roster count.
+  assert.doesNotMatch(source, /Loaded \$\{attendeeList\.length\}/);
+  // No stored count state and no second copy of the predicate were introduced.
+  assert.doesNotMatch(source, /useState<number>|setLoadedCount|loadedCount/);
+  assert.equal(
+    (source.match(/selectEligibleCheckinAttendees\(/g) || []).length,
+    2,
+    "expected exactly two uses: the eligible set and the load-status count",
+  );
+  // The status line stays inside the silent guard, so the eligibility
+  // rejection's explanation still survives its silent refresh.
+  assert.match(
+    source,
+    /if \(!options\.silent\) \{\s*\n(?:\s*\/\/.*\n)*\s*const eligibleLoaded = selectEligibleCheckinAttendees\(attendeeList\);/,
+  );
+  // Loaded and waiting remain two different measures: waiting is the filtered
+  // browse set, loaded is every eligible registration including arrivals.
+  assert.match(source, /\$\{filteredAttendees\.length\} attendee\$\{filteredAttendees\.length === 1 \? "" : "s"\} waiting to check in\./);
+});

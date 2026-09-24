@@ -231,7 +231,50 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Member roster names and optional sharing — 2026-09-23 (Deployed; operational closeout and Pap acceptance pending)
+### Admin Check-In registration eligibility — 2026-09-24 (Reviewed locally; commit authorized, production release pending)
+
+- **Product scope:** cancelled/inactive registrations remain in the Admin
+  master/history roster but leave Check-In workload and cannot be checked in.
+  This seven-file repair uses the existing Admin operational-summary predicate:
+  `is_active IS TRUE AND registration_status IS DISTINCT FROM 'cancelled'`.
+  It does not substitute the Member roster's stricter status allowlist or
+  unify all roster surfaces. Broader attendee-list consolidation is deferred
+  until after Saint George. Check-In continues to own Arrival, not placement.
+- **Implementation and review:** client browse, selection and loaded counts
+  derive from eligible records. Migration `20261026000000` constrains the
+  governed UPDATE atomically; a concurrent cancellation produces the existing
+  structured rejection channel. The client treats `registration_not_current`
+  as non-retryable, clears stale selection and silently reloads while retaining
+  its explanation; no sharing save follows that rejection. Authority, Event
+  scope, lifecycle and parked-state behavior remain preserved. Lun passed the
+  database/concurrency review, then closed the remaining raw load-count P2
+  after the two-file correction. No blocking findings remain in review scope.
+- **Validation evidence:** Lun independently reproduced the cancellation race
+  with 4.02 seconds of blocking and rejection after cancellation committed,
+  plus a clean isolated 265-migration replay and rollback fixture. Final
+  focused suites pass 96/96 across six files and 86/86 across four files;
+  these are different selections. Count-correction browser probes pass 16/16
+  in each of Chromium/WebKit (before: 12/16); lint and diff checks pass.
+  Retained TypeScript output matches clean HEAD's 16 baseline errors. The
+  isolated build passed with type checking bypassed, not as type correctness
+  proof. Browser evidence uses synthetic fixtures and mocked boundaries.
+- **Counts and release boundary:** the test scenario has 23 total records,
+  22 eligible and two already arrived, leaving 20 waiting. These are not
+  Saint George counts. Pap reports Saint George has 22 waiting and zero
+  arrived; two registrations were manually entered, which does not establish
+  arrival. Pap authorized committing the reviewed repair; no push, production
+  migration or deployment is authorized by that commit instruction. Production
+  preflight, separate release approval and authenticated acceptance remain.
+  Candidate function-body MD5 is `d993d0d2f0c8076f02ed6417e33a3807`;
+  deployed catalog identity/body must be rechecked before any future apply.
+- **Evidence:** original repair `/private/tmp/epicentrax-checkin-eligibility-dBUql0/`,
+  correction `/private/tmp/epicentrax-checkin-loadcount-MFunqd/`, independent
+  reviews `/private/tmp/epicentrax-checkin-eligibility-independent-20260923/`
+  and `/private/tmp/epicentrax-checkin-loadcount-independent-20260924/`.
+  Mel verified current reviewed cohort hashes before this documentation
+  reconciliation; production state was not queried during commit preparation.
+
+### Member roster names and optional sharing — 2026-09-23 (Deployed; closeout and Pap roster acceptance complete)
 
 - **Substantive baseline and approval:**
   `ca335db141708c9ac22c3538e7783a8acf3dca7d`, parent `7389b70bb5af5ae562b4f8662905858bb35c4959`.
@@ -276,13 +319,15 @@ state override this subsection whenever they disagree, per the
   identity agrees. Both domains passed HTML and 13 assets each, protected
   system-status 401, signed-out account-profile 401 with neutral private/no-store
   response on origin/public paths, and all 26 captured old asset URLs.
-- **Closeout pending:** verifier paused only the webhook for documentation;
-  application remains online, worker absent, deployment lock free, candidate
-  port clear. No final webhook resume or PM2 save has been performed as of
-  this reconciliation. Mel is preparing this documentation-only update and
-  running `npm run context:update`; LEM is to commit/push it while the webhook
-  is still stopped, then run the already bound closeout script and report.
-  No second application deployment, startup-unit restart or reboot is required.
+- **Closeout completed (retained LEM report):** documentation-only commit
+  `706439db9333ae0cb753d30d4742e20ee8fb84c5` was pushed while the webhook
+  was stopped, without triggering another deployment. The bound closeout
+  resumed the webhook and saved PM2 with the app and webhook online; app PID
+  4025581 remained unchanged, no worker, lock free. Old dump retained at
+  `/root/pm2-closeout-backup-20260924T041928Z-wjj2q3jq`.
+  Serving code and controller stayed at `ca335db`; the documentation commit
+  was not deployed. No startup-unit restart or reboot; reboot recovery remains
+  unproven. These are retained closeout facts, not a fresh production check.
 - **Evidence and acceptance:**
   `/private/tmp/epicentrax-member-roster-exec-20260924T033821Z/` retains the
   execution anchor, migration/ledger/catalog evidence, promotion, verifier and
@@ -291,10 +336,13 @@ state override this subsection whenever they disagree, per the
   retained execution output, not a fresh production query by Mel. Earlier
   evidence remains in `epicentrax-member-roster-policy-lgW2Tm/` and
   `epicentrax-member-roster-release-preflight-20260924T031728Z/` under `/private/tmp`.
-  Pap must refresh the authenticated Saint George Member roster and verify
-  the names and permitted details. No production roster data was queried or
-  member impersonated; actual post-release counts and device acceptance remain
-  unverified. Already-open tabs require a refresh. Application rollback does
+  Pap subsequently confirmed 22 Member registrations versus 23 total Admin
+  registrations, with cancelled Widick correctly absent from the Member roster.
+  Pap clarified his own name appeared both before and after release; its
+  presence is not evidence of a newly fixed live symptom. This is Pap-reported
+  roster acceptance, not fresh optional-field privacy verification or an
+  agent-run production query. No member was impersonated. Already-open tabs
+  require a refresh. Application rollback does
   not undo this migration; reversing the database contract needs a separately
   approved forward migration. Map work and optional-consent import repair
   remain separate.
@@ -2108,16 +2156,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-23T21:14:57-07:00`
+**Generated at:** `2026-09-24T06:25:49-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `ca335db feat(member): separate roster names from optional sharing`
-**Commit date:** `2026-09-23T20:39:01-07:00`
-**origin/main:** `ca335db`
+**Commit:** `706439d docs: reconcile verified member roster release`
+**Commit date:** `2026-09-23T21:18:29-07:00`
+**origin/main:** `706439d`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `5`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `3`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
@@ -2196,14 +2244,14 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `264`
-- Latest migration: `20261025000000_separate_member_roster_from_optional_sharing.sql`
+- Total migration files: `265`
+- Latest migration: `20261026000000_enforce_admin_checkin_registration_eligibility.sql`
 - Latest five:
-  - `20261021000000_add_self_service_event_passport_refunded_confirmation_status.sql`
   - `20261022000000_create_super_admin_passport_refund_review.sql`
   - `20261023000000_repair_legacy_stored_area_template_parent_links.sql`
   - `20261024000000_retire_branson_legacy_duplicate_parking_site.sql`
   - `20261025000000_separate_member_roster_from_optional_sharing.sql`
+  - `20261026000000_enforce_admin_checkin_registration_eligibility.sql`
 
 ### Identity-audit inventory
 - SQL files: `14`
