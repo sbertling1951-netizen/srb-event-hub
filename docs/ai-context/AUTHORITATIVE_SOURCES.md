@@ -52,6 +52,14 @@ this index.
 
 ## Operational authority
 
+### Member roster and optional sharing
+
+`docs/architecture/EPICENTRAX_MEMBER_ROSTER_VISIBILITY.md` records Pap's
+accepted September 23, 2026 rule: current attendee registration names are
+visible within the authorized Event roster independently of optional
+sharing. It supersedes the Member Locator's former name-consent and
+reciprocity rules only; field privacy and Event-access boundaries remain.
+
 | Domain | Authoritative source |
 |---|---|
 | Agent development rules | `AGENTS.md` |

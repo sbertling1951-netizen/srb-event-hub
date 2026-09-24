@@ -231,7 +231,7 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Admin Agenda full-width schedule — 2026-09-23 (Deployed and verified; closeout pending)
+### Admin Agenda full-width schedule — 2026-09-23 (Deployed and closed out; live display acceptance pending)
 
 - **Product intent and approval:** Pap requested removal of the wasted strip
   beside the Admin Agenda. The permanent Catalog/Templates column reserved
@@ -290,9 +290,187 @@ state override this subsection whenever they disagree, per the
   system-status 401, signed-out profile 401 with neutral private/no-store body,
   and all 26 old assets. Release-pointer, cleanup, candidate-port, worker and
   pinned-config gates passed. Verifier stopped only the webhook and released
-  the lock; app stayed online. Documentation closeout is next, followed by
-  guarded webhook resume and PM2 save. These checks do not prove the
-  authenticated Admin layout or physical-device acceptance.
+  the lock; app stayed online. These checks do not prove the authenticated
+  Admin layout or physical-device acceptance.
+- **Closeout (Pap-run):** documentation-only commit
+  `7389b70bb5af5ae562b4f8662905858bb35c4959` was pushed while the webhook was
+  paused. Retained `closeout-20260923T134717Z.log` matches Pap's output:
+  webhook online, signing secret unchanged, unsigned POST 401, no worker,
+  app PID unchanged; PM2 saved app and webhook online with verified paths.
+  Old dump retained at `/root/pm2-closeout-backup-20260923T134719Z-m7pt1m8b`.
+  Startup paths/user/home verified; unit remains inactive. No startup-unit
+  restart or reboot occurred; reboot recovery remains unproven. Serving
+  release remains `ecf369611db36c5094eab19dc08bd8f0f30a527f`. Pap's refreshed
+  Admin Agenda display acceptance remains pending.
+- **Live screenshot and deferred app-wide layout requirement (Pap, 2026-09-23):**
+  Pap's refreshed Admin Agenda screenshot shows the full-width working pane
+  and collapsed Catalog/Templates disclosure. The upper page still consumes
+  almost an entire desktop screen with the shell header and stacked control
+  sections before the schedule. Pap explicitly deferred implementation and
+  requested that the app-wide layout model address this: consolidate at least
+  four control lines into one or two on desktop, reduce redundant headings and
+  oversized section spacing, and prioritize visible working content. Preserve
+  readable controls, keyboard access and responsive wrapping at narrow widths
+  or enlarged text. This is a future shared-layout requirement, not approval
+  for another page patch or current implementation/deployment. Screenshot:
+  `codex-clipboard-4049aedb-d90d-4fb0-9f4a-744010b7d9cd.png`.
+- **Deferred Agenda navigation simplification (Pap, same discussion):**
+  Pap identified disproportionate emphasis on Categories: a sidebar submenu,
+  Manage Categories in the upper controls, and an Agenda Workspace section
+  whose only link is Categories, while core item/template actions lack
+  equivalent navigation. Remove the redundant Agenda Workspace section in
+  the future cleanup; make items and their creation/editing the primary work,
+  with Categories a secondary destination rather than repeated controls.
+  Pap also reports substantial overlap between Import Agenda and Browse
+  Imports. Preferred direction: replace Browse Imports with a Templates
+  destination and remove the template section from the main Admin Agenda
+  page. Before implementation, reconcile the two import surfaces' actual
+  responsibilities so necessary import history/review/recovery remains
+  reachable through a consolidated import flow. These are deferred product
+  directions for the shared layout/navigation work. Pap confirmed this scope
+  and explicitly scheduled its consideration for after the Saint George event;
+  no implementation or deployment is requested before then. No route or
+  sidebar redesign has been implemented.
+- **Deferred Maps Workspace navigation styling (Pap, 2026-09-23):**
+  Pap also dislikes the generic Workspace label; preferred replacement:
+  "Maps Administration". Include this heading change in the same deferred
+  cleanup, without implying a change in permissions or destinations.
+  The Master Maps, Nearby, Nearby Settings and Locations controls in the
+  Maps Workspace card should use consistent navigation-button presentation
+  and adequate touch targets instead of plain underlined text links.
+  Preserve their destinations and native navigation-link behavior/accessibility;
+  this request concerns their visual treatment. Carry this into the same
+  post-Saint George app-wide layout cleanup; no application change or
+  deployment performed. Screenshot:
+  `codex-clipboard-c8153054-f6de-4445-bda2-8034efdf8c26.png`.
+- **Reported badge-name correction (Pap, 2026-09-23; not implemented):**
+  Print preview shows "None" in the large name line of one badge. Pap wants
+  that line blank, with its space and the remaining badge content preserved.
+  Source inspection of `app/admin/print/page.tsx` shows badge names consume
+  nickname/first-name text without filtering this placeholder; the screenshot
+  alone does not establish which stored field contains it. Scope a print-only
+  display correction for the exact placeholder, without changing stored Person
+  or attendee data, dropping the badge, moving the surname into that space,
+  or substituting Guest. This is distinct from deferred layout cleanup;
+  no code edit, agent dispatch or deployment has occurred. Screenshot:
+  `codex-clipboard-b80a38db-a25d-4b7b-9a38-eb63d0c6465f.png`.
+- **Member vendor carousel revocation defect (Pap, 2026-09-23; unresolved):**
+  Pap reports Confidential Couriers of SOCAL and EpicentraX QA Test Vendor
+  were revoked for Saint George but remain in the Member Dashboard carousel;
+  screenshots show both cards, including the QA vendor Sign Up action.
+  Mel's read-only source trace finds `app/member/page.tsx` loadVendors filters
+  Event, member visibility and canonical vendor activity but omits current
+  `event_vendors.admission_state`. The governed revoke function in
+  `20260814130000_create_vendor_admission_lifecycle_operations.sql` updates
+  admission_state to revoked, preserving the roster/history and vendor record.
+  `20260814120000_document_vendor_admission_participation_invariant.sql`
+  explicitly identifies admission_state as current participation authority.
+  This is a confirmed source-filter gap consistent with Pap's symptom, not
+  independent verification of these two production rows or which revoke UI
+  was used. Scope the carousel repair to admitted, visible Event vendors,
+  preserving canonical records, historical admissions, tenant/Event scope and
+  existing access controls. Check adjacent member vendor reads for the same
+  gap before setting a repair cohort. No production access, product edit,
+  agent dispatch or deployment performed; separate from deferred layout work.
+  Pap subsequently confirmed that manually setting the vendors inactive
+  removed them from the carousel and accepted this workaround for now.
+  Pap requests later that revocation automatically make the vendor inactive
+  as well. Mel's scope interpretation is inactive participation for the revoked
+  Event, automatically excluded from member displays; it must not silently
+  deactivate the canonical vendor across unrelated Events. Confirm scope with
+  Pap before any proposal to change global vendor activity. Repair is deferred;
+  no automation or data mutation is authorized by this note.
+- **Coach Map acceptance and deferred interaction review (Pap, 2026-09-23):**
+  Pap confirmed the Admin Coach Map opening-size preset works on the Member
+  map. Mobile zoom and pinch work; panning feels restricted by movement
+  boundaries. Pap's desktop screenshots show asymmetric visible-map positions
+  at reported full left/right pan; image margins versus movement-boundary
+  causes remain unproven. Desktop source supports double-click zoom-in and
+  Shift-double-click zoom-out; the Member page lacks visible plus/minus
+  controls. Pap reported desktop pinch difficulty, not independently reproduced.
+  Pap explicitly accepts this as good enough for Saint George and defers map
+  interaction work until after the event. Preserve working mobile gestures
+  and the current map asset; no repair or deployment is requested now.
+- **Deferred attendee-import wording cleanup (Pap, 2026-09-23):**
+  Pap found "Close Source Staging" and its confirmation unclear. After Saint
+  George, replace this technical wording with plain language explaining that
+  the operator is finished loading rows into this import batch, imported
+  attendees remain unchanged, unresolved rows remain reviewable, and later
+  imports are still possible. Exact replacement copy remains to be chosen;
+  preserve the existing close-staging lifecycle behavior. Pap explicitly
+  deferred the change until after the event; no application edit or deployment.
+- **Member roster policy correction (Pap, 2026-09-23; locally implemented,
+  not reviewed/promoted/deployed):** Pap explicitly approved names of all
+  current attendee registrations being visible to authorized members of the
+  same Event without optional-sharing participation or reciprocity. Email,
+  phone, campsite and coach details remain separately permission-controlled.
+  Attendance is not treated as a blanket privacy waiver. Governing decision:
+  `docs/architecture/EPICENTRAX_MEMBER_ROSTER_VISIBILITY.md`. Existing
+  Pilot-name/registration granularity is retained; no new household, member
+  number, city or address projection is introduced. The complete list includes
+  the viewer's own registration; inactive/cancelled targets remain excluded.
+  This approved policy supersedes the Locator's prior name-sharing gate.
+- **Local implementation and evidence (Mel):** forward migration
+  `20261025000000_separate_member_roster_from_optional_sharing.sql` replaces
+  only `get_event_attendee_locator`, preserving its signature, ACLs, governed
+  identity resolver, Event gates, and each optional-field SQL mask. The
+  resolved viewer must also have an active/registered attendee record in the
+  requested Event; the removed UI own-row gate is not used as authority. No table,
+  RLS, consent, history, import, identity or map-function mutation. Member
+  Attendee Locator removes its sharing lock and own-row exclusion, clears old
+  results on context changes/errors, and ignores late responses from a prior
+  context. Admin Check-In copy now explains that optional sharing does not
+  control roster membership/access. The separate map contract still consumes
+  name sharing and is unchanged under Pap's map-work deferral; the historical
+  anonymous `get_event_public_roster` was already retired by `20260816160000`
+  and is not recreated. This corrects the earlier diagnosis's stale reference
+  to that retired read function.
+- **Validation:** 131 focused source tests passed; changed-code ESLint clean;
+  diff check clean. Full TypeScript output is byte-identical to clean HEAD
+  (16 existing errors). All 264 migrations replayed successfully in an isolated
+  local Supabase project, with no reset of the existing local project. The
+  synthetic rollback fixture uses the real resolver and database roles:
+  a viewer sharing nothing sees 23 eligible registrations, including own row;
+  optional-field counts remain 11 email / 1 phone / 1 site / 1 coach. Absent
+  and false preferences mask all optional fields; cross-Event/Tenant,
+  unrelated account, anonymous, malformed/expired/revoked capability,
+  cancelled/inactive viewers, inactive Event/Tenant and revoked participation
+  checks pass. Preferences
+  and history remain byte-identical during reads. These are synthetic counts,
+  not a Saint George production reconciliation. Mounted page checks passed
+  12 scenarios across Chromium/WebKit with mocked external boundaries;
+  desktop/phone screenshots retained. Isolated webpack production build
+  succeeded with fixture-only environment values; the mirror alone disables
+  the build's type gate, which was independently compared above. No physical
+  device or live database evidence is claimed.
+- **Evidence and next gate:**
+  `/private/tmp/epicentrax-member-roster-policy-lgW2Tm/` contains baseline,
+  full replay, rollback-fixture, focused test, TypeScript comparison, build,
+  and browser evidence. Prepared locally under Pap's implementation approval;
+  independent review, production function/ledger preflight and release remain
+  outstanding. No commit, push, deployment, production access, optional-consent
+  backfill or external-agent dispatch. Current deployed baseline above remains
+  unchanged. Future import handling of optional consent is separate work.
+- **Saint George roster/locator discrepancy (Pap, 2026-09-23; production
+  cause and updated live count remain unverified):**
+  After the final roster import, Admin Saved Attendee List shows 23 records;
+  Member Attendee Locator shows 11 shared attendees and remains at 11 after
+  refresh. Admin reads all Event attendee records; locator reads governed
+  name-sharing preferences, active/registered eligibility, and excludes the
+  viewer in the UI. Counts are not inherently equal. Source trace identifies
+  a possible import integration gap: commit_attendee_import_run_row writes
+  the legacy share_with_attendees flag for new rows, but does not initialize
+  attendee_sharing_preferences; its existing-row branch does not update that
+  flag. The sharing foundation's legacy conversion is a one-time backfill,
+  not an ongoing import hook. Current production definitions and row-level
+  eligibility have not been inspected, so this is not proof of why exactly
+  11 appear. Next: a read-only, Event-scoped reconciliation of import target
+  IDs, row activity/registration status, recorded consent/history and locator
+  eligibility, separating explicit refusal from absent preferences and the
+  viewer exclusion. Do not bulk-enable sharing, rerun the roster or alter
+  data to force the counts to match. The subsequent approved policy and local
+  implementation above change name visibility without manufacturing consent.
+  No production read/write, external-agent dispatch or deployment performed.
 - **Scope boundary:** Pap already accepted the preceding location release and
   edited Saint George's items to Main. No agent data correction is pending.
   Deferred Agenda wording, park-image changes and reboot recovery remain
@@ -1862,16 +2040,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-23T06:43:39-07:00`
+**Generated at:** `2026-09-23T20:02:37-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `ecf3696 docs: record approved Admin Agenda width release`
-**Commit date:** `2026-09-23T06:39:43-07:00`
-**origin/main:** `ecf3696`
+**Commit:** `7389b70 docs: record verified Admin Agenda width deployment`
+**Commit date:** `2026-09-23T06:46:14-07:00`
+**origin/main:** `7389b70`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `5`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `4`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
@@ -1920,6 +2098,7 @@ _Git status above was captured before this script wrote this section; writing th
 - `EPICENTRAX_GOVERNED_PRODUCTION_REPAIR_PLAN.md`
 - `EPICENTRAX_INTELLIGENCE_COLLECTOR_ARCHITECTURE.md`
 - `EPICENTRAX_MEMBER_ASSIGNMENT_READ_BOUNDARY_ARCHITECTURE.md`
+- `EPICENTRAX_MEMBER_ROSTER_VISIBILITY.md`
 - `EPICENTRAX_NEARBY_KNOWLEDGE_AND_TENANT_CURATION_ARCHITECTURE.md`
 - `EPICENTRAX_OFFLINE_OPERATIONS_AND_SYNCHRONIZATION_ARCHITECTURE.md`
 - `EPICENTRAX_PARKING_REPAIR_PARTIAL_RECOVERY_ADDENDUM.md`
@@ -1949,14 +2128,14 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `263`
-- Latest migration: `20261024000000_retire_branson_legacy_duplicate_parking_site.sql`
+- Total migration files: `264`
+- Latest migration: `20261025000000_separate_member_roster_from_optional_sharing.sql`
 - Latest five:
-  - `20261020000000_fix_self_service_event_passport_refund_confirmation_column_ambiguity.sql`
   - `20261021000000_add_self_service_event_passport_refunded_confirmation_status.sql`
   - `20261022000000_create_super_admin_passport_refund_review.sql`
   - `20261023000000_repair_legacy_stored_area_template_parent_links.sql`
   - `20261024000000_retire_branson_legacy_duplicate_parking_site.sql`
+  - `20261025000000_separate_member_roster_from_optional_sharing.sql`
 
 ### Identity-audit inventory
 - SQL files: `14`

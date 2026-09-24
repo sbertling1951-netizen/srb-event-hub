@@ -5,10 +5,12 @@ import { fileURLToPath } from "node:url";
 
 const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
 
-test("participation gating is derived from the governed Locator result itself, never a separately-read legacy flag", () => {
-  assert.equal(/get_my_attendee_record/.test(source), false);
-  assert.equal(/share_with_attendees/.test(source), false);
-  assert.match(source, /rows\.some\(\(row\) => row\.id === attendeeId\)/);
+test("roster reads use governed identity arguments with no optional-sharing or own-row filter", () => {
+  assert.match(source, /memberIdentityRpcArgs\(session\)/);
+  assert.equal(/get_my_attendee_record|share_with_attendees|viewerParticipates|canViewLocator/.test(source), false);
+  assert.match(source, /setAttendees\(rows\)/);
+  assert.doesNotMatch(source, /rows\.filter|rows\.some/);
+  assert.match(source, /Loaded \$\{rows.length\} attendees/);
 });
 
 test("household members are not fetched or rendered on this surface", () => {
@@ -23,7 +25,7 @@ test("no operational/admin flag (first-timer, volunteer, handicap, arrival statu
   }
 });
 
-test("the Attendee type carries only the five governed sharing fields plus id", () => {
+test("the Attendee type carries roster names, four optional detail groups, and id", () => {
   const typeBlock = source.match(/type Attendee = \{[\s\S]*?\};/)?.[0];
   assert.ok(typeBlock, "expected the Attendee type declaration");
   for (const field of [
@@ -55,18 +57,19 @@ test("shared Alert/EmptyState/PageSection/Field/Input primitives are used, and t
   assert.match(source, /import \{ PageSection \} from "@\/components\/ui\/PageSection";/);
   assert.match(source, /\{status && !error \? <Alert tone="info">Status: \{status\}<\/Alert> : null\}/);
   assert.match(source, /\{error \? <Alert tone="danger">\{error\}<\/Alert> : null\}/);
-  assert.match(source, /<Alert tone="warning">/);
+  assert.doesNotMatch(source, /Attendee Locator is locked|choose to share their information/);
   assert.match(source, /<EmptyState message="No attendees found\." \/>/);
   assert.doesNotMatch(source, /<input\b/);
 });
 
-test("the query, its exact ordering, and the RPC-derived participation/lock gate are unchanged", () => {
-  assert.match(
-    source,
-    /supabase\s*\n\s*\.rpc\("get_event_attendee_locator", rpcArgs\)\s*\n\s*\.order\("pilot_last", \{ ascending: true, nullsFirst: false \}\)\s*\n\s*\.order\("pilot_first", \{ ascending: true, nullsFirst: false \}\);/,
-  );
-  assert.match(source, /const viewerParticipates = attendeeId\s*\n\s*\? rows\.some\(\(row\) => row\.id === attendeeId\)\s*\n\s*: rows\.length > 0;/);
-  assert.match(source, /if \(!viewerParticipates\) \{\s*\n\s*setCanViewLocator\(false\);/);
+test("the governed query ordering and cancellation guard prevent stale Event responses", () => {
+  assert.match(source, /\.rpc\("get_event_attendee_locator", rpcArgs\)/);
+  assert.match(source, /\.order\("pilot_last", \{ ascending: true, nullsFirst: false \}\)/);
+  assert.match(source, /\.order\("pilot_first", \{ ascending: true, nullsFirst: false \}\)/);
+  assert.match(source, /if \(cancelled\) \{\s*return;/);
+  assert.ok(source.indexOf("if (cancelled)") < source.indexOf("setAttendees(rows)"));
+  assert.match(source, /cancelled = true;/);
+  assert.match(source, /setAttendees\(\[\]\)/);
 });
 
 test("the search-matching logic across pilot/coach/site/email/phone is unchanged", () => {

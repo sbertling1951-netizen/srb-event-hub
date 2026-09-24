@@ -1238,8 +1238,8 @@ function AdminCheckinPageInner() {
                 </summary>
                 <div style={{ display: "grid", gap: "var(--space-3)", marginTop: "var(--space-3)" }}>
                   <p className="app-subtle-text" style={{ margin: 0 }}>
-                    Choose what other participating attendees can see. Name is
-                    required for participation.
+                    Attendee names appear in the event roster. Choose which
+                    additional details this attendee shares.
                   </p>
 
                   <div
@@ -1274,10 +1274,9 @@ function AdminCheckinPageInner() {
                   </div>
 
                   <p className="app-subtle-text" style={{ margin: 0 }}>
-                    Sharing lets this attendee see information that other
-                    participating attendees choose to share. Turning all sharing
-                    off removes their access to the attendee-sharing
-                    directory/locator.
+                    Turning these options off keeps those details private. It
+                    does not hide the attendee's name from the event roster or
+                    prevent them from viewing it.
                   </p>
                   {sharingRetry?.attendeeId === attendee.id ? (
                     <AppButton
