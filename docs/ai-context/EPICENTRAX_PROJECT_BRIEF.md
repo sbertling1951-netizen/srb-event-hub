@@ -231,6 +231,74 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Member roster names and optional sharing — 2026-09-23 (Deployed; operational closeout and Pap acceptance pending)
+
+- **Substantive baseline and approval:**
+  `ca335db141708c9ac22c3538e7783a8acf3dca7d`, parent `7389b70bb5af5ae562b4f8662905858bb35c4959`.
+  Pap approved the database migration, application release, verification and
+  documentation closeout. LEM committed exactly the nine reviewed files;
+  all committed blobs match the review anchor, all seven frozen hashes match,
+  and the stash is preserved. One fast-forward push triggered one webhook
+  deployment. No additional product change or manual deployment was bundled.
+- **Behavior and independent review:** current eligible Event registration
+  names, including the viewer's own registration, appear without optional
+  sharing participation. Existing Pilot-name granularity remains; email,
+  phone, campsite and coach fields remain separately masked in the database.
+  Event/Tenant access, governed identity and current viewer/target eligibility
+  remain enforced. Lun passed security, UI and release readiness with no
+  blocking findings, independently rerunning 12 Chromium/WebKit scenarios
+  and 13 focused tests. Retained implementation validation includes 131 tests,
+  full migration replay, real local rollback fixtures, unchanged 16 baseline
+  TypeScript errors and the disclosed isolated build type-gate bypass.
+- **Production migration verified:** only `20261025000000` was applied to
+  project `lastlzlewonsmwtolpvh` after the local commit and before the push.
+  Migration SHA256: `af569ee2190978c0b8adba8d742cb4b730f9b2f09e355b5caf87ac00bc85b564`.
+  Deployed locator body MD5 changed from `5d93d44be33ac743415658d66c5ff0e2`
+  to `ca336edd11a684364e751165a684dee4`, exactly matching the candidate.
+  Signature, security configuration, owner and ACL verified; resolver and
+  separate map definition unchanged; retired anonymous roster remains absent.
+  No consent backfill, attendee-data change, ledger repair, historical
+  reconciliation execution or production fixture execution occurred.
+- **Ledger reporting correction (Mel):** the raw retained CLI listings contain
+  264 local versions; remote versions increased from 263 to 264. Before apply,
+  only `20261025000000` was local-only; afterward no local-only or remote-only
+  versions remain. LEM's preflight/execution summaries incorrectly said 260
+  rows. Mel parsed both columns including numeric versions of all lengths;
+  the candidate application and zero-pending result are confirmed. Original
+  evidence remains preserved. The CLI's local pg-delta certificate/cache
+  warning was followed by independent ledger and deployed-body verification;
+  a successful CLI message alone was not used as proof.
+- **Deployment verified:** serving release
+  `/root/srb-event-hub-releases/20260924T034552Z-ca335db14170`, activated
+  `2026-09-24T03:47:40Z` (September 23 local), app PID 4025581, online.
+  Rollback is `/root/srb-event-hub-releases/20260923T134026Z-ecf369611db3`.
+  Live/pinned/next origins match `https://epicentrax.com`; database project
+  identity agrees. Both domains passed HTML and 13 assets each, protected
+  system-status 401, signed-out account-profile 401 with neutral private/no-store
+  response on origin/public paths, and all 26 captured old asset URLs.
+- **Closeout pending:** verifier paused only the webhook for documentation;
+  application remains online, worker absent, deployment lock free, candidate
+  port clear. No final webhook resume or PM2 save has been performed as of
+  this reconciliation. Mel is preparing this documentation-only update and
+  running `npm run context:update`; LEM is to commit/push it while the webhook
+  is still stopped, then run the already bound closeout script and report.
+  No second application deployment, startup-unit restart or reboot is required.
+- **Evidence and acceptance:**
+  `/private/tmp/epicentrax-member-roster-exec-20260924T033821Z/` retains the
+  execution anchor, migration/ledger/catalog evidence, promotion, verifier and
+  prepared closeout scripts. Mel verified evidence hashes and the live local
+  source against reviewed hashes; production claims above derive from LEM's
+  retained execution output, not a fresh production query by Mel. Earlier
+  evidence remains in `epicentrax-member-roster-policy-lgW2Tm/` and
+  `epicentrax-member-roster-release-preflight-20260924T031728Z/` under `/private/tmp`.
+  Pap must refresh the authenticated Saint George Member roster and verify
+  the names and permitted details. No production roster data was queried or
+  member impersonated; actual post-release counts and device acceptance remain
+  unverified. Already-open tabs require a refresh. Application rollback does
+  not undo this migration; reversing the database contract needs a separately
+  approved forward migration. Map work and optional-consent import repair
+  remain separate.
+
 ### Admin Agenda full-width schedule — 2026-09-23 (Deployed and closed out; live display acceptance pending)
 
 - **Product intent and approval:** Pap requested removal of the wasted strip
@@ -399,8 +467,9 @@ state override this subsection whenever they disagree, per the
   imports are still possible. Exact replacement copy remains to be chosen;
   preserve the existing close-staging lifecycle behavior. Pap explicitly
   deferred the change until after the event; no application edit or deployment.
-- **Member roster policy correction (Pap, 2026-09-23; locally implemented,
-  not reviewed/promoted/deployed):** Pap explicitly approved names of all
+- **Member roster policy correction (Pap, 2026-09-23; implemented and
+  deployed; current release/closeout state above):** Pap explicitly approved
+  names of all
   current attendee registrations being visible to authorized members of the
   same Event without optional-sharing participation or reciprocity. Email,
   phone, campsite and coach details remain separately permission-controlled.
@@ -441,36 +510,35 @@ state override this subsection whenever they disagree, per the
   12 scenarios across Chromium/WebKit with mocked external boundaries;
   desktop/phone screenshots retained. Isolated webpack production build
   succeeded with fixture-only environment values; the mirror alone disables
-  the build's type gate, which was independently compared above. No physical
-  device or live database evidence is claimed.
+  the build's type gate, which was independently compared above. These local
+  checks do not claim physical-device or production-data acceptance.
 - **Evidence and next gate:**
   `/private/tmp/epicentrax-member-roster-policy-lgW2Tm/` contains baseline,
   full replay, rollback-fixture, focused test, TypeScript comparison, build,
-  and browser evidence. Prepared locally under Pap's implementation approval;
-  independent review, production function/ledger preflight and release remain
-  outstanding. No commit, push, deployment, production access, optional-consent
-  backfill or external-agent dispatch. Current deployed baseline above remains
-  unchanged. Future import handling of optional consent is separate work.
+  and browser evidence. This paragraph records the original local validation;
+  independent review, production catalog/ledger preflight and release have since
+  completed as recorded in the Member roster deployment section above. No
+  optional-consent backfill was performed. Future import handling of optional
+  consent is separate work.
 - **Saint George roster/locator discrepancy (Pap, 2026-09-23; production
   cause and updated live count remain unverified):**
-  After the final roster import, Admin Saved Attendee List shows 23 records;
-  Member Attendee Locator shows 11 shared attendees and remains at 11 after
-  refresh. Admin reads all Event attendee records; locator reads governed
-  name-sharing preferences, active/registered eligibility, and excludes the
-  viewer in the UI. Counts are not inherently equal. Source trace identifies
+  Before the policy release, Pap reported 23 Admin Saved Attendee List records
+  and 11 Member shared attendees, unchanged after refresh. The old locator used
+  governed name-sharing preferences, active/registered eligibility and excluded
+  the viewer in the UI; the new release removes name-sharing and own-row filters.
+  Counts are not inherently equal. Source trace identifies
   a possible import integration gap: commit_attendee_import_run_row writes
   the legacy share_with_attendees flag for new rows, but does not initialize
   attendee_sharing_preferences; its existing-row branch does not update that
   flag. The sharing foundation's legacy conversion is a one-time backfill,
-  not an ongoing import hook. Current production definitions and row-level
-  eligibility have not been inspected, so this is not proof of why exactly
-  11 appear. Next: a read-only, Event-scoped reconciliation of import target
-  IDs, row activity/registration status, recorded consent/history and locator
-  eligibility, separating explicit refusal from absent preferences and the
-  viewer exclusion. Do not bulk-enable sharing, rerun the roster or alter
-  data to force the counts to match. The subsequent approved policy and local
-  implementation above change name visibility without manufacturing consent.
-  No production read/write, external-agent dispatch or deployment performed.
+  not an ongoing import hook. Production locator/resolver definitions were
+  subsequently verified, but no production row-level eligibility or consent
+  data was queried, so the exact original 23/11 breakdown remains unproven.
+  Next is Pap's refreshed acceptance of the approved roster policy. Investigate
+  residual discrepancies only if needed; distinguish eligibility from optional
+  sharing and never bulk-enable sharing or rerun imports to force matching
+  counts. The deployed policy changes name visibility without manufacturing
+  consent. Optional-sharing import handling remains separate work.
 - **Scope boundary:** Pap already accepted the preceding location release and
   edited Saint George's items to Main. No agent data correction is pending.
   Deferred Agenda wording, park-image changes and reboot recovery remain
@@ -2040,16 +2108,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-23T20:02:37-07:00`
+**Generated at:** `2026-09-23T21:14:57-07:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `7389b70 docs: record verified Admin Agenda width deployment`
-**Commit date:** `2026-09-23T06:46:14-07:00`
-**origin/main:** `7389b70`
+**Commit:** `ca335db feat(member): separate roster names from optional sharing`
+**Commit date:** `2026-09-23T20:39:01-07:00`
+**origin/main:** `ca335db`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `5`
+**Tracked modified:** `1`
 **Staged:** `0`
-**Untracked:** `4`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
