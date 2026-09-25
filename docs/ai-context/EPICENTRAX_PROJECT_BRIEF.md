@@ -231,16 +231,18 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Map nudging, member markers and image replacement — 2026-09-25 (Reviewed locally; commit/preflight authorized, release pending)
+### Map nudging, member markers and image replacement — 2026-09-25 (Deployed and verified; documentation promotion/closeout pending)
 
 - **Scope and state:** Pap approved three bounded repairs: pending/saved marker
   nudging and selection in the Master Map Editor; readable Member Coach Map
   markers; and the Replace Image upload destination. Eight product/test files
-  are reviewed and uncommitted, with this separately reconciled Brief forming
-  the ninth commit file. No migration, dependency, storage-policy, deployment
-  script or webhook change is included. Last verified serving product remains
-  `7c4514f6`; the preceding operational closeout is recorded below. This
-  reconciliation made no production connection.
+  and this Brief were committed as `1a8a5043562a1df5bd3c823734f73ca7f4a22bb2`,
+  parent `6d38c9367b0f103ba40479610ea2074676bca2fe`; all nine blobs match
+  Mel's reviewed manifest. Pap separately approved one push/deployment,
+  verification and webhook pause. No migration, dependency, storage-policy,
+  deployment-script or webhook source change is included. The release is now
+  serving; operational details and outstanding closeout are recorded below.
+  Mel reconciled retained evidence without a fresh production connection.
 - **Editor:** pending pad/keyboard nudges change local percentage coordinates
   only, bounded to 0–100; Save persists the final coordinates. Saved-marker
   mouse selection no longer also invokes empty-map placement. Pending work
@@ -265,8 +267,18 @@ state override this subsection whenever they disagree, per the
   New Map, with a new `<mapId>/replacement-<timestamp>-<name>` object and
   `upsert: false`. Draft-only checks and the revision-guarded
   `set_master_map_image` RPC remain intact. No marker, publication, parking
-  or Event-selection behavior changes. Actual production storage-policy
-  compatibility remains unverified; mocked success is not a live upload.
+  or Event-selection behavior changes. Read-only preflight confirms the bucket
+  exists and the replacement path is permitted by its current INSERT policy.
+  At 21:27Z the bucket was public, with null bucket-level size/MIME limits.
+  The prepared PNG is 3,642,695 bytes. The project-wide upload limit and actual
+  authenticated upload remain unverified; policy/settings compatibility is
+  not proof of successful storage-service behavior.
+- **Open security finding:** retained storage DDL shows bucket-only SELECT,
+  INSERT, UPDATE and DELETE policies with no role restriction, plus grants to
+  anon. Anonymous write permission is a confirmed configuration defect; no
+  unauthorized activity or successful anonymous API mutation was demonstrated.
+  This pre-existing issue was not changed by the release. A separate governed
+  repair must restrict writes while preserving public map viewing.
 - **Independent review:** Lun reports no blocking finding for all three repairs.
   Fresh rebuilt mounted-browser runs pass A 32/32 and B 49/49 in each of
   Chromium and WebKit; C independently passed 10/10 in each browser earlier.
@@ -291,15 +303,40 @@ state override this subsection whenever they disagree, per the
   draft background through the governed UI, verify marker count/alignment,
   then publish and test the phone. Do not recreate markers or assume the
   crash/minimum-zoom complaint resolved. Reassess zoom after actual replacement.
-- **Next gate:** commit the exact reviewed cohort and prepare a read-only
-  production release preflight. No push, deployment, image upload, publication
-  or PM2 action is authorized by this checkpoint. Pap separately decides the
-  release; documentation promotion and operational closeout remain separate.
+- **Deployment verification:** execution `map-combined-20260925T213003Z`
+  made one normal fast-forward push and one deployment, exactly 20 to 21
+  release directories. Retained independent state at 21:35:01Z records serving
+  `1a8a5043` in `/root/srb-event-hub-releases/20260925T213044Z-1a8a5043562a`,
+  app PID 4071842 online with zero restarts, and rollback rotated to
+  `20260925T063402Z-7c4514f6b2c5` (`7c4514f6`). Live, pinned and next-deployment
+  configurations agree on project `lastlzlewonsmwtolpvh` and origin
+  `https://epicentrax.com`. Both domains pass the established verifier,
+  account-profile 401 with neutral body/private-no-store, and system-status
+  401 at origin/public paths. All 52 new/retained asset checks passed; both
+  map routes' own 14-asset inventories also passed on both domains. Route-shell
+  200s prove reachability only, not authenticated behavior or device acceptance.
+- **Paused closeout boundary:** step 5 checksummed the staged tool against the
+  reviewed `c74aad50...366a` value, captured this execution's baseline from the
+  running webhook before stopping it, and paused only the webhook. Its digest
+  prefix agrees with prior retained baselines, which were untouched. The app
+  stayed online; port 9000 is not listening; no worker is running and the lock
+  is free. PM2 is not saved (dump remains 13:23:54Z). No migration, image upload,
+  publication, parking sync, rollback, startup-unit restart or reboot occurred.
+- **Next gate:** Pap's separate authorization is required to commit/push Mel's
+  exact reconciled Brief while the webhook remains paused, then execute the
+  reviewed step 6 under the same execution ID to resume/verify the webhook and
+  preserve/save/validate PM2. Do not repeat release steps 0–5. Live image
+  replacement/publication and iPhone acceptance remain separate outstanding
+  operations; WebKit authoring, pan/zoom and reboot recovery limitations remain.
 - **Evidence:** `/private/tmp/epicentrax-map-nudge-coach-repair-CEaA1d/`,
   `/private/tmp/epicentrax-mastermap-replace-image-sCojjY/`,
   `/private/tmp/epicentrax-lun-review-fresh/`,
   `/private/tmp/epicentrax-lun-complete-acrVdR/`, and
   `/private/tmp/epicentrax-lun-browser-complete-NGPU1u/`.
+  Release preflight: `/private/tmp/epicentrax-map-combined-release-preflight-wnwyyZ/`;
+  storage settings: `/private/tmp/epicentrax-map-storage-settings-Y3dMwI/`;
+  execution: `/private/tmp/epicentrax-map-combined-release-exec-PSZ5BE/`, including
+  `EXECUTION-RECORD.md` and `logs/paused-state.log`.
 
 ### Master Map Editor marker sizing — 2026-09-25 (Deployed and closed out; sizing accepted, follow-up repairs above)
 
@@ -2396,16 +2433,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-25T14:48:15-06:00`
+**Generated at:** `2026-09-25T15:36:34-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `6d38c93 docs: reconcile verified master map marker release`
-**Commit date:** `2026-09-25T07:19:59-06:00`
-**origin/main:** `6d38c93`
+**Commit:** `1a8a504 fix(maps): repair nudging, member markers and image replacement`
+**Commit date:** `2026-09-25T15:17:48-06:00`
+**origin/main:** `1a8a504`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `8`
+**Tracked modified:** `1`
 **Staged:** `0`
-**Untracked:** `1`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
