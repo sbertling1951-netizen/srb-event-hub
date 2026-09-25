@@ -231,7 +231,77 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Master Map Editor marker sizing — 2026-09-25 (Deployed; webhook paused, closeout and desktop acceptance pending)
+### Map nudging, member markers and image replacement — 2026-09-25 (Reviewed locally; commit/preflight authorized, release pending)
+
+- **Scope and state:** Pap approved three bounded repairs: pending/saved marker
+  nudging and selection in the Master Map Editor; readable Member Coach Map
+  markers; and the Replace Image upload destination. Eight product/test files
+  are reviewed and uncommitted, with this separately reconciled Brief forming
+  the ninth commit file. No migration, dependency, storage-policy, deployment
+  script or webhook change is included. Last verified serving product remains
+  `7c4514f6`; the preceding operational closeout is recorded below. This
+  reconciliation made no production connection.
+- **Editor:** pending pad/keyboard nudges change local percentage coordinates
+  only, bounded to 0–100; Save persists the final coordinates. Saved-marker
+  mouse selection no longer also invokes empty-map placement. Pending work
+  blocks saved-marker selection until Save or Cancel; Cancel/Escape discard
+  only the pending work. Editable-field arrows retain text behavior, and
+  selection/Update/Save Position no longer steal nudge focus. Existing saved
+  movement RPCs, drag, rectangle/Shift selection, undo and deliberate empty-map
+  placement are preserved. Pap's exact intermittent disabled saved-pad sequence
+  remains unconfirmed; the reproduced causes and tested paths are repaired.
+  Shared WebKit touch-authoring changes remain deferred.
+- **Member Coach Map:** presentation uses the existing authoritative geometry
+  and scale callbacks. Overview targets are about 16 CSS pixels for dots and
+  11 for labels, with bounded zoom growth of 14–28 and 11–16 respectively.
+  Labels sit below centered dots and hide/reappear according to screen-space
+  collisions. Marker sizes feed hit testing. No coordinates or display
+  settings are persisted; navigation, Event access and optional-field masking
+  remain unchanged. Dense dots can overlap at the minimum visual size; Lun's
+  adjacent-center tests remained independently selectable. This is not a
+  universal touch-target or physical-device guarantee. Opening/navigation
+  zoom and pre-existing Ctrl+wheel snapback are outside this repair.
+- **Replace Image:** upload and public URL now use `master-map-images`, matching
+  New Map, with a new `<mapId>/replacement-<timestamp>-<name>` object and
+  `upsert: false`. Draft-only checks and the revision-guarded
+  `set_master_map_image` RPC remain intact. No marker, publication, parking
+  or Event-selection behavior changes. Actual production storage-policy
+  compatibility remains unverified; mocked success is not a live upload.
+- **Independent review:** Lun reports no blocking finding for all three repairs.
+  Fresh rebuilt mounted-browser runs pass A 32/32 and B 49/49 in each of
+  Chromium and WebKit; C independently passed 10/10 in each browser earlier.
+  Lun corrected the earlier claim that A/B harnesses were unavailable and used
+  the existing Playwright runtime without a dependency installation. Tests
+  use synthetic data and mocked external boundaries. LEM's combined focused
+  selection passed 193/193; retained TypeScript output matches clean HEAD's
+  16 errors. The isolated build passed with type checking bypassed, not as
+  type-correctness proof. Lun separately confirmed the unrelated canonical-only
+  admin-cache test fails identically on working source and clean HEAD (20/21,
+  actual undefined versus expected 'u1'); it is not folded into this repair.
+- **Live map incident and asset:** Pap reports an iPhone 16 Pro Max on iOS 27.0
+  repeatedly fails on `/coach-map/public` shortly after loading, before any
+  interaction. The supplied Temple View PNG and Master Maps screenshot show
+  15683 × 20284 pixels (about 318 megapixels). Memory pressure is a hypothesis,
+  not a device-log diagnosis. A proportional, uncropped 3167 × 4096 PNG was
+  prepared at `/private/tmp/Temple View Park Map-4096.png`, SHA256
+  `5bcf171b0f3971cdff1e6860bceb7936e589da604afb259906fef99d63e90eb2`;
+  the original is preserved. Both displayed published/draft maps have 271
+  markers. The attempted replacement failed with "Bucket not found", so the
+  smaller background is not established as live. After release, replace the
+  draft background through the governed UI, verify marker count/alignment,
+  then publish and test the phone. Do not recreate markers or assume the
+  crash/minimum-zoom complaint resolved. Reassess zoom after actual replacement.
+- **Next gate:** commit the exact reviewed cohort and prepare a read-only
+  production release preflight. No push, deployment, image upload, publication
+  or PM2 action is authorized by this checkpoint. Pap separately decides the
+  release; documentation promotion and operational closeout remain separate.
+- **Evidence:** `/private/tmp/epicentrax-map-nudge-coach-repair-CEaA1d/`,
+  `/private/tmp/epicentrax-mastermap-replace-image-sCojjY/`,
+  `/private/tmp/epicentrax-lun-review-fresh/`,
+  `/private/tmp/epicentrax-lun-complete-acrVdR/`, and
+  `/private/tmp/epicentrax-lun-browser-complete-NGPU1u/`.
+
+### Master Map Editor marker sizing — 2026-09-25 (Deployed and closed out; sizing accepted, follow-up repairs above)
 
 - **Intent and scope:** Pap reported unreadably small authoring markers on
   high-resolution maps and requested proportional zoom sizing plus a Marker
@@ -264,7 +334,8 @@ state override this subsection whenever they disagree, per the
   not prove every continuous threshold value. Very crowded labels can remain
   hidden and 32 CSS-pixel targets are not universal. Coincident coordinates
   retain topmost-click selection and rectangle selection of both markers.
-  The real user map's natural resolution remains unverified.
+  At this release's review the real image resolution was unverified; Pap's
+  later supplied image confirms 15683 × 20284, recorded above.
 - **Deferred touch defect:** WebKit touchscreen marker selection fails on
   both clean HEAD and the repair while the plain control synthesizes clicks;
   Chromium touch passes. This is recorded as pre-existing application behavior,
@@ -293,7 +364,8 @@ state override this subsection whenever they disagree, per the
   inventories are identical, not proof of the editor change; a supplementary
   check also verified 14 assets referenced by `/admin/master-maps` on both
   domains. Route-shell 200s establish reachability only. Pap's authenticated
-  desktop map-authoring acceptance remains outstanding.
+  desktop sizing was subsequently accepted: markers and the sizing control
+  work for him. His nudge complaint is tracked in the follow-up repair above.
 - **Pause and closeout boundary:** the first step-5 invocation was blocked
   before execution by LEM's permission layer. After permission was granted,
   step 5 ran once under the same execution ID
@@ -302,20 +374,38 @@ state override this subsection whenever they disagree, per the
   fingerprint was captured from the running webhook before stopping it; the
   prior release's baseline was preserved. At 13:15:34Z the independent check
   recorded webhook stopped, port 9000 not listening, app PID/release unchanged,
-  20 release directories, no worker and a free lock. PM2 was not saved; its
-  dump still dates to 02:48:49Z and predates this release. Documentation
-  commit/push while paused and step 6 (resume, verify, save PM2) require the
-  separately agreed closeout authorization. Do not repeat the product push.
-  Startup-unit restart and reboot remain unperformed; reboot recovery is
-  unproven. This checkpoint does not claim operational closeout is complete.
+  20 release directories, no worker and a free lock. PM2 remained unsaved at
+  that pause, with its prior 02:48:49Z dump preserved until closeout.
+- **Authorized documentation promotion and operational closeout:** Pap
+  separately approved both. Documentation commit
+  `6d38c9367b0f103ba40479610ea2074676bca2fe` contains only the reviewed Brief.
+  A permission-layer block prevented the first push attempt from executing;
+  after permission was granted, one normal push promoted it while the webhook
+  remained stopped. Local HEAD and remote main are `6d38c936`; serving code
+  and the server checkout remain `7c4514f6`, as intended. No new deployment
+  occurred. Step 6 passed once under the existing execution ID using the
+  original pre-stop baseline and checksum-verified tool. It preserved the old
+  dump at `/root/pm2-closeout-backup-20260925T132352Z-my6oa5pt/dump.pm2.before`,
+  verified unsigned webhook POST rejection with 401 and secret continuity by
+  digest, resumed the webhook, and saved/validated PM2 at 13:23:54Z. The saved
+  dump contains exactly the app and webhook, online with expected paths.
+  Final retained verification at 13:24:53Z records app PID 4052970 with zero
+  restarts, webhook PID 4060722 online and port 9000 listening, unchanged
+  serving/rollback releases, 20 release directories, no worker and a free
+  lock. Both domains' home pages return 200 at origin and publicly. No
+  database access, migration, startup-unit restart or reboot occurred;
+  `pm2-root` remains enabled/inactive and reboot recovery remains unproven.
+  Operational closeout is complete. Pap subsequently accepted marker sizing;
+  broader authoring issues are tracked in the follow-up repair above.
 - **Evidence:** latest correction
   `/private/tmp/epicentrax-mastermap-zoomlabels-QPCB1D/`; independent review
   `/private/tmp/epicentrax-mastermap-zoomlabels-independent-20260924/`.
   Release preflight:
   `/private/tmp/epicentrax-mastermap-release-preflight-75CEnw/`.
-  Execution and pause:
+  Execution, pause and closeout:
   `/private/tmp/epicentrax-mastermap-release-exec-O8Oyzr/`, including
-  `EXECUTION-RECORD.md`, its step-5 addendum, logs and execution-scoped receipts.
+  `EXECUTION-RECORD.md`, its final addendum, `logs/60-closeout.log`,
+  `logs/final-closeout-state.log` and execution-scoped receipts.
   Earlier evidence and the single push's attempt/completion markers remain
   preserved. Mel reconciled retained runtime evidence and local Git; this
   documentation-only reconciliation made no fresh production connection.
@@ -2306,16 +2396,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-25T07:18:03-06:00`
+**Generated at:** `2026-09-25T14:48:15-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `7c4514f fix(master-maps): make editor markers readable across resolutions`
-**Commit date:** `2026-09-25T00:18:11-06:00`
-**origin/main:** `7c4514f`
+**Commit:** `6d38c93 docs: reconcile verified master map marker release`
+**Commit date:** `2026-09-25T07:19:59-06:00`
+**origin/main:** `6d38c93`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `8`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `1`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records

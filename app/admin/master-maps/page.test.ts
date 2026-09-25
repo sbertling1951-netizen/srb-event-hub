@@ -191,3 +191,57 @@ test("no raw <button> remains for the page's own primary actions -- Save, Create
   assert.equal(/<button\s*\n/.test(PAGE_SOURCE), false);
   assert.equal(/<button type="button"/.test(PAGE_SOURCE), false);
 });
+
+// ── Replace Image destination ───────────────────────────────────────────────
+// Replacement uploads failed live with "Bucket not found": it used a
+// "master-maps" bucket while New Map uses the established
+// "master-map-images" bucket. Behaviour (call order, arguments, failure
+// handling) is additionally proven in a mounted browser check.
+
+const NEW_MAP_SOURCE = readFileSync(
+  fileURLToPath(new URL("./new/page.tsx", import.meta.url)),
+  "utf8",
+);
+const replaceHandler = PAGE_SOURCE.slice(
+  PAGE_SOURCE.indexOf("async function handleReplaceMapImage(map: MasterMapRow)"),
+  PAGE_SOURCE.indexOf("\n  }\n", PAGE_SOURCE.indexOf("async function handleReplaceMapImage(map: MasterMapRow)")),
+);
+
+test("Replace Image uploads to, and builds its URL from, the SAME bucket New Map uses", () => {
+  assert.match(PAGE_SOURCE, /const MASTER_MAP_IMAGE_BUCKET = "master-map-images";/);
+  assert.equal((NEW_MAP_SOURCE.match(/\.from\("master-map-images"\)/g) || []).length, 2, "New Map's established bucket");
+  assert.equal((replaceHandler.match(/\.from\(MASTER_MAP_IMAGE_BUCKET\)/g) || []).length, 2, "upload + getPublicUrl");
+  assert.match(replaceHandler, /\.from\(MASTER_MAP_IMAGE_BUCKET\)\s*\n\s*\.upload\(filePath, file,/);
+  assert.match(replaceHandler, /\.from\(MASTER_MAP_IMAGE_BUCKET\)\s*\n\s*\.getPublicUrl\(filePath\)/);
+  assert.equal(/"master-maps"/.test(PAGE_SOURCE), false, "the non-existent bucket is gone");
+});
+
+test("the replacement object is unique, under the map's own folder, and never overwrites", () => {
+  assert.match(replaceHandler, /const filePath = `\$\{map\.id\}\/replacement-\$\{Date\.now\(\)\}-\$\{safeName\}`;/);
+  assert.match(replaceHandler, /upsert: false,/);
+  // New Map's original lives at `${id}/base-map.png`; a replacement name can never equal it
+  assert.match(NEW_MAP_SOURCE, /const path = `\$\{createdRow\.id\}\/base-map\.png`;/);
+});
+
+test("upload failure stops before the governed RPC; success passes path, URL and expected revision", () => {
+  const uploadFail = replaceHandler.indexOf("if (uploadError) {");
+  const rpc = replaceHandler.indexOf('supabase.rpc("set_master_map_image"');
+  assert.ok(uploadFail > 0 && rpc > uploadFail, "the upload-error return precedes the RPC");
+  assert.match(
+    replaceHandler.slice(uploadFail, replaceHandler.indexOf("return;", uploadFail) + "return;".length),
+    /setStatus\(`Could not upload replacement image: \$\{uploadError\.message\}`\);\s*\n\s*return;/,
+  );
+  assert.match(
+    replaceHandler,
+    /\.rpc\("set_master_map_image", \{\s*\n\s*p_map_id: map\.id,\s*\n\s*p_expected_revision: map\.revision,\s*\n\s*p_map_image_path: filePath,\s*\n\s*p_map_image_url: publicUrl,/,
+  );
+});
+
+test("published maps stay blocked, and replacement never touches markers or parking", () => {
+  const guard = replaceHandler.indexOf('if (map.status !== "draft") {');
+  assert.ok(guard > 0 && guard < replaceHandler.indexOf(".upload("), "draft-only guard precedes any upload");
+  assert.equal(
+    /apply_master_map_marker_changes|sync_master_map_parking_inventory_to_event|master_map_sites|parking_sites/.test(replaceHandler),
+    false,
+  );
+});

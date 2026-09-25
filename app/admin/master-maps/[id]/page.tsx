@@ -144,6 +144,8 @@ const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
   const primarySelectedSiteIdRef = useRef<string | null>(null);
   const readOnlyMarkersRef = useRef(false);
   const selectedSiteIdsRef = useRef<string[]>([]);
+  const pendingMarkerRef = useRef<MapPercentPoint | null>(null);
+  const isSavingMarkerRef = useRef(false);
 
   // ── Page state ──────────────────────────────────────────────────────────────
   const [isMobile, setIsMobile] = useState(false);
@@ -224,6 +226,36 @@ const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
     selectedSiteIdsRef.current = selectedSiteIds;
   }, [selectedSiteIds]);
 
+  useEffect(() => {
+    pendingMarkerRef.current = pendingMarker;
+  }, [pendingMarker]);
+
+  useEffect(() => {
+    isSavingMarkerRef.current = isSavingMarker;
+  }, [isSavingMarker]);
+
+  // One nudge route for the pad and the arrow keys. A pending (unsaved)
+  // marker moves LOCALLY only -- clamped, never persisted until Save New /
+  // Save + Next, and never added to the saved-marker undo stack. Otherwise
+  // the engine nudges the saved selection, which persists through
+  // onMarkersChange exactly as before.
+  const nudgeTarget = useCallback((dxPct: number, dyPct: number) => {
+    if (pendingMarkerRef.current) {
+      if (isSavingMarkerRef.current) {
+        return;
+      }
+      // Same 0-100 clamp and 2-decimal rounding as the engine's saved nudge.
+      const clampPct = (v: number) => Math.round(clampPercent(v) * 100) / 100;
+      setPendingMarker((p) =>
+        p
+          ? { xPct: clampPct(p.xPct + dxPct), yPct: clampPct(p.yPct + dyPct) }
+          : p,
+      );
+      return;
+    }
+    mapRef.current?.nudgeSelected(dxPct, dyPct);
+  }, []);
+
   const primarySelectedSite = useMemo(
     () => sites.find((s) => s.id === primarySelectedSiteId) ?? null,
     [sites, primarySelectedSiteId],
@@ -236,10 +268,23 @@ const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
 
   // For the property panel coordinate display: show editX/editY while the
   // primary marker has unsaved positional edits, otherwise show persisted coords.
-  const displayX =
-    editX !== null ? editX : (primarySelectedSite?.map_x ?? null);
-  const displayY =
-    editY !== null ? editY : (primarySelectedSite?.map_y ?? null);
+  // A pending marker, when present, is the nudge target, so its local
+  // coordinates are what the Position pad shows.
+  const displayX = pendingMarker
+    ? pendingMarker.xPct
+    : editX !== null
+      ? editX
+      : (primarySelectedSite?.map_x ?? null);
+  const displayY = pendingMarker
+    ? pendingMarker.yPct
+    : editY !== null
+      ? editY
+      : (primarySelectedSite?.map_y ?? null);
+
+  const nudgePadDisabled =
+    readOnlyMarkers ||
+    loading ||
+    (pendingMarker ? isSavingMarker : !primarySelectedSiteId);
 
   // markers array for MapCanvas — includes live editX/editY for the primary
   // marker so the dot moves on the map during nudging before persistence.
@@ -515,13 +560,22 @@ const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
   function handleMarkerTap(id: string) {
     console.log("MARKER TAP", id);
     console.log("SELECTED BEFORE TAP", selectedSiteIdsRef.current);
+    // Selection was refused by handleSelectionChange while a marker is
+    // pending; leave the pending coordinates and entered number untouched.
+    if (pendingMarker) {
+      return;
+    }
     const site = sites.find((s) => s.id === id);
     if (!site) {
       return;
     }
 
-    // Cancel any in-progress placement
-    setPendingMarker(null);
+    // Selecting on the map moves keyboard work to the map: a site-number
+    // input left focused from earlier typing would otherwise swallow the
+    // arrow-key nudges for the marker just selected.
+    if (document.activeElement === siteNumberRef.current) {
+      siteNumberRef.current?.blur();
+    }
 
     // Populate property panel for the tapped marker.
     // Selection state (selectedSiteIds, primarySelectedSiteId) is set by
@@ -535,6 +589,17 @@ const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
 
   // onSelectionChange: MapCanvas reports rectangle-drag or shift-click results.
   function handleSelectionChange(sel: Selection) {
+    // A pending marker blocks selecting saved markers: it is never silently
+    // saved or discarded by a selection attempt. Save or Cancel resolves it.
+    if (pendingMarker) {
+      if (sel.selectedIds.length > 0) {
+        setStatus(
+          "Save or Cancel the pending marker before selecting a saved marker.",
+        );
+      }
+      return;
+    }
+
     setSelectedSiteIds(sel.selectedIds);
     setPrimarySelectedSiteId(sel.primaryId);
 
@@ -555,9 +620,6 @@ const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
         `Selected ${sel.selectedIds.length} marker${sel.selectedIds.length === 1 ? "" : "s"}.`,
       );
     }
-
-    // Cancel any pending placement when a drag-select completes
-    setPendingMarker(null);
   }
 
   // onMarkersChange: fires after nudge / align / distribute / undo from the engine.
@@ -686,6 +748,14 @@ const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
     }
   }
 
+  // The one explicit way to abandon a pending marker (Cancel button and
+  // Escape). It never touches saved markers.
+  const cancelPendingMarker = useCallback(() => {
+    setPendingMarker(null);
+    setSiteNumber("");
+    setStatus("Pending marker canceled.");
+  }, []);
+
   async function saveNewMarker() {
     await saveNewMarkerInternal(false);
   }
@@ -736,8 +806,9 @@ const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
       return;
     }
 
+    // No focus return on success: the input would swallow the next
+    // arrow-key nudge (validation failures above still focus it to fix).
     setStatus("Marker updated.");
-    focusSiteNumber();
   }
 
   // Explicit "Save Position" — persists editX/editY for the selected marker.
@@ -765,8 +836,8 @@ const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
       return;
     }
 
+    // No focus return: a positional action keeps arrow-key nudging live.
     setStatus("Position saved.");
-    focusSiteNumber();
   }
 
   const deleteSelectedMarker = useCallback(async () => {
@@ -1175,9 +1246,7 @@ const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
       if (e.key === "Escape") {
         if (pendingMarker) {
           e.preventDefault();
-          setPendingMarker(null);
-          setSiteNumber("");
-          setStatus("Pending marker canceled.");
+          cancelPendingMarker();
         }
         return;
       }
@@ -1194,27 +1263,28 @@ const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
         return;
       }
 
-      // Arrow nudge
+      // Arrow nudge (outside editable fields -- guarded above): the pending
+      // marker if one exists, otherwise the saved selection.
       const step = e.altKey ? 0.01 : e.shiftKey ? 0.25 : 0.05;
 
       if (e.key === "ArrowLeft") {
         e.preventDefault();
-        mapRef.current?.nudgeSelected(-step, 0);
+        nudgeTarget(-step, 0);
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        mapRef.current?.nudgeSelected(step, 0);
+        nudgeTarget(step, 0);
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        mapRef.current?.nudgeSelected(0, -step);
+        nudgeTarget(0, -step);
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
-        mapRef.current?.nudgeSelected(0, step);
+        nudgeTarget(0, step);
       }
     }
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [deleteSelectedMarker, pendingMarker]);
+  }, [cancelPendingMarker, deleteSelectedMarker, nudgeTarget, pendingMarker]);
 
   // ─── renderMarker ─────────────────────────────────────────────────────────
   // MapCanvas calls this for every visible marker. Receives the marker and
@@ -1810,6 +1880,16 @@ const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
                 Save + Next
               </button>
               <button
+                type="button"
+                disabled={
+                  readOnlyMarkers || loading || isSavingMarker || !pendingMarker
+                }
+                onClick={cancelPendingMarker}
+                style={{ flex: 1 }}
+              >
+                Cancel
+              </button>
+              <button
                 disabled={
                   readOnlyMarkers ||
                   loading ||
@@ -1967,7 +2047,9 @@ const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
               </div>
             </div>
 
-            {/* Position nudge pad */}
+            {/* Position nudge pad: moves the pending marker locally when one
+                exists, otherwise the saved selection. Save Pos stays
+                saved-marker only. */}
             <div
               style={{
                 border: "1px solid #eee",
@@ -1990,19 +2072,15 @@ const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
               >
                 <div />
                 <button
-                  disabled={
-                    readOnlyMarkers || loading || !primarySelectedSiteId
-                  }
-                  onClick={() => mapRef.current?.nudgeSelected(0, -0.05)}
+                  disabled={nudgePadDisabled}
+                  onClick={() => nudgeTarget(0, -0.05)}
                 >
                   ↑
                 </button>
                 <div />
                 <button
-                  disabled={
-                    readOnlyMarkers || loading || !primarySelectedSiteId
-                  }
-                  onClick={() => mapRef.current?.nudgeSelected(-0.05, 0)}
+                  disabled={nudgePadDisabled}
+                  onClick={() => nudgeTarget(-0.05, 0)}
                 >
                   ←
                 </button>
@@ -2015,19 +2093,15 @@ const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
                   Save Pos
                 </button>
                 <button
-                  disabled={
-                    readOnlyMarkers || loading || !primarySelectedSiteId
-                  }
-                  onClick={() => mapRef.current?.nudgeSelected(0.05, 0)}
+                  disabled={nudgePadDisabled}
+                  onClick={() => nudgeTarget(0.05, 0)}
                 >
                   →
                 </button>
                 <div />
                 <button
-                  disabled={
-                    readOnlyMarkers || loading || !primarySelectedSiteId
-                  }
-                  onClick={() => mapRef.current?.nudgeSelected(0, 0.05)}
+                  disabled={nudgePadDisabled}
+                  onClick={() => nudgeTarget(0, 0.05)}
                 >
                   ↓
                 </button>

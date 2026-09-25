@@ -221,3 +221,86 @@ test("the repair touches no shared map component or shared sizing rule", () => {
   assert.equal(/resolveDensityAwareMarkerSize/.test(PAGE_SOURCE), false);
   assert.equal(/MarkerDot|MarkerLabelChip/.test(PAGE_SOURCE), false);
 });
+
+// ── Nudge and selection repair ──────────────────────────────────────────────
+// Behaviour is proven in mounted Chromium/WebKit probes; these guard the
+// source-level contracts that made the old defects possible.
+
+const bodyOf = (signature: string) => {
+  const start = PAGE_SOURCE.indexOf(signature);
+  assert.ok(start >= 0, `${signature} must exist`);
+  // ends at the function's own closing brace (plain function or useCallback)
+  const closes = ["\n  }\n", "\n  }, ["]
+    .map((c) => PAGE_SOURCE.indexOf(c, start + signature.length))
+    .filter((i) => i > 0);
+  return PAGE_SOURCE.slice(start, Math.min(...closes));
+};
+
+test("pad and arrow keys share ONE nudge route; a pending marker moves locally only", () => {
+  const route = bodyOf("const nudgeTarget = useCallback(");
+  const pendingBranch = route.slice(0, route.indexOf("mapRef.current?.nudgeSelected"));
+  assert.match(pendingBranch, /if \(pendingMarkerRef\.current\)/);
+  assert.match(pendingBranch, /setPendingMarker\(/);
+  assert.match(pendingBranch, /clampPercent\(/);
+  // the pending branch never writes, never touches saved markers or undo
+  assert.equal(/applyMarkerChanges|\.rpc\(|nudgeSelected|onMarkersChange/.test(pendingBranch), false);
+  // every nudge entry point goes through the route
+  assert.equal((PAGE_SOURCE.match(/nudgeTarget\(/g) || []).length, 8, "4 arrow keys + 4 pad buttons");
+  assert.equal((PAGE_SOURCE.match(/nudgeSelected\(/g) || []).length, 1, "only the route calls the engine");
+});
+
+test("the nudge pad is enabled for a pending marker as well as a saved selection", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /const nudgePadDisabled =\s*\n\s*readOnlyMarkers \|\|\s*\n\s*loading \|\|\s*\n\s*\(pendingMarker \? isSavingMarker : !primarySelectedSiteId\);/,
+  );
+  assert.equal((PAGE_SOURCE.match(/disabled=\{nudgePadDisabled\}/g) || []).length, 4);
+});
+
+test("arrow keys stay text-editing keys inside editable fields", () => {
+  const handler = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("function handleKeyDown(e: KeyboardEvent)"));
+  const guard = handler.indexOf('tag === "input" || tag === "textarea" || target?.isContentEditable');
+  assert.ok(guard > 0 && guard < handler.indexOf("nudgeTarget("), "the editable-field guard precedes every nudge");
+});
+
+test("a pending marker blocks saved-marker selection without saving or discarding it", () => {
+  const onSelect = bodyOf("function handleSelectionChange(sel: Selection)");
+  const guard = onSelect.slice(0, onSelect.indexOf("setSelectedSiteIds("));
+  assert.match(guard, /if \(pendingMarker\) \{/);
+  assert.match(guard, /Save or Cancel the pending marker/);
+  assert.match(guard, /return;/);
+  // the handler never clears or saves the pending marker, and the refusal path
+  // leaves the entered number alone (setSiteNumber runs only for a real selection)
+  assert.equal(/setPendingMarker\(null\)|saveNewMarkerInternal/.test(onSelect), false);
+  assert.equal(/setSiteNumber/.test(guard), false);
+  const onTap = bodyOf("function handleMarkerTap(id: string)");
+  assert.match(onTap.slice(0, onTap.indexOf("sites.find")), /if \(pendingMarker\) \{\s*\n\s*return;/);
+  assert.equal(/setPendingMarker\(null\)/.test(onTap), false);
+});
+
+test("Cancel is the explicit way out of a pending marker, shared with Escape", () => {
+  const cancel = bodyOf("const cancelPendingMarker = useCallback(");
+  assert.match(cancel, /setPendingMarker\(null\)/);
+  assert.equal(/applyMarkerChanges|\.rpc\(/.test(cancel), false, "Cancel never writes");
+  assert.match(PAGE_SOURCE, /onClick=\{cancelPendingMarker\}/);
+  assert.match(PAGE_SOURCE, /if \(pendingMarker\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*cancelPendingMarker\(\);/);
+});
+
+test("Save Position and a successful Update do not return focus to the site-number input", () => {
+  assert.equal(/focusSiteNumber\(\)/.test(bodyOf("async function saveSelectedPosition()")), false);
+  const update = bodyOf("async function updateSelectedMarker()");
+  const afterWrite = update.slice(update.indexOf("await applyMarkerChanges("));
+  assert.equal(/focusSiteNumber\(\)/.test(afterWrite), false);
+});
+
+test("selecting a saved marker on the map releases a focused site-number input", () => {
+  const onTap = bodyOf("function handleMarkerTap(id: string)");
+  assert.match(onTap, /document\.activeElement === siteNumberRef\.current/);
+  assert.match(onTap, /siteNumberRef\.current\?\.blur\(\)/);
+});
+
+test("deliberate empty-map placement keeps its save-and-continue behaviour", () => {
+  const onMapTap = bodyOf("async function handleMapTap(pt: MapPercentPoint)");
+  assert.match(onMapTap, /if \(pendingMarker && siteNumber\.trim\(\)\) \{\s*\n\s*await saveNewMarkerInternal\(true\);/);
+  assert.match(onMapTap, /setPendingMarker\(\{ xPct: pt\.xPct, yPct: pt\.yPct \}\)/);
+});

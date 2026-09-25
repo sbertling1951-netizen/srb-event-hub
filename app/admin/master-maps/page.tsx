@@ -25,6 +25,10 @@ import {
 import { canAccessEvent } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
+/** The established master-map image bucket (the one New Map uploads to).
+ *  Replacement must upload to, and build its public URL from, this bucket. */
+const MASTER_MAP_IMAGE_BUCKET = "master-map-images";
+
 // Pure, presentation-only classification of this page's own existing
 // `status` confirmation/guidance text into an Alert tone -- never a second
 // source of any message itself (every setStatus call site is unchanged).
@@ -517,11 +521,14 @@ function MasterMapsPageInner() {
       setReplacingImageMapId(map.id);
       setStatus(`Uploading replacement image for ${map.name}...`);
 
+      // Same bucket and `<mapId>/...` object layout as New Map
+      // (app/admin/master-maps/new/page.tsx), under a unique name so the
+      // original image object is never overwritten (upsert: false).
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
-      const filePath = `master-maps/${map.id}-${Date.now()}-${safeName}`;
+      const filePath = `${map.id}/replacement-${Date.now()}-${safeName}`;
 
       const { error: uploadError } = await supabase.storage
-        .from("master-maps")
+        .from(MASTER_MAP_IMAGE_BUCKET)
         .upload(filePath, file, {
           cacheControl: "3600",
           upsert: false,
@@ -533,7 +540,7 @@ function MasterMapsPageInner() {
       }
 
       const { data: publicData } = supabase.storage
-        .from("master-maps")
+        .from(MASTER_MAP_IMAGE_BUCKET)
         .getPublicUrl(filePath);
 
       const publicUrl = publicData?.publicUrl || null;

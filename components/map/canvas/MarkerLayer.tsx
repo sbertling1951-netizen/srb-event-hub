@@ -94,6 +94,24 @@ function MarkerLayerImpl({
                       }
                     : undefined
                 }
+                // A mouse click on an authoring marker must not ALSO reach the
+                // viewport's pointerup tap path, which would treat it as an
+                // empty-map tap (placement, selection clear, input focus)
+                // before this marker's own click selects it. Only the React
+                // tap handler is skipped: the drag gesture's window listener
+                // and the marquee's native root listener run in the capture
+                // phase / before React's root dispatch and still complete,
+                // and the separate click event still selects. Touch taps use
+                // the viewport's touch path and are deliberately untouched.
+                onPointerUp={
+                  interactive
+                    ? (e) => {
+                        if (e.pointerType === "mouse") {
+                          e.stopPropagation();
+                        }
+                      }
+                    : undefined
+                }
                 style={{
                   // Non-interactive markers keep pointer-events so the hover
                   // title tooltip still works; they simply carry no click

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import MemberRouteGuard from "@/components/auth/MemberRouteGuard";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
-import type { MapMarker } from "@/components/map/canvas/types";
+import type { MapGeometry, MapMarker } from "@/components/map/canvas/types";
 import { logEngagement } from "@/lib/engagement";
 import { fullName } from "@/lib/formatters";
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
@@ -154,6 +154,110 @@ function normalizeSiteKey(value: string | null | undefined) {
     .replace(/[^a-z0-9]/g, "");
 }
 
+// ─── Member marker presentation ─────────────────────────────────────────────
+//
+// Markers live inside the map's transformed surface, where sizes are native
+// image px and render at (native x current scale) on screen. Fixed native
+// sizes therefore shrank to a few CSS px on high-resolution maps. Sizes here
+// are chosen in ON-SCREEN CSS px and converted by the live scale: legible at
+// the overview, growing modestly with zoom, and bounded -- deliberately not
+// the editor's unbounded zoom-proportional sizing, because this page opens
+// and navigates at absolute scales. Presentation only; nothing is persisted.
+const MARKER_DOT_CSS_AT_OVERVIEW = 16;
+const MARKER_LABEL_CSS_AT_OVERVIEW = 11;
+const MARKER_DOT_CSS_MIN = 14;
+const MARKER_DOT_CSS_MAX = 28;
+const MARKER_LABEL_CSS_MIN = 11;
+const MARKER_LABEL_CSS_MAX = 16;
+/** Emphasis relative to a plain site dot (preserves the former 22/24/26 steps). */
+const VIEWER_DOT_RATIO = 24 / 22;
+const SELECTED_DOT_RATIO = 26 / 22;
+const LOCATION_DOT_RATIO = 14 / 16;
+/** Live scale is bucketed in relative 5% steps so a pinch cannot re-render
+ *  every animation frame. Converting through a bucketed scale can be off by
+ *  up to the square root of the ratio (~2.5%), so the targets are kept that
+ *  far inside the bounds and the displayed size never leaves them. */
+const SCALE_BUCKET_RATIO = 1.05;
+const SCALE_BUCKET_ERROR = Math.sqrt(SCALE_BUCKET_RATIO);
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function bucketScale(scale: number) {
+  const steps = Math.round(Math.log(scale) / Math.log(SCALE_BUCKET_RATIO));
+  return Number(Math.pow(SCALE_BUCKET_RATIO, steps).toFixed(6));
+}
+
+/** On-screen CSS sizes for a given zoom relative to the overview (fit). The
+ *  plain dot stops early enough that the selected emphasis also stays within
+ *  the maximum. */
+function resolveMemberMarkerCss(zoomOverFit: number) {
+  const growth = Math.sqrt(Math.max(zoomOverFit, 0));
+  return {
+    dot: clampNumber(
+      MARKER_DOT_CSS_AT_OVERVIEW * growth,
+      MARKER_DOT_CSS_MIN * SCALE_BUCKET_ERROR,
+      MARKER_DOT_CSS_MAX / SELECTED_DOT_RATIO / SCALE_BUCKET_ERROR,
+    ),
+    label: clampNumber(
+      MARKER_LABEL_CSS_AT_OVERVIEW * growth,
+      MARKER_LABEL_CSS_MIN * SCALE_BUCKET_ERROR,
+      MARKER_LABEL_CSS_MAX / SCALE_BUCKET_ERROR,
+    ),
+  };
+}
+
+type LabelProbe = { id: string; x: number; y: number; text: string | null };
+
+/** Ids whose label would overlap another marker's dot or label at the current
+ *  screen scale. All geometry is in native px; sizes are passed in native px. */
+function findCollidingLabels(
+  probes: LabelProbe[],
+  dotNative: number,
+  labelFontNative: number,
+  labelGapNative: number,
+): Set<string> {
+  const labelBox = (p: LabelProbe) => {
+    const chars = p.text?.length ?? 0;
+    const w = labelFontNative * (0.62 * chars + 0.9);
+    const h = labelFontNative * 1.35;
+    const top = p.y + dotNative / 2 + labelGapNative;
+    return { l: p.x - w / 2, r: p.x + w / 2, t: top, b: top + h };
+  };
+  const dotBox = (p: LabelProbe) => ({
+    l: p.x - dotNative / 2,
+    r: p.x + dotNative / 2,
+    t: p.y - dotNative / 2,
+    b: p.y + dotNative / 2,
+  });
+  const overlaps = (
+    a: { l: number; r: number; t: number; b: number },
+    b: { l: number; r: number; t: number; b: number },
+  ) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+
+  const labels = probes.map((p) => (p.text ? labelBox(p) : null));
+  const dots = probes.map(dotBox);
+  const hidden = new Set<string>();
+  for (let i = 0; i < probes.length; i++) {
+    const own = labels[i];
+    if (!own) {
+      continue;
+    }
+    for (let j = 0; j < probes.length; j++) {
+      if (i === j) {
+        continue;
+      }
+      const other = labels[j];
+      if (overlaps(own, dots[j]!) || (other && overlaps(own, other))) {
+        hidden.add(probes[i]!.id);
+        break;
+      }
+    }
+  }
+  return hidden;
+}
+
 function CoachMapPublicPageInner() {
   const { event: workspaceEvent, attendeeId, isReady, session } = useMemberWorkspace();
   const [event, setEvent] = useState<ActiveEvent | null>(null);
@@ -168,6 +272,31 @@ function CoachMapPublicPageInner() {
   const [search, setSearch] = useState("");
   const [isNarrow, setIsNarrow] = useState(false);
   const [pulseKey, setPulseKey] = useState<string | null>(null);
+  // Engine-reported geometry (natural size + overview fit) and bucketed live
+  // scale, used only to size markers on screen.
+  const [mapGeometry, setMapGeometry] = useState<MapGeometry | null>(null);
+  const [liveScale, setLiveScale] = useState<number | null>(null);
+
+  const handleGeometryChange = useCallback((geometry: MapGeometry) => {
+    setMapGeometry((prev) =>
+      prev &&
+      prev.naturalWidth === geometry.naturalWidth &&
+      prev.naturalHeight === geometry.naturalHeight &&
+      prev.viewportWidth === geometry.viewportWidth &&
+      prev.viewportHeight === geometry.viewportHeight &&
+      prev.fitScale === geometry.fitScale
+        ? prev
+        : geometry,
+    );
+  }, []);
+
+  const handleScaleChange = useCallback((scale: number) => {
+    if (!(scale > 0)) {
+      return;
+    }
+    const bucketed = bucketScale(scale);
+    setLiveScale((prev) => (prev === bucketed ? prev : bucketed));
+  }, []);
 
   // ─── Map focus ───────────────────────────────────────────────────────────────
 
@@ -559,8 +688,28 @@ function CoachMapPublicPageInner() {
 
   // ─── MapCanvas data ───────────────────────────────────────────────────────────
 
+  // On-screen marker sizes for the current zoom, converted to native px.
+  // Before the engine's first report, scale 1 and the overview size apply.
+  const markerSizes = useMemo(() => {
+    const fitScale =
+      mapGeometry && mapGeometry.fitScale > 0 ? mapGeometry.fitScale : null;
+    const scale = liveScale ?? fitScale ?? 1;
+    const css = resolveMemberMarkerCss(fitScale ? scale / fitScale : 1);
+    return {
+      scale,
+      dotCss: css.dot,
+      labelCss: css.label,
+      dotNative: css.dot / scale,
+      labelNative: css.label / scale,
+      /** converts an on-screen CSS px amount (borders, padding) to native px */
+      px: (cssPx: number) => cssPx / scale,
+    };
+  }, [mapGeometry, liveScale]);
+
   // Sites and location markers in a single array.
   // Locations use "loc-{id}" IDs so handleMarkerTap can ignore them.
+  // `size` (native px) lets the engine's nearest-marker hit radius follow the
+  // visible marker instead of only its fixed native floor.
   const markers = useMemo<MapMarker[]>(() => {
     const siteMarkers: MapMarker[] = renderedSites
       .filter((s) => s.map_x !== null && s.map_y !== null)
@@ -568,6 +717,7 @@ function CoachMapPublicPageInner() {
         id: s.key,
         xPct: s.map_x as number,
         yPct: s.map_y as number,
+        size: markerSizes.dotNative,
         data: { type: "site" as const, site: s },
       }));
 
@@ -577,12 +727,40 @@ function CoachMapPublicPageInner() {
         id: `loc-${l.id}`,
         xPct: l.map_x as number,
         yPct: l.map_y as number,
+        size: markerSizes.dotNative * LOCATION_DOT_RATIO,
         data: { type: "location" as const, location: l },
       }));
 
     // Site markers first so location markers render on top
     return [...siteMarkers, ...locationMarkers];
-  }, [renderedSites, locations]);
+  }, [renderedSites, locations, markerSizes.dotNative]);
+
+  // Site labels that would overlap a neighbouring dot or label at the current
+  // screen scale are suppressed, and return once zoom gives them room.
+  const hiddenLabelIds = useMemo(() => {
+    const nw = mapGeometry?.naturalWidth;
+    const nh = mapGeometry?.naturalHeight;
+    if (!nw || !nh) {
+      return new Set<string>();
+    }
+    return findCollidingLabels(
+      markers.map((m) => {
+        const data = m.data as { type: string; site?: RenderedSite };
+        return {
+          id: m.id,
+          x: (m.xPct / 100) * nw,
+          y: (m.yPct / 100) * nh,
+          text:
+            data.type === "site" && data.site
+              ? data.site.display_label || data.site.site_number
+              : null,
+        };
+      }),
+      markerSizes.dotNative,
+      markerSizes.labelNative,
+      markerSizes.px(3),
+    );
+  }, [markers, mapGeometry, markerSizes]);
 
   type SiteMarkerData = {
     type: "site";
@@ -599,20 +777,23 @@ function CoachMapPublicPageInner() {
   const renderMarker = useCallback(
     (marker: MapMarker) => {
       const data = marker.data as CoachMapMarkerData;
+      const { dotNative, labelNative, px } = markerSizes;
 
       if (data.type === "location") {
         const loc = data.location;
+        const side = dotNative * LOCATION_DOT_RATIO;
 
         return (
           <div
+            data-coach-location="true"
             title={loc.name}
             style={{
-              width: 14,
-              height: 14,
-              borderRadius: 4,
+              width: side,
+              height: side,
+              borderRadius: px(4),
               background: getLocationColor(loc.category),
-              border: "2px solid white",
-              boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+              border: `${px(2)}px solid white`,
+              boxShadow: `0 ${px(1)}px ${px(4)}px rgba(0,0,0,0.35)`,
             }}
           />
         );
@@ -622,6 +803,9 @@ function CoachMapPublicPageInner() {
       const isSelected = selectedSiteKey === site.key;
       const isViewerSite = viewerAssignedSiteKey === site.key;
       const isOccupied = site.is_occupied;
+      const dot =
+        dotNative *
+        (isSelected ? SELECTED_DOT_RATIO : isViewerSite ? VIEWER_DOT_RATIO : 1);
 
       return (
         <>
@@ -631,8 +815,8 @@ function CoachMapPublicPageInner() {
                 position: "absolute",
                 left: "50%",
                 top: "50%",
-                width: 18,
-                height: 18,
+                width: dot * 0.7,
+                height: dot * 0.7,
                 borderRadius: "50%",
                 background: "rgba(255,59,48,0.4)",
                 transform: "translate(-50%, -50%)",
@@ -644,15 +828,16 @@ function CoachMapPublicPageInner() {
           )}
 
           <div
+            data-coach-dot="true"
             title={site.display_label || site.site_number}
             style={{
               position: "relative",
-              width: isSelected ? 26 : isViewerSite ? 24 : 22,
-              height: isSelected ? 26 : isViewerSite ? 24 : 22,
+              width: dot,
+              height: dot,
               borderRadius: "50%",
               border: isSelected
-                ? "3px solid #ffffff"
-                : "1px solid rgba(255,255,255,0.85)",
+                ? `${px(3)}px solid #ffffff`
+                : `${px(1)}px solid rgba(255,255,255,0.85)`,
               background: isSelected
                 ? "#ff3b30"
                 : isViewerSite
@@ -661,8 +846,8 @@ function CoachMapPublicPageInner() {
                     ? "#2563eb"
                     : "#6b7280",
               boxShadow: isSelected
-                ? "0 0 0 4px rgba(255,59,48,0.25), 0 4px 10px rgba(0,0,0,0.35)"
-                : "0 1px 3px rgba(0,0,0,0.25)",
+                ? `0 0 0 ${px(4)}px rgba(255,59,48,0.25), 0 ${px(4)}px ${px(10)}px rgba(0,0,0,0.35)`
+                : `0 ${px(1)}px ${px(3)}px rgba(0,0,0,0.25)`,
               cursor: "pointer",
               display: "block",
               zIndex: 2,
@@ -670,27 +855,31 @@ function CoachMapPublicPageInner() {
             }}
           />
 
-          {showLabels && (
+          {/* Absolutely placed below the dot, so the marker's layout box is
+              the dot alone and the dot centre sits exactly on the stored
+              coordinate (the hit-test centre) whether or not a label shows. */}
+          {showLabels && !hiddenLabelIds.has(marker.id) && (
             <div
+              data-coach-label="true"
               style={{
-                marginTop: 3,
-                marginLeft: "auto",
-                marginRight: "auto",
+                position: "absolute",
+                left: "50%",
+                top: `calc(100% + ${px(3)}px)`,
+                transform: "translateX(-50%)",
                 background: isSelected
                   ? "rgba(255,244,214,0.98)"
                   : "rgba(255,255,255,0.92)",
                 border: isSelected
-                  ? "1px solid rgba(255,59,48,0.55)"
-                  : "1px solid rgba(0,0,0,0.18)",
-                borderRadius: 4,
-                fontSize: 9,
+                  ? `${px(1)}px solid rgba(255,59,48,0.55)`
+                  : `${px(1)}px solid rgba(0,0,0,0.18)`,
+                borderRadius: px(4),
+                fontSize: labelNative,
                 fontWeight: 700,
                 lineHeight: 1.1,
-                padding: "1px 4px",
+                padding: `${px(1)}px ${px(4)}px`,
                 color: "#111",
                 whiteSpace: "nowrap",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.18)",
-                display: "table",
+                boxShadow: `0 ${px(1)}px ${px(2)}px rgba(0,0,0,0.18)`,
                 pointerEvents: "none",
               }}
             >
@@ -700,7 +889,13 @@ function CoachMapPublicPageInner() {
         </>
       );
     },
-    [selectedSiteKey, viewerAssignedSiteKey, showLabels],
+    [
+      selectedSiteKey,
+      viewerAssignedSiteKey,
+      showLabels,
+      markerSizes,
+      hiddenLabelIds,
+    ],
   );
 
   const handleMarkerTap = useCallback(
@@ -944,6 +1139,8 @@ function CoachMapPublicPageInner() {
             maxScale={3}
             selectionMode="none"
             onMarkerTap={handleMarkerTap}
+            onGeometryChange={handleGeometryChange}
+            onScaleChange={handleScaleChange}
             renderMarker={renderMarker}
           />
 
