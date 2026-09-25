@@ -231,7 +231,7 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Master Map Editor marker sizing — 2026-09-25 (Desktop review passed; uncommitted, release pending)
+### Master Map Editor marker sizing — 2026-09-25 (Deployed; webhook paused, closeout and desktop acceptance pending)
 
 - **Intent and scope:** Pap reported unreadably small authoring markers on
   high-resolution maps and requested proportional zoom sizing plus a Marker
@@ -271,16 +271,54 @@ state override this subsection whenever they disagree, per the
   excluded from passing totals. Safari touch authoring is not certified. Mel
   kept shared touch/native-click changes outside this desktop repair; no
   synthetic-click workaround is included.
-- **Promotion boundary:** reviewed files remain uncommitted. Commit preparation
-  and release preflight are next; no release authorization or deployment has
-  occurred for this repair. Serving product baseline remains the previously
-  verified Check-In release below until a separately verified promotion.
+- **Verified promotion:** product commit
+  `7c4514f6b2c59478200507670b78321c897db230`, parent
+  `2501f82b91fa5a54e3e27d48cd189f4dbb36900a`, contains exactly the eight
+  reviewed product files plus this Brief, with all nine reviewed hashes
+  matched. Pap authorized one push/deployment, verification and webhook pause.
+  LEM recorded one fast-forward push and one deployment; independent release
+  directory counts were 19 before and 20 after. Remote main and serving code
+  were verified at `7c4514f6`; no database access or migration occurred.
+- **Serving and rollback:** release directory
+  `/root/srb-event-hub-releases/20260925T063402Z-7c4514f6b2c5`, app PID
+  4052970, online with zero restarts. Rollback rotated to
+  `20260925T022755Z-04c9ee63c2cb` at
+  `04c9ee63c2cbfa4f6c1b1c75b48b9b3789161edc`. Live process, pinned release
+  and next-deployment configuration agree on project `lastlzlewonsmwtolpvh`
+  and origin `https://epicentrax.com`.
+- **Release verification:** retained step-4 evidence passes on both domains:
+  home page 200; account-profile 401 with neutral body and private/no-store
+  caching at origin and publicly; system-status 401. All 13 newly referenced
+  and 13 retained home-page assets return 200 on both domains. Those asset
+  inventories are identical, not proof of the editor change; a supplementary
+  check also verified 14 assets referenced by `/admin/master-maps` on both
+  domains. Route-shell 200s establish reachability only. Pap's authenticated
+  desktop map-authoring acceptance remains outstanding.
+- **Pause and closeout boundary:** the first step-5 invocation was blocked
+  before execution by LEM's permission layer. After permission was granted,
+  step 5 ran once under the same execution ID
+  `mastermap-markers-20260925T063300Z`; steps 0–4 were not repeated. Tooling
+  manifest 25/25 and the local/staged tool checksum matched. A fresh secret
+  fingerprint was captured from the running webhook before stopping it; the
+  prior release's baseline was preserved. At 13:15:34Z the independent check
+  recorded webhook stopped, port 9000 not listening, app PID/release unchanged,
+  20 release directories, no worker and a free lock. PM2 was not saved; its
+  dump still dates to 02:48:49Z and predates this release. Documentation
+  commit/push while paused and step 6 (resume, verify, save PM2) require the
+  separately agreed closeout authorization. Do not repeat the product push.
+  Startup-unit restart and reboot remain unperformed; reboot recovery is
+  unproven. This checkpoint does not claim operational closeout is complete.
 - **Evidence:** latest correction
   `/private/tmp/epicentrax-mastermap-zoomlabels-QPCB1D/`; independent review
   `/private/tmp/epicentrax-mastermap-zoomlabels-independent-20260924/`.
-  Earlier diagnosis and correction evidence remain preserved. Mel verified
-  all eight current product hashes against Lun's final cohort before this
-  documentation-only reconciliation; no production access occurred.
+  Release preflight:
+  `/private/tmp/epicentrax-mastermap-release-preflight-75CEnw/`.
+  Execution and pause:
+  `/private/tmp/epicentrax-mastermap-release-exec-O8Oyzr/`, including
+  `EXECUTION-RECORD.md`, its step-5 addendum, logs and execution-scoped receipts.
+  Earlier evidence and the single push's attempt/completion markers remain
+  preserved. Mel reconciled retained runtime evidence and local Git; this
+  documentation-only reconciliation made no fresh production connection.
 
 ### Admin Check-In registration eligibility — 2026-09-24 (Deployed and closed out; Pap confirms live count of 22)
 
@@ -2268,16 +2306,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-25T00:15:19-06:00`
+**Generated at:** `2026-09-25T07:18:03-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `2501f82 docs: reconcile verified checkin eligibility release`
-**Commit date:** `2026-09-24T20:47:31-06:00`
-**origin/main:** `2501f82`
+**Commit:** `7c4514f fix(master-maps): make editor markers readable across resolutions`
+**Commit date:** `2026-09-25T00:18:11-06:00`
+**origin/main:** `7c4514f`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `8`
+**Tracked modified:** `1`
 **Staged:** `0`
-**Untracked:** `1`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
