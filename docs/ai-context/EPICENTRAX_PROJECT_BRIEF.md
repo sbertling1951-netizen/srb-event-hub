@@ -231,7 +231,7 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Admin Check-In registration eligibility — 2026-09-24 (Reviewed locally; commit authorized, production release pending)
+### Admin Check-In registration eligibility — 2026-09-24 (Deployed; documentation and operational closeout pending)
 
 - **Product scope:** cancelled/inactive registrations remain in the Admin
   master/history roster but leave Check-In workload and cannot be checked in.
@@ -258,21 +258,64 @@ state override this subsection whenever they disagree, per the
   Retained TypeScript output matches clean HEAD's 16 baseline errors. The
   isolated build passed with type checking bypassed, not as type correctness
   proof. Browser evidence uses synthetic fixtures and mocked boundaries.
-- **Counts and release boundary:** the test scenario has 23 total records,
+- **Counts and acceptance boundary:** the test scenario has 23 total records,
   22 eligible and two already arrived, leaving 20 waiting. These are not
   Saint George counts. Pap reports Saint George has 22 waiting and zero
   arrived; two registrations were manually entered, which does not establish
-  arrival. Pap authorized committing the reviewed repair; no push, production
-  migration or deployment is authorized by that commit instruction. Production
-  preflight, separate release approval and authenticated acceptance remain.
-  Candidate function-body MD5 is `d993d0d2f0c8076f02ed6417e33a3807`;
-  deployed catalog identity/body must be rechecked before any future apply.
+  arrival. These are pre-release observations; Pap's refreshed, authenticated
+  Saint George Check-In acceptance remains outstanding. No live attendee,
+  consent or roster data was queried during release verification.
+- **Released baseline and migration:** Pap separately approved release of
+  `04c9ee63c2cbfa4f6c1b1c75b48b9b3789161edc`, parent
+  `706439db9333ae0cb753d30d4742e20ee8fb84c5`. LEM verified all seven
+  repair blobs and the reviewed Brief, applied only `20261026000000` to
+  `lastlzlewonsmwtolpvh`, then pushed once after independent database proof.
+  Migration SHA256 is
+  `73a03c930430da716a8ac6d5ccb62fd4a5eaa435d8afc46da6249d43a6f61214`.
+  Deployed function-body MD5 is `d993d0d2f0c8076f02ed6417e33a3807`;
+  signature, seven-column return, SECURITY DEFINER, search_path, owner and
+  authenticated-only execution privileges match the reviewed contract.
+  Ledger verification reports 265 local / 265 remote, zero pending and zero
+  remote-only, including the four eight-digit legacy versions. Eight other
+  inspected function bodies are byte-unchanged. No ledger repair, production
+  fixture or data reconciliation occurred. A pgdelta certificate/runtime
+  warning during the CLI apply was followed by independent catalog and
+  ledger verification; the CLI exit status was not relied on as proof.
+- **Deployment and verification:** one fast-forward push triggered one
+  deployment (18 to 19 release directories), serving
+  `/root/srb-event-hub-releases/20260925T022755Z-04c9ee63c2cb` (September 24
+  local). App PID 4043286 is online with zero restarts in the retained output.
+  Rollback rotated to
+  `/root/srb-event-hub-releases/20260924T034552Z-ca335db14170`.
+  Live, pinned and next-deployment origin/project identity checks agree.
+  Both domains passed HTML and 13 referenced assets each, plus all 13 retained
+  asset paths on each domain. Origin/public account-profile responses were
+  401 with neutral body and private/no-store cache directives; system-status
+  returned 401. Client-guarded route-shell 200s prove reachability only.
+- **Closeout boundary:** webhook paused after capturing its running-process
+  signing-secret digest baseline; staged closeout-tool bytes were separately
+  verified against the reviewed artifact. App PID and health remained
+  unchanged, worker absent and lock free. PM2 was not saved; the retained dump
+  still predates this release. Documentation commit/push, webhook resume and
+  PM2 save remain pending separate closeout authorization. Push documentation
+  only while the webhook is confirmed stopped, then use the reviewed bound
+  closeout step with the original execution receipts. No new deployment is
+  needed. The enabled/inactive startup unit was untouched; reboot recovery
+  remains unproven. Application rollback leaves the database guard in place;
+  a database reversal requires a separately approved forward migration.
 - **Evidence:** original repair `/private/tmp/epicentrax-checkin-eligibility-dBUql0/`,
   correction `/private/tmp/epicentrax-checkin-loadcount-MFunqd/`, independent
   reviews `/private/tmp/epicentrax-checkin-eligibility-independent-20260923/`
   and `/private/tmp/epicentrax-checkin-loadcount-independent-20260924/`.
-  Mel verified current reviewed cohort hashes before this documentation
-  reconciliation; production state was not queried during commit preparation.
+  Release evidence is `/private/tmp/epicentrax-checkin-release-exec-n08MCn/`,
+  execution ID `checkin-elig-20260925T022400Z`, with retained step logs,
+  pre/post catalog dumps and attempt/verification receipts. Reviewed tooling
+  is `/private/tmp/epicentrax-release-gates3-kAh5Er/`. Mel's release
+  reconciliation inspected these local artifacts and the canonical checkout;
+  production claims above are retained execution evidence, not fresh live
+  queries by Mel. The release record's cached-origin staleness note is already
+  superseded locally: HEAD and cached origin/main both resolve to the released
+  commit at this reconciliation.
 
 ### Member roster names and optional sharing — 2026-09-23 (Deployed; closeout and Pap roster acceptance complete)
 
@@ -296,8 +339,14 @@ state override this subsection whenever they disagree, per the
 - **Production migration verified:** only `20261025000000` was applied to
   project `lastlzlewonsmwtolpvh` after the local commit and before the push.
   Migration SHA256: `af569ee2190978c0b8adba8d742cb4b730f9b2f09e355b5caf87ac00bc85b564`.
-  Deployed locator body MD5 changed from `5d93d44be33ac743415658d66c5ff0e2`
-  to `ca336edd11a684364e751165a684dee4`, exactly matching the candidate.
+  The release report recorded locator MD5 figures
+  `5d93d44be33ac743415658d66c5ff0e2` and
+  `ca336edd11a684364e751165a684dee4`; their hash method could not later be
+  reproduced, so they are retained historical claims, not verified body
+  digests. Subsequent preflight and Check-In release captures show the deployed
+  2498-byte body byte-identical to released `20261025000000` source, with raw
+  body MD5 `41cfc342f7bb356da6884653798fd325`. No locator body drift was
+  observed; the historical digest discrepancy remains unresolved.
   Signature, security configuration, owner and ACL verified; resolver and
   separate map definition unchanged; retired anonymous roster remains absent.
   No consent backfill, attendee-data change, ledger repair, historical
@@ -2156,16 +2205,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-24T06:25:49-07:00`
+**Generated at:** `2026-09-24T20:37:15-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `706439d docs: reconcile verified member roster release`
-**Commit date:** `2026-09-23T21:18:29-07:00`
-**origin/main:** `706439d`
+**Commit:** `04c9ee6 fix(checkin): enforce current registration eligibility`
+**Commit date:** `2026-09-24T06:28:35-07:00`
+**origin/main:** `04c9ee6`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `5`
+**Tracked modified:** `1`
 **Staged:** `0`
-**Untracked:** `3`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
