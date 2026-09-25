@@ -61,3 +61,163 @@ test("Stage 6C: the Stage 6B governed master-map RPC call sites are unchanged", 
   assert.equal(/\.from\("master_maps"\)\s*\n?\s*\.(insert|update|delete|upsert)\(/.test(PAGE_SOURCE), false);
   assert.equal(/\.from\("master_map_sites"\)\s*\n?\s*\.(insert|update|delete|upsert)\(/.test(PAGE_SOURCE), false);
 });
+
+// ── Marker visibility and sizing repair ──────────────────────────────────────
+// These assert BEHAVIOURAL properties (what the size depends on, what it may
+// never touch), not the arithmetic. The measured proof -- rendered marker,
+// label and target sizes across resolutions, orientations, viewports and zoom
+// levels in Chromium and WebKit -- lives in the repair evidence directory.
+
+test("marker size comes from the ENGINE's reported geometry, never a locally estimated fit", () => {
+  // The page must consume MapCanvas's geometry report rather than measuring its
+  // own container: its own box includes padding/border and is only an estimate,
+  // which is what previously forced a fudge factor.
+  assert.match(PAGE_SOURCE, /onGeometryChange=\{handleGeometryChange\}/);
+  assert.match(PAGE_SOURCE, /const \[mapGeometry, setMapGeometry\] = useState<MapGeometry \| null>\(null\);/);
+  const idx = PAGE_SOURCE.indexOf("const markerGeometry = useMemo(");
+  const body = PAGE_SOURCE.slice(idx, PAGE_SOURCE.indexOf("}, [", idx));
+  assert.match(body, /mapGeometry\.fitScale/);
+  // No local fit calculation, no container measurement, no safety factor.
+  assert.equal(/MARKER_HIT_SAFETY/.test(PAGE_SOURCE), false);
+  assert.equal(/ResizeObserver/.test(PAGE_SOURCE), false);
+  assert.equal(/new Image\(\)/.test(PAGE_SOURCE), false);
+  assert.equal(/Math\.min\(vw \/ nw/.test(PAGE_SOURCE), false);
+});
+
+test("every interactive part is bounded to the marker's own territory", () => {
+  // Bounding only the pad left labels and the primary delete control free to
+  // overlap, which is how a neighbour stole an unambiguous click.
+  assert.match(PAGE_SOURCE, /MARKER_DOT_TERRITORY_FRACTION/);
+  assert.match(PAGE_SOURCE, /MARKER_DELETE_TERRITORY_FRACTION/);
+  assert.match(PAGE_SOURCE, /const boundedHit = Math\.max\(boundedDot, Math\.min\(hit, half\)\);/);
+  assert.match(PAGE_SOURCE, /labelMaxWidth/);
+  assert.match(PAGE_SOURCE, /labelVisible/);
+  // Clearance must be DIRECTIONAL -- one scalar distance hid labels that had
+  // room in the direction that actually mattered.
+  assert.match(PAGE_SOURCE, /clearX/);
+  assert.match(PAGE_SOURCE, /clearYBelow/);
+});
+
+test("label legibility follows the LIVE zoom while sizes stay fit-derived", () => {
+  // Visibility is an on-screen test at the current zoom, so zooming in can
+  // reveal a crowded label; sizes remain derived from the fit scale, so
+  // markers still scale proportionally and nothing is counter-scaled.
+  assert.match(PAGE_SOURCE, /onScaleChange=\{handleScaleChange\}/);
+  assert.match(PAGE_SOURCE, /const renderScale = liveScale \?\? \(fitScale > 0 \? fitScale : 1\);/);
+  assert.match(PAGE_SOURCE, /const legibleNative = MARKER_LABEL_MIN_CSS \/ renderScale;/);
+  // Sizes must NOT consume liveScale -- that would be counter-scaling.
+  const geo = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("const markerGeometry = useMemo("),
+    PAGE_SOURCE.indexOf("}, [mapGeometry, markerSizePct]);"),
+  );
+  assert.equal(/liveScale/.test(geo), false);
+  // Quantised before it reaches state, so a gesture cannot render per frame.
+  assert.match(PAGE_SOURCE, /const MARKER_SCALE_QUANTUM = 0\.05;/);
+  assert.match(PAGE_SOURCE, /Math\.round\(scale \/ MARKER_SCALE_QUANTUM\) \* MARKER_SCALE_QUANTUM/);
+});
+
+test("horizontal clearance is computed only after the label height is known", () => {
+  // A neighbour directly below has dx = 0; counting it as width clearance
+  // zeroed the budget and kept a crowded label hidden at every zoom level.
+  assert.match(PAGE_SOURCE, /Pass 1 -- radial gap/);
+  assert.match(PAGE_SOURCE, /Pass 2 -- horizontal clearance/);
+  assert.match(PAGE_SOURCE, /nBottom > labelTop && nTop < labelBottom/);
+});
+
+test("density is applied PER MARKER, so a cluster cannot shrink an isolated marker", () => {
+  assert.match(PAGE_SOURCE, /const neighborClearance = useMemo\(/);
+  assert.match(PAGE_SOURCE, /const geometryForMarker = useCallback\(/);
+  assert.match(PAGE_SOURCE, /geometryForMarker\(marker\.id\)/);
+  // The map-wide percentile helper must no longer drive marker size.
+  assert.equal(/computeNearestNeighborSpacingPx/.test(PAGE_SOURCE), false);
+  // Visible size and selection geometry are bounded separately.
+  assert.match(PAGE_SOURCE, /MARKER_DOT_FLOOR_PX/);
+});
+
+test("the pending marker uses the editor's size through the optional shared prop", () => {
+  assert.match(PAGE_SOURCE, /pendingMarkerSize=\{markerGeometry\.dot\}/);
+});
+
+test("a marker's own label is clickable so selecting through it cannot place a marker", () => {
+  const idx = PAGE_SOURCE.indexOf('data-marker-label="true"');
+  const block = PAGE_SOURCE.slice(idx, idx + 1400);
+  assert.match(block, /pointerEvents: "auto"/);
+  assert.match(block, /cursor: "pointer"/);
+});
+
+test("marker geometry is expressed in native image px, so markers scale with zoom rather than being counter-scaled", () => {
+  // A counter-scale would have to consult the live viewport transform on every
+  // render. Nothing in this page may do that.
+  assert.equal(/getViewportTransform\(\)/.test(PAGE_SOURCE), false);
+  assert.equal(/1 \/ scale|1\/scale|invScale|counterScale/.test(PAGE_SOURCE), false);
+});
+
+test("the marker root is a zero-size anchor so the dot centre stays on the stored coordinate", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /<div style=\{\{ position: "relative", width: 0, height: 0 \}\}>/,
+  );
+  // The dot is centred on that origin.
+  assert.match(PAGE_SOURCE, /data-marker-dot="true"/);
+  assert.match(PAGE_SOURCE, /left: -dot \/ 2,\s*\n\s*top: -dot \/ 2,/);
+});
+
+test("a dedicated tap target exists and can never overlap a neighbour's", () => {
+  assert.match(PAGE_SOURCE, /data-marker-hit="true"/);
+  // Two equal pads centred `gap` apart may each reach at most half that gap.
+  // Territory is half the gap to the nearest neighbour; two parts each within
+  // their own territory can never overlap.
+  assert.match(PAGE_SOURCE, /const half = Number\.isFinite\(gap\) \? gap \* 0\.5 : Infinity;/);
+  assert.match(PAGE_SOURCE, /Math\.min\(dot, half \* MARKER_DOT_TERRITORY_FRACTION\)/);
+});
+
+test("the dot renders whether or not labels are on, so the selected/primary cue is never lost", () => {
+  const idx = PAGE_SOURCE.indexOf("const renderMarker = useCallback(");
+  const body = PAGE_SOURCE.slice(idx, PAGE_SOURCE.indexOf("\n  );", idx));
+  const dotAt = body.indexOf('data-marker-dot="true"');
+  const labelGate = body.indexOf("{showLabels && labelVisible && (");
+  assert.ok(dotAt > 0, "the dot must be rendered");
+  assert.ok(dotAt < labelGate, "the dot must not sit behind the showLabels gate");
+});
+
+test("Marker Size is a bounded, labelled, keyboard-operable editor-local control", () => {
+  assert.match(PAGE_SOURCE, /id="marker-size"/);
+  assert.match(PAGE_SOURCE, /type="range"/);
+  assert.match(PAGE_SOURCE, /htmlFor="marker-size"/);
+  assert.match(PAGE_SOURCE, /aria-label="Marker size"/);
+  assert.match(PAGE_SOURCE, /min=\{MARKER_SIZE_MIN_PCT\}/);
+  assert.match(PAGE_SOURCE, /max=\{MARKER_SIZE_MAX_PCT\}/);
+  assert.match(PAGE_SOURCE, /useState\(MARKER_SIZE_DEFAULT_PCT\)/);
+});
+
+test("Marker Size is never persisted and can never reach a write or the markers array", () => {
+  // No persistence mechanism of any kind.
+  assert.equal(/localStorage|sessionStorage|indexedDB/.test(PAGE_SOURCE), false);
+  assert.equal(/marker_size|markerSize:|p_marker_size/.test(PAGE_SOURCE), false);
+  // The markers array must not depend on the size, so changing it cannot alter
+  // marker identity, mark placement dirty, or trigger a save.
+  const idx = PAGE_SOURCE.indexOf("const markers = useMemo<MapMarker[]>(");
+  const body = PAGE_SOURCE.slice(idx, PAGE_SOURCE.indexOf("}, [", idx));
+  assert.equal(/markerSizePct/.test(body), false);
+  assert.equal(
+    /\.rpc\([^)]*markerSizePct/.test(PAGE_SOURCE),
+    false,
+    "the size may never be sent to any RPC",
+  );
+});
+
+test("selection mode and the governed write path are unchanged by this repair", () => {
+  assert.match(PAGE_SOURCE, /selectionMode="rectangle"/);
+  assert.match(PAGE_SOURCE, /onMarkerTap=\{handleMarkerTap\}/);
+  assert.match(PAGE_SOURCE, /onSelectionChange=\{handleSelectionChange\}/);
+  assert.match(PAGE_SOURCE, /onMapTap=\{handleMapTap\}/);
+  assert.match(PAGE_SOURCE, /\.rpc\(\s*\n?\s*"apply_master_map_marker_changes",/);
+});
+
+test("the repair touches no shared map component or shared sizing rule", () => {
+  // computeNearestNeighborSpacingPx is CONSUMED from the shared module; the
+  // page must not restate or fork the shared sizing/visual helpers.
+  assert.match(PAGE_SOURCE, /type MapGeometry,\s*\n\} from "@\/components\/map\/canvas";/);
+  assert.equal(/resolveDensityAwareMarkerSize/.test(PAGE_SOURCE), false);
+  assert.equal(/MarkerDot|MarkerLabelChip/.test(PAGE_SOURCE), false);
+});

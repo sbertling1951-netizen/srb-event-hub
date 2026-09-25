@@ -231,7 +231,58 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Admin Check-In registration eligibility — 2026-09-24 (Deployed; documentation and operational closeout pending)
+### Master Map Editor marker sizing — 2026-09-25 (Desktop review passed; uncommitted, release pending)
+
+- **Intent and scope:** Pap reported unreadably small authoring markers on
+  high-resolution maps and requested proportional zoom sizing plus a Marker
+  Size adjustment. The reviewed eight-file repair covers the editor and its
+  tests, optional engine geometry/scale reporting, and optional pending-marker
+  sizing through MapCanvas/MarkerLayer and their types/exports/tests. No
+  migration, import conversion, new format support, persistence model or
+  Parking/Locations page change is included. Standardized high-resolution
+  imports and PDF/JPEG/HEIC support remain deferred until after Saint George.
+- **Behavior:** marker base sizes use the engine's bounded fit scale; visuals
+  scale with zoom. The editor-local size control writes no data. Pending
+  markers use the same sizing approach. Per-marker clearance prevents a
+  distant dense cluster from shrinking isolated markers; full interactive
+  regions include labels and delete controls. Labels can become visible as
+  zoom provides legible screen space. Percentage coordinates, placement/save,
+  rectangle/Shift selection, drag and undo are preserved. Existing consumers
+  retain default behavior when the optional shared capabilities are omitted.
+- **Independent review:** Lun reports no blocking desktop finding, closing
+  the fit-scale mismatch and interactive-region misrouting. Fresh checks pass
+  217 focused tests, 36 zoom-label checks, 40 interaction checks, 68 placement
+  checks, 39 secondary checks and 5/5 fit comparisons (separate selections).
+  Lint has zero errors and the same 10 baseline warnings; diff checks pass.
+  Retained full TypeScript output is byte-identical to clean HEAD's 16 errors.
+  The isolated build passed with type/lint build gates bypassed, not as type
+  correctness proof. Browser evidence is synthetic with mocked external
+  boundaries, not production or physical-device acceptance.
+- **Evidence corrections and limitations:** actual maximum zoom is 3.0;
+  LEM's earlier 1.3162 "maximum" was only a fixed-step probe. Lun observed no
+  premature label reveal or oscillation in tested scale sequences; that does
+  not prove every continuous threshold value. Very crowded labels can remain
+  hidden and 32 CSS-pixel targets are not universal. Coincident coordinates
+  retain topmost-click selection and rectangle selection of both markers.
+  The real user map's natural resolution remains unverified.
+- **Deferred touch defect:** WebKit touchscreen marker selection fails on
+  both clean HEAD and the repair while the plain control synthesizes clicks;
+  Chromium touch passes. This is recorded as pre-existing application behavior,
+  excluded from passing totals. Safari touch authoring is not certified. Mel
+  kept shared touch/native-click changes outside this desktop repair; no
+  synthetic-click workaround is included.
+- **Promotion boundary:** reviewed files remain uncommitted. Commit preparation
+  and release preflight are next; no release authorization or deployment has
+  occurred for this repair. Serving product baseline remains the previously
+  verified Check-In release below until a separately verified promotion.
+- **Evidence:** latest correction
+  `/private/tmp/epicentrax-mastermap-zoomlabels-QPCB1D/`; independent review
+  `/private/tmp/epicentrax-mastermap-zoomlabels-independent-20260924/`.
+  Earlier diagnosis and correction evidence remain preserved. Mel verified
+  all eight current product hashes against Lun's final cohort before this
+  documentation-only reconciliation; no production access occurred.
+
+### Admin Check-In registration eligibility — 2026-09-24 (Deployed and closed out; Pap confirms live count of 22)
 
 - **Product scope:** cancelled/inactive registrations remain in the Admin
   master/history roster but leave Check-In workload and cannot be checked in.
@@ -262,9 +313,11 @@ state override this subsection whenever they disagree, per the
   22 eligible and two already arrived, leaving 20 waiting. These are not
   Saint George counts. Pap reports Saint George has 22 waiting and zero
   arrived; two registrations were manually entered, which does not establish
-  arrival. These are pre-release observations; Pap's refreshed, authenticated
-  Saint George Check-In acceptance remains outstanding. No live attendee,
-  consent or roster data was queried during release verification.
+  arrival. After closeout, Pap confirmed the live Saint George Check-In count
+  is 22 in response to the refresh/acceptance check. This is user-reported
+  count acceptance; his reply did not separately confirm Widick's absence or
+  exercise an arrival write. No live attendee, consent or roster data was
+  queried by agents during release verification.
 - **Released baseline and migration:** Pap separately approved release of
   `04c9ee63c2cbfa4f6c1b1c75b48b9b3789161edc`, parent
   `706439db9333ae0cb753d30d4742e20ee8fb84c5`. LEM verified all seven
@@ -292,15 +345,22 @@ state override this subsection whenever they disagree, per the
   asset paths on each domain. Origin/public account-profile responses were
   401 with neutral body and private/no-store cache directives; system-status
   returned 401. Client-guarded route-shell 200s prove reachability only.
-- **Closeout boundary:** webhook paused after capturing its running-process
-  signing-secret digest baseline; staged closeout-tool bytes were separately
-  verified against the reviewed artifact. App PID and health remained
-  unchanged, worker absent and lock free. PM2 was not saved; the retained dump
-  still predates this release. Documentation commit/push, webhook resume and
-  PM2 save remain pending separate closeout authorization. Push documentation
-  only while the webhook is confirmed stopped, then use the reviewed bound
-  closeout step with the original execution receipts. No new deployment is
-  needed. The enabled/inactive startup unit was untouched; reboot recovery
+- **Documentation and operational closeout completed:** under Pap's separate
+  closeout authorization, LEM committed Mel's exact prepared Brief as
+  `2501f82b91fa5a54e3e27d48cd189f4dbb36900a` (one file, parent the serving
+  commit). The normal push occurred while the webhook was confirmed stopped;
+  release directories stayed at 19 and no deployment started. The staged
+  closeout tool was independently checksummed against the reviewed artifact.
+  Step 6 resumed the webhook, verified unsigned POST `/github-webhook` returned
+  401 and signing-secret continuity against the original pre-stop baseline,
+  then saved PM2. The saved dump at `2026-09-25T02:48:49Z` contains exactly
+  the app and webhook, online with the verified executable/cwd paths. Old dump
+  preserved at `/root/pm2-closeout-backup-20260925T024848Z-76b3lgcq/dump.pm2.before`.
+  App PID 4043286 and serving release remained unchanged; webhook PID 4046298
+  is online, worker absent and lock free in the retained final-state log.
+  Serving code remains `04c9ee63`; the documentation commit was not deployed.
+  No additional migration, attendee-data access, startup-unit restart or reboot
+  occurred. The enabled/inactive startup unit was untouched; reboot recovery
   remains unproven. Application rollback leaves the database guard in place;
   a database reversal requires a separately approved forward migration.
 - **Evidence:** original repair `/private/tmp/epicentrax-checkin-eligibility-dBUql0/`,
@@ -313,9 +373,12 @@ state override this subsection whenever they disagree, per the
   is `/private/tmp/epicentrax-release-gates3-kAh5Er/`. Mel's release
   reconciliation inspected these local artifacts and the canonical checkout;
   production claims above are retained execution evidence, not fresh live
-  queries by Mel. The release record's cached-origin staleness note is already
-  superseded locally: HEAD and cached origin/main both resolve to the released
-  commit at this reconciliation.
+  queries by Mel. Closeout evidence includes `CLOSEOUT-RECORD.md`,
+  `logs/60-closeout.log`, `logs/final-closeout-state.log` and the original
+  execution's `closeout.ok` receipt. The release record's cached-origin
+  staleness note is superseded: local HEAD and cached origin/main agree on
+  the documentation commit at final reconciliation. The supplied Master Map
+  Editor screenshot does not establish Check-In roster acceptance.
 
 ### Member roster names and optional sharing — 2026-09-23 (Deployed; closeout and Pap roster acceptance complete)
 
@@ -2205,16 +2268,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-24T20:37:15-06:00`
+**Generated at:** `2026-09-25T00:15:19-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `04c9ee6 fix(checkin): enforce current registration eligibility`
-**Commit date:** `2026-09-24T06:28:35-07:00`
-**origin/main:** `04c9ee6`
+**Commit:** `2501f82 docs: reconcile verified checkin eligibility release`
+**Commit date:** `2026-09-24T20:47:31-06:00`
+**origin/main:** `2501f82`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `8`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `1`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records

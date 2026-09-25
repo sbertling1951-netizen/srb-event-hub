@@ -18,6 +18,25 @@ type GestureMapViewportProps = {
   maxScale?: number;
   initialScale?: number;
   viewportHeight?: string | number;
+  /**
+   * Optional. Reports this engine's OWN authoritative geometry -- its measured
+   * viewport and the fit scale it actually uses -- so a consumer never has to
+   * re-derive the fit from its own container or scrape this component's DOM.
+   * Fires on mount, when the content size changes, and on viewport resize.
+   * When omitted nothing is computed or emitted and behaviour is unchanged.
+   */
+  onGeometryChange?: (geometry: {
+    viewportWidth: number;
+    viewportHeight: number;
+    fitScale: number;
+  }) => void;
+  /**
+   * Optional. Reports the live applied scale whenever the transform changes
+   * (zoom, pinch, reset). Omitted, nothing is computed or emitted. This exists
+   * because the engine otherwise has no transform-change notification, so a
+   * consumer could only learn the current zoom by reading the DOM or polling.
+   */
+  onScaleChange?: (scale: number) => void;
   onTap?: (args: {
     screenX: number;
     screenY: number;
@@ -38,6 +57,34 @@ export type GestureMapViewportHandle = {
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * The single fit calculation for this engine. reset(), the initial centering
+ * effect and the geometry report all call this, so there is exactly one
+ * definition of "fit" and no consumer needs to restate it.
+ *
+ * It returns the scale that is ACTUALLY APPLIED, i.e. already bounded by
+ * minScale/maxScale. Returning the raw ratio here was a real defect: reset()
+ * clamped it before applying, so a map whose raw fit fell below minScale was
+ * displayed at minScale while the geometry contract reported the smaller raw
+ * value, and a consumer sizing from it oversized every marker.
+ *
+ * The trailing 1 inside the Math.min is the long-standing rule that the engine
+ * never upscales past natural size.
+ */
+function fitScaleFor(
+  viewport: HTMLElement,
+  width: number,
+  height: number,
+  minScale: number,
+  maxScale: number,
+): number {
+  return clamp(
+    Math.min(viewport.clientWidth / width, viewport.clientHeight / height, 1),
+    minScale,
+    maxScale,
+  );
 }
 
 /**
@@ -121,6 +168,8 @@ const GestureMapViewportV2 = forwardRef<
     maxScale = 4,
     initialScale = 0.8,
     viewportHeight = "100dvh",
+    onGeometryChange,
+    onScaleChange,
     onTap,
   }: GestureMapViewportProps,
   ref,
@@ -132,6 +181,48 @@ const GestureMapViewportV2 = forwardRef<
   useEffect(() => {
     onTapRef.current = onTap;
   }, [onTap]);
+
+  const onGeometryChangeRef = useRef(onGeometryChange);
+  const onScaleChangeRef = useRef(onScaleChange);
+  const lastReportedScaleRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    onScaleChangeRef.current = onScaleChange;
+  }, [onScaleChange]);
+
+  useEffect(() => {
+    onGeometryChangeRef.current = onGeometryChange;
+  }, [onGeometryChange]);
+
+  // Emits this engine's own measured viewport and fit scale.
+  //
+  // Held in a render-synchronised ref rather than a useCallback on purpose: the
+  // two effects that emit are guarded by tests asserting their exact dependency
+  // arrays (the centering effect must never depend on viewport size, or it
+  // would re-fit on resize instead of re-clamping). A ref keeps those arrays
+  // literally unchanged while still reading the current width/height.
+  const emitGeometryRef = useRef<() => void>(() => {});
+  emitGeometryRef.current = () => {
+    const report = onGeometryChangeRef.current;
+    const viewport = viewportRef.current;
+
+    if (!report || !viewport) {
+      return;
+    }
+
+    const vw = viewport.clientWidth;
+    const vh = viewport.clientHeight;
+
+    if (!vw || !vh) {
+      return;
+    }
+
+    report({
+      viewportWidth: vw,
+      viewportHeight: vh,
+      fitScale: fitScaleFor(viewport, width, height, minScale, maxScale),
+    });
+  };
 
   // MapCanvas authoring layer + parity harness use these.
   const gestureLockedRef = useRef(false);
@@ -324,6 +415,16 @@ const GestureMapViewportV2 = forwardRef<
 
     const { x, y, scale } = stateRef.current;
     contentRef.current.style.transform = `translate3d(${x}px, ${y}px, 0) scale3d(${scale}, ${scale}, 1)`;
+
+    // Optional live-scale report, emitted from the single place the transform
+    // is actually applied, so a consumer never has to read the DOM or poll.
+    // No callback means no work. Consumers are expected to quantise before
+    // holding this in state -- it fires per animation frame during a gesture.
+    const report = onScaleChangeRef.current;
+    if (report && scale !== lastReportedScaleRef.current) {
+      lastReportedScaleRef.current = scale;
+      report(scale);
+    }
   };
 
   const requestRender = () => {
@@ -385,13 +486,13 @@ const GestureMapViewportV2 = forwardRef<
         return;
       }
 
-      const fitScale = Math.min(
-        viewport.clientWidth / width,
-        viewport.clientHeight / height,
-        1,
+      const clampedScale = fitScaleFor(
+        viewport,
+        width,
+        height,
+        minScale,
+        maxScale,
       );
-
-      const clampedScale = clamp(fitScale, minScale, maxScale);
 
       centerOnPoint(width / 2, height / 2, clampedScale);
     },
@@ -436,13 +537,13 @@ const GestureMapViewportV2 = forwardRef<
       return;
     }
 
-    const fitScale = Math.min(
-      viewportWidth / width,
-      viewportHeight / height,
-      1,
+    const clampedScale = fitScaleFor(
+      viewport,
+      width,
+      height,
+      minScale,
+      maxScale,
     );
-
-    const clampedScale = clamp(fitScale, minScale, maxScale);
     const scaledWidth = width * clampedScale;
     const scaledHeight = height * clampedScale;
 
@@ -456,6 +557,7 @@ const GestureMapViewportV2 = forwardRef<
     };
 
     renderTransform();
+    emitGeometryRef.current();
   }, [width, height, maxScale]);
 
   // The centering effect above runs once for a given content size (its
@@ -517,6 +619,11 @@ const GestureMapViewportV2 = forwardRef<
         stateRef.current.y = next.y;
         renderTransform();
       }
+
+      // The viewport really did change size, so the fit scale a consumer was
+      // given is now stale. Report the new geometry; this does not alter the
+      // transform, which the clamp above already handled.
+      emitGeometryRef.current();
     });
 
     observer.observe(viewport);

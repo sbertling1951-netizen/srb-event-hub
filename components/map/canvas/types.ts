@@ -17,6 +17,19 @@ export type MapViewportState = {
   centerYPct: number;
 };
 
+/**
+ * The map engine's own authoritative geometry. `fitScale` is the scale the
+ * engine actually uses for fit/reset -- consumers must read it here rather
+ * than re-deriving it from their own container, which is only an estimate.
+ */
+export type MapGeometry = {
+  naturalWidth: number;
+  naturalHeight: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  fitScale: number;
+};
+
 export type SelectionMode = "none" | "single" | "multi" | "rectangle";
 
 /** A point in the viewport's internal transform space. */
@@ -113,6 +126,16 @@ export interface MapCanvasProps {
   onSelectionChange?: (sel: Selection) => void;
   onMarkersChange?: (updates: MarkerPositionUpdate[]) => void; // align/distribute/nudge/undo results
   onViewportChange?: (vp: MapViewportState) => void;
+  /** Optional. Reports the engine's measured viewport, the image's natural
+   *  size and the engine's own fit scale, on mount, image change and resize. */
+  onGeometryChange?: (geometry: MapGeometry) => void;
+  /** Optional. Live applied scale, reported whenever the map transform
+   *  changes. Quantise before holding it in state: it fires per animation
+   *  frame during a gesture. */
+  onScaleChange?: (scale: number) => void;
+  /** Optional. Diameter of the pending-placement dot in natural image px.
+   *  Omitted, MarkerLayer keeps its existing fixed appearance. */
+  pendingMarkerSize?: number;
 
   // reserved future marker drag-editing (touch + mouse); structured for, off by default
   onMarkerMoveStart?: (id: string) => void;

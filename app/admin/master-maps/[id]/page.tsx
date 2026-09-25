@@ -4,7 +4,11 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
-import { MapCanvas, type MapCanvasHandle } from "@/components/map/canvas";
+import {
+  MapCanvas,
+  type MapCanvasHandle,
+  type MapGeometry,
+} from "@/components/map/canvas";
 import type {
   MapMarker,
   MapPercentPoint,
@@ -91,6 +95,49 @@ function MasterMapEditorPageInner() {
   const { admin } = useAdmin();
 
   // ── Refs ────────────────────────────────────────────────────────────────────
+// ── Marker sizing ────────────────────────────────────────────────────────────
+// Markers live in the map image's NATURAL-pixel space (MapCanvas sizes its
+// content surface to the image's natural dimensions and the viewport transform
+// scales that whole surface). A size expressed in CSS px there is therefore a
+// size in native image px, and what reaches the screen is `native x scale`.
+// Fixed native sizes are why a high-resolution map rendered 5px markers: at
+// fit, scale = min(viewportW / naturalW, viewportH / naturalH), so a constant
+// native size shrinks in direct proportion to image resolution.
+//
+// The fix expresses the base size as the native size that RESOLVES to a target
+// CSS size at the fit view: base = targetCss / fitScale. That is resolution-
+// aware and viewport-aware (fit uses both dimensions, so a tall portrait map is
+// driven by its height, not its width), while remaining a plain native size --
+// so markers still grow and shrink proportionally as the operator zooms. There
+// is no counter-scaling anywhere.
+const MARKER_DOT_CSS_AT_FIT = 18;
+const MARKER_HIT_CSS_AT_FIT = 32;
+const MARKER_LABEL_RATIO = 0.62;
+const MARKER_SIZE_MIN_PCT = 60;
+const MARKER_SIZE_MAX_PCT = 250;
+const MARKER_SIZE_DEFAULT_PCT = 100;
+const MARKER_SIZE_STEP_PCT = 10;
+/** A crowded marker still has to be visible; below this it is a smudge. */
+const MARKER_DOT_FLOOR_PX = 6;
+/** Share of a marker's own territory (half the gap to its nearest neighbour)
+ *  each part may occupy. Keeping every part within territory is what makes
+ *  overlap -- and therefore stolen clicks -- geometrically impossible. */
+const MARKER_DOT_TERRITORY_FRACTION = 0.9;
+const MARKER_DELETE_TERRITORY_FRACTION = 0.8;
+const MARKER_DELETE_MIN_PX = 12;
+/** A label below this rendered size is not worth drawing; the dot carries the
+ *  marker instead. Expressed in CSS px so it tracks the current fit. */
+const MARKER_LABEL_MIN_CSS = 9;
+/** Live zoom is bucketed before it reaches state, so a gesture cannot drive a
+ *  render per animation frame or chatter across the legibility threshold. */
+const MARKER_SCALE_QUANTUM = 0.05;
+/** Share of the sideways clearance a label box may occupy. */
+const MARKER_LABEL_WIDTH_FRACTION = 0.9;
+/** A label box is at least its horizontal padding (font * 0.42 each side) plus
+ *  border plus one glyph; below roughly this multiple of the font size the
+ *  browser ignores maxWidth and the box spills. */
+const MARKER_LABEL_MIN_BOX_RATIO = 1.5;
+
   const mapRef = useRef<MapCanvasHandle | null>(null);
   const siteNumberRef = useRef<HTMLInputElement | null>(null);
   // Kept as refs so keyboard handler never has stale closure issues
@@ -100,6 +147,20 @@ function MasterMapEditorPageInner() {
 
   // ── Page state ──────────────────────────────────────────────────────────────
   const [isMobile, setIsMobile] = useState(false);
+  // Editor-local display state only: never persisted, never sent to the
+  // database, and deliberately not part of the markers array, so changing it
+  // cannot mark placement data dirty or trigger a save.
+  const [markerSizePct, setMarkerSizePct] = useState(MARKER_SIZE_DEFAULT_PCT);
+  // The engine's own geometry, reported by MapCanvas. Never estimated here:
+  // fitScale is the scale the engine actually uses, so no safety factor and no
+  // second fit calculation are needed. Null until the first report arrives.
+  const [mapGeometry, setMapGeometry] = useState<MapGeometry | null>(null);
+  // Live applied zoom, used ONLY to decide whether a label is legible on
+  // screen. Marker sizes stay derived from the fit scale, so nothing is
+  // counter-scaled: zooming still grows and shrinks markers proportionally.
+  // Quantised to MARKER_SCALE_QUANTUM buckets so a pinch cannot re-render per
+  // animation frame or oscillate around the legibility threshold.
+  const [liveScale, setLiveScale] = useState<number | null>(null);
   const [masterMap, setMasterMap] = useState<MasterMapRow | null>(null);
   const [sites, setSites] = useState<MasterMapSiteRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -215,6 +276,28 @@ function MasterMapEditorPageInner() {
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Geometry arrives from MapCanvas (engine-measured viewport, natural image
+  // size and the engine's own fit scale). Held in a stable callback so the map
+  // never re-renders because of an inline identity.
+  const handleScaleChange = useCallback((scale: number) => {
+    const bucket =
+      Math.round(scale / MARKER_SCALE_QUANTUM) * MARKER_SCALE_QUANTUM;
+    setLiveScale((prev) => (prev !== null && prev === bucket ? prev : bucket));
+  }, []);
+
+  const handleGeometryChange = useCallback((geometry: MapGeometry) => {
+    setMapGeometry((prev) =>
+      prev &&
+      prev.naturalWidth === geometry.naturalWidth &&
+      prev.naturalHeight === geometry.naturalHeight &&
+      prev.viewportWidth === geometry.viewportWidth &&
+      prev.viewportHeight === geometry.viewportHeight &&
+      prev.fitScale === geometry.fitScale
+        ? prev
+        : geometry,
+    );
   }, []);
 
   // ─── Data loading ─────────────────────────────────────────────────────────
@@ -1137,49 +1220,261 @@ function MasterMapEditorPageInner() {
   // MapCanvas calls this for every visible marker. Receives the marker and
   // clean {selected, primary} flags — no manual selectedSiteIds lookup needed.
 
+  // Per-marker nearest-neighbour distance, in native image px. The shared
+  // helper reports MAP-WIDE statistics (median/p10/min), which is the right
+  // input for one global size but the wrong one here: a single tight cluster
+  // would drag every isolated marker down with it. This is the same distance
+  // measure applied per marker, so density constrains only the markers that
+  // are actually crowded.
+
+
+  // Base geometry, in native image px, from the ENGINE's own fit scale.
+  const markerGeometry = useMemo(() => {
+    // Before the first geometry report, fall back to 1 (native == CSS), which
+    // is the historical behaviour.
+    const fitScale =
+      mapGeometry && mapGeometry.fitScale > 0 ? mapGeometry.fitScale : 1;
+    const factor = markerSizePct / 100;
+
+    // The native size that resolves to the target CSS size at the engine's fit
+    // view. No safety factor: this is the engine's actual scale, not an
+    // estimate from this page's own container.
+    const dot = Math.max(6, (MARKER_DOT_CSS_AT_FIT * factor) / fitScale);
+    const label = Math.max(6, dot * MARKER_LABEL_RATIO);
+    const hit = Math.max(dot, MARKER_HIT_CSS_AT_FIT / fitScale);
+
+    return { fitScale, dot, label, hit };
+  }, [mapGeometry, markerSizePct]);
+
+  // Per-marker clearance to its neighbours, in native image px. The shared
+  // helper reports MAP-WIDE statistics, which is the right input for one global
+  // size but the wrong one here: a single tight cluster would drag every
+  // isolated marker down with it.
+  //
+  // Clearance is DIRECTIONAL. A marker's dot is radial, but its label hangs
+  // below and spreads sideways, so a neighbour to the side constrains the
+  // label's width while a neighbour below constrains its height. Using one
+  // scalar distance for both hides labels that had ample room in the direction
+  // that actually mattered.
+  const neighborClearance = useMemo(() => {
+    const baseDot = markerGeometry.dot;
+    const baseLabel = markerGeometry.label;
+    const placed = sites.filter((x) => x.map_x !== null && x.map_y !== null);
+    const nw = mapGeometry?.naturalWidth || 1200;
+    const nh = mapGeometry?.naturalHeight || 800;
+    const pts = placed.map((x) => ({
+      id: x.id,
+      x: ((x.map_x as number) / 100) * nw,
+      y: ((x.map_y as number) / 100) * nh,
+    }));
+
+    // Pass 1 -- radial gap, and vertical clearance to the nearest neighbour
+    // roughly BELOW (the direction the label hangs).
+    const base = pts.map((pi, i) => {
+      let gap = Infinity;
+      let clearYBelow = Infinity;
+      for (let j = 0; j < pts.length; j++) {
+        if (i === j) {
+          continue;
+        }
+        const dx = pts[j]!.x - pi.x;
+        const dy = pts[j]!.y - pi.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < gap) {
+          gap = d;
+        }
+        if (dy > 0 && Math.abs(dx) < baseDot && dy < clearYBelow) {
+          clearYBelow = dy;
+        }
+      }
+      return { gap, clearYBelow };
+    });
+
+    // Pass 2 -- horizontal clearance, computed only AFTER this marker's label
+    // height is known. A neighbour constrains label WIDTH only if it actually
+    // sits alongside the label; one directly below has dx = 0 and would
+    // otherwise zero the width budget even though it constrains height, which
+    // is what kept a crowded label hidden at every zoom level.
+    const out = new Map<
+      string,
+      { gap: number; clearX: number; clearYBelow: number }
+    >();
+    pts.forEach((pi, i) => {
+      const { gap, clearYBelow } = base[i]!;
+      const half = Number.isFinite(gap) ? gap * 0.5 : Infinity;
+      const dot = Math.max(
+        MARKER_DOT_FLOOR_PX,
+        Math.min(baseDot, half * MARKER_DOT_TERRITORY_FRACTION),
+      );
+      let labelSize = baseLabel;
+      const roomBelow = clearYBelow * 0.5 - dot / 2;
+      if (Number.isFinite(roomBelow)) {
+        labelSize = Math.min(labelSize, (roomBelow - 2) / 1.6);
+      }
+      const labelTop = dot / 2;
+      const labelBottom = labelTop + Math.max(0, labelSize) * 1.6 + 2;
+
+      let clearX = Infinity;
+      for (let j = 0; j < pts.length; j++) {
+        if (i === j) {
+          continue;
+        }
+        const dx = pts[j]!.x - pi.x;
+        const dy = pts[j]!.y - pi.y;
+        // Does the neighbour's own dot band overlap this label's vertical band?
+        const nTop = dy - baseDot / 2;
+        const nBottom = dy + baseDot / 2;
+        if (nBottom > labelTop && nTop < labelBottom && Math.abs(dx) < clearX) {
+          clearX = Math.abs(dx);
+        }
+      }
+      out.set(pi.id, { gap, clearX, clearYBelow });
+    });
+    return out;
+  }, [
+    sites,
+    mapGeometry?.naturalWidth,
+    mapGeometry?.naturalHeight,
+    markerGeometry.dot,
+    markerGeometry.label,
+  ]);
+
+  // Per-marker geometry: the base size, narrowed only where this marker's own
+  // closest neighbour is near enough that the full size would overlap it.
+  // Visible size and selection geometry are bounded separately -- the pad may
+  // never overlap, while the dot keeps a readable floor.
+  // Per-marker geometry. Every interactive part of a marker -- dot, tap pad,
+  // label and the primary delete control -- is kept inside that marker's own
+  // TERRITORY: the half-distance to its nearest neighbour. Two parts each
+  // reaching at most half the gap between their centres can never overlap, so
+  // no marker can cover or capture another's. Bounding only the pad (the
+  // previous rule) left labels and the delete control free to overlap, which
+  // is how a neighbour stole an unambiguous click.
+  const geometryForMarker = useCallback(
+    (id: string) => {
+      const { dot, label, hit, fitScale } = markerGeometry;
+      const clearance = neighborClearance.get(id);
+      const gap = clearance?.gap ?? Infinity;
+      const clearX = clearance?.clearX ?? Infinity;
+      const clearYBelow = clearance?.clearYBelow ?? Infinity;
+      const half = Number.isFinite(gap) ? gap * 0.5 : Infinity;
+
+      const boundedDot = Math.max(
+        MARKER_DOT_FLOOR_PX,
+        Math.min(dot, half * MARKER_DOT_TERRITORY_FRACTION),
+      );
+      // Never larger than territory, but never smaller than the dot either:
+      // with `half` last in the chain, two coincident markers (territory 0)
+      // collapsed to a zero-size pad and became entirely unclickable.
+      const boundedHit = Math.max(boundedDot, Math.min(hit, half));
+      const boundedDelete = Math.min(
+        Math.max(MARKER_DELETE_MIN_PX, boundedDot * 0.55),
+        half * MARKER_DELETE_TERRITORY_FRACTION,
+      );
+
+      // The label hangs below the dot, so the room it may occupy is what is
+      // left of the territory beneath the dot. Shrink it to fit; if it cannot
+      // be drawn legibly in that room, draw no label at all rather than one
+      // that covers a neighbour. The dot and pad still carry the marker.
+      // Legibility is an ON-SCREEN test at the CURRENT zoom, not at fit: the
+      // label's native size is fixed, so zooming in genuinely makes it larger
+      // on screen and a label that was too small to read becomes readable.
+      // Before the first scale report, fall back to the fit scale.
+      const renderScale = liveScale ?? (fitScale > 0 ? fitScale : 1);
+      const legibleNative = MARKER_LABEL_MIN_CSS / renderScale;
+      // The label's FONT follows the base size, not the territory-bounded dot:
+      // horizontal crowding is handled by clipping the box (maxWidth below), so
+      // shrinking the text as well would hide labels that had ample room in the
+      // direction that actually mattered.
+      let boundedLabel = label;
+      // Vertical room is what is left beneath the dot before the nearest
+      // neighbour BELOW. Height ~= font * 1.15 (line) + font * 0.2 (padding)
+      // + font * 0.25 (offset from the dot) + 2 (border).
+      const roomBelow = clearYBelow * 0.5 - boundedDot / 2;
+      if (Number.isFinite(roomBelow)) {
+        boundedLabel = Math.min(boundedLabel, (roomBelow - 2) / 1.6);
+      }
+      // A label box cannot be narrower than its own padding and border, so a
+      // maxWidth below that is silently ignored by the browser and the box
+      // spills into the neighbour. Where the sideways room cannot hold even a
+      // minimal box, draw no label -- the dot and pad still carry the marker.
+      const minBoxWidth = boundedLabel * MARKER_LABEL_MIN_BOX_RATIO;
+      const widthAvailable = Number.isFinite(clearX)
+        ? clearX * MARKER_LABEL_WIDTH_FRACTION
+        : Infinity;
+      const labelVisible =
+        boundedLabel >= legibleNative && widthAvailable >= minBoxWidth;
+
+      return {
+        dot: boundedDot,
+        label: boundedLabel,
+        labelVisible,
+        labelMaxWidth: Number.isFinite(clearX) ? widthAvailable : undefined,
+        hit: boundedHit,
+        del: boundedDelete,
+      };
+    },
+    [markerGeometry, neighborClearance, liveScale],
+  );
+
   const renderMarker = useCallback(
     (marker: MapMarker, state: { selected: boolean; primary: boolean }) => {
       const site = marker.data as MasterMapSiteRow;
       const { selected, primary } = state;
-      if (selected || primary) {
-        console.log(
-          "MARKER STATE",
-          marker.id,
-          "selected=",
-          selected,
-          "primary=",
-          primary,
-        );
-      }
+      const { dot, label, labelVisible, labelMaxWidth, hit, del } =
+        geometryForMarker(marker.id);
 
+      // A zero-size anchor: MarkerLayer already translates this node by
+      // (-50%, -50%), so a 0x0 root puts the origin exactly on the marker's
+      // stored percentage coordinate. Every visual is then absolutely centred
+      // on that origin, which keeps the dot centre -- the marker centre --
+      // pinned to the saved coordinate no matter how the label is sized.
       return (
-        <>
-          {/* Dot — shown only when labels are OFF. Color cues: yellow=primary,
-              blue=selected, green=normal. When labels are ON the label chip
-              carries the color cue instead and the dot is hidden to avoid
-              double-rendering at the same position. */}
-          {!showLabels && (
-            <div
-              style={{
-                width: 14,
-                height: 14,
-                borderRadius: "50%",
-                border:
-                  primary || selected
-                    ? "2px solid white"
-                    : "1px solid rgba(255,255,255,0.85)",
+        <div style={{ position: "relative", width: 0, height: 0 }}>
+          {/* Invisible tap target. Sized in native px to resolve to a usable
+              CSS target at the working views, and capped by real neighbour
+              spacing so it can never overlap the next marker's pad. */}
+          <div
+            data-marker-hit="true"
+            style={{
+              position: "absolute",
+              left: -hit / 2,
+              top: -hit / 2,
+              width: hit,
+              height: hit,
+              borderRadius: "50%",
+              background: "transparent",
+              pointerEvents: "auto",
+              cursor: "pointer",
+            }}
+          />
 
-                background: primary || selected ? "#f4b400" : "#1f9d55",
-                boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
-                cursor: "pointer",
-                display: "block",
-                margin: "0 auto",
-              }}
-            />
-          )}
+          {/* Dot. Always rendered -- including with labels on -- so the
+              normal / selected / primary state cue is never lost. */}
+          <div
+            data-marker-dot="true"
+            style={{
+              position: "absolute",
+              left: -dot / 2,
+              top: -dot / 2,
+              width: dot,
+              height: dot,
+              borderRadius: "50%",
+              border:
+                primary || selected
+                  ? `${Math.max(1, dot * 0.12)}px solid white`
+                  : `${Math.max(1, dot * 0.07)}px solid rgba(255,255,255,0.85)`,
+              background: primary
+                ? "#f4b400"
+                : selected
+                  ? "#60a5fa"
+                  : "#1f9d55",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+              pointerEvents: "none",
+            }}
+          />
 
-          {/* Delete button — only on the primary marker in edit mode.
-              Rendered regardless of showLabels so it's always reachable. */}
+          {/* Delete button — only on the primary marker in edit mode. */}
           {primary && !readOnlyMarkers && (
             <button
               type="button"
@@ -1195,58 +1490,66 @@ function MasterMapEditorPageInner() {
               title="Delete marker"
               style={{
                 position: "absolute",
-                top: -8,
-                right: -8,
-                width: 16,
-                height: 16,
+                left: dot / 2 - del * 0.2,
+                top: -dot / 2 - del * 0.8,
+                width: del,
+                height: del,
                 borderRadius: "50%",
                 background: "#dc2626",
                 color: "white",
-                border: "1px solid white",
-                fontSize: 10,
-                lineHeight: "14px",
+                border: `${Math.max(1, del * 0.08)}px solid white`,
+                fontSize: del * 0.66,
+                lineHeight: 1,
                 textAlign: "center",
                 cursor: "pointer",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.4)",
                 padding: 0,
+                pointerEvents: "auto",
               }}
             >
               ×
             </button>
           )}
 
-          {/* Label chip — shown only when labels are ON. Background color carries
-              the state cue: yellow=primary, blue=selected, white=normal. */}
-          {showLabels && (
+          {/* Label chip — below the dot so it never displaces the centre. */}
+          {showLabels && labelVisible && (
             <div
+              data-marker-label="true"
               style={{
-                marginTop: 0,
-                marginLeft: "auto",
-                marginRight: "auto",
+                position: "absolute",
+                left: "50%",
+                top: dot / 2 + label * 0.25,
+                transform: "translateX(-50%)",
                 border:
                   primary || selected
-                    ? "2px solid white"
-                    : "1px solid rgba(255,255,255,0.85)",
-
+                    ? `${Math.max(1, label * 0.14)}px solid white`
+                    : `${Math.max(1, label * 0.08)}px solid rgba(255,255,255,0.85)`,
                 background: primary || selected ? "#f4b400" : "#1f9d55",
-
-                fontSize: 11,
+                fontSize: label,
                 fontWeight: 700,
-                padding: "1px 5px",
+                lineHeight: 1.15,
+                padding: `${label * 0.1}px ${label * 0.42}px`,
                 color: "#111",
                 whiteSpace: "nowrap",
+                // A long name may not reach into a neighbour's territory; clip
+                // it instead of letting the box grow without bound.
+                maxWidth: labelMaxWidth,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
-                display: "table",
-                pointerEvents: "none",
+                // Clickable: a click on a marker's own label must select that
+                // marker, not fall through to the map and place a new one.
+                pointerEvents: "auto",
+                cursor: "pointer",
               }}
             >
               {site.display_label || site.site_number}
             </div>
           )}
-        </>
+        </div>
       );
     },
-    [showLabels, readOnlyMarkers, deleteSelectedMarker],
+    [showLabels, readOnlyMarkers, deleteSelectedMarker, geometryForMarker],
   );
 
   // ─── Viewport helpers ─────────────────────────────────────────────────────
@@ -1437,6 +1740,34 @@ function MasterMapEditorPageInner() {
               />
               <span>Show labels on map</span>
             </label>
+
+            {/* Marker size — editor display state only. It changes no marker
+                coordinate, writes nothing, and is deliberately not persisted. */}
+            <div style={{ display: "grid", gap: 4 }}>
+              <label
+                htmlFor="marker-size"
+                style={{ fontSize: 14, display: "flex", justifyContent: "space-between" }}
+              >
+                <span>Marker size</span>
+                <span style={{ color: "#666" }}>{markerSizePct}%</span>
+              </label>
+              <input
+                id="marker-size"
+                type="range"
+                min={MARKER_SIZE_MIN_PCT}
+                max={MARKER_SIZE_MAX_PCT}
+                step={MARKER_SIZE_STEP_PCT}
+                value={markerSizePct}
+                onChange={(e) => setMarkerSizePct(Number(e.target.value))}
+                disabled={loading}
+                aria-label="Marker size"
+                aria-valuetext={`${markerSizePct} percent`}
+                style={{ width: "100%" }}
+              />
+              <div style={{ fontSize: 12, color: "#666" }}>
+                Display only — does not move markers or change saved positions.
+              </div>
+            </div>
 
             {/* Site number input — create new or rename selected */}
             <input
@@ -1763,6 +2094,9 @@ function MasterMapEditorPageInner() {
             onMarkerTap={handleMarkerTap}
             onSelectionChange={handleSelectionChange}
             onMarkersChange={handleMarkersChange}
+            onGeometryChange={handleGeometryChange}
+            onScaleChange={handleScaleChange}
+            pendingMarkerSize={markerGeometry.dot}
             renderMarker={renderMarker}
           />
 

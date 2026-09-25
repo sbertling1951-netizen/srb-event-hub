@@ -78,6 +78,9 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       onMarkersChange,
       onViewportChange,
       renderMarker,
+      onGeometryChange,
+      onScaleChange,
+      pendingMarkerSize,
       children,
     },
     ref,
@@ -343,6 +346,25 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
       ],
     );
 
+    const naturalRef = useRef(natural);
+    naturalRef.current = natural;
+
+    const relayGeometry = useCallback(
+      (g: { viewportWidth: number; viewportHeight: number; fitScale: number }) => {
+        if (!onGeometryChange) {
+          return;
+        }
+        onGeometryChange({
+          naturalWidth: naturalRef.current.width,
+          naturalHeight: naturalRef.current.height,
+          viewportWidth: g.viewportWidth,
+          viewportHeight: g.viewportHeight,
+          fitScale: g.fitScale,
+        });
+      },
+      [onGeometryChange],
+    );
+
     // ---- honor an explicitly-configured opening scale ------------------------
 
     useEffect(() => {
@@ -455,6 +477,8 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
           initialScale={initialScale}
           minScale={minScale}
           maxScale={maxScale}
+          onGeometryChange={relayGeometry}
+          onScaleChange={onScaleChange}
           onTap={handleViewportTap}
         >
           <div
@@ -535,6 +559,7 @@ const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(
               // nearest-marker hit test in handleViewportTap, not per-marker
               // DOM click boxes -- see hitTest.ts.
               interactive={selectionMode !== "none"}
+              pendingSize={pendingMarkerSize}
             />
 
             {/* page-supplied overlay layers (e.g. amenity locations) */}

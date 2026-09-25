@@ -36,6 +36,12 @@ type Props = {
    * to true so nothing changes for callers that don't opt in.
    */
   interactive?: boolean;
+  /**
+   * Optional diameter for the pending-placement dot, in natural image px.
+   * When omitted the pending marker renders exactly as it always has (16px
+   * dot, 10px label), so every existing consumer is unaffected.
+   */
+  pendingSize?: number;
 };
 
 const SELECTED_COLOR = "#60a5fa";
@@ -52,6 +58,7 @@ function MarkerLayerImpl({
   onMarkerActivate,
   renderMarker,
   interactive = true,
+  pendingSize,
 }: Props) {
   return (
     <>
@@ -176,11 +183,11 @@ function MarkerLayerImpl({
           >
             <div
               style={{
-                width: 16,
-                height: 16,
+                width: pendingSize ?? 16,
+                height: pendingSize ?? 16,
                 borderRadius: "50%",
                 background: PRIMARY_COLOR,
-                border: "2px solid #fff",
+                border: `${pendingSize ? Math.max(2, pendingSize * 0.12) : 2}px solid #fff`,
                 boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
                 margin: "0 auto",
               }}
@@ -188,11 +195,11 @@ function MarkerLayerImpl({
             {showLabels && pendingLabel && (
               <div
                 style={{
-                  marginTop: 4,
+                  marginTop: pendingSize ? pendingSize * 0.25 : 4,
                   background: "rgba(255,255,255,0.96)",
                   border: "1px solid rgba(0,0,0,0.2)",
                   borderRadius: 4,
-                  fontSize: 10,
+                  fontSize: pendingSize ? Math.max(8, pendingSize * 0.62) : 10,
                   fontWeight: 700,
                   padding: "1px 4px",
                   color: "#111",
