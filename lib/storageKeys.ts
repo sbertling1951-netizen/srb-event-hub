@@ -42,6 +42,14 @@ export const STORAGE_KEYS = {
 
   announcementBannerDismissedPrefix: "epicentrax-announcement-banner-dismissed",
   announcementPopupSeenPrefix: "epicentrax-announcement-popup-seen",
+
+  // The member's last explicit "Trust this device" checkbox choice ("true" /
+  // "false"), restored when the member login page opens. A remembered UI
+  // choice only: it authenticates nobody and never selects where an active
+  // session is stored -- that stays the separate, unregistered
+  // `epicentrax-shared-device` marker in lib/supabase.ts, set only at sign-in
+  // and reset on sign-out, which this key deliberately outlives.
+  memberTrustDevicePreference: "epicentrax-member-trust-device",
 } as const;
 
 // Narrow migration sources for the few Tier 5 values where losing a

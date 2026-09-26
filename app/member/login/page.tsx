@@ -20,6 +20,23 @@ import {
 } from "@/lib/storageMigration";
 import { setSharedDeviceMode, supabase } from "@/lib/supabase";
 
+// The member's remembered "Trust this device" choice. Missing, malformed or
+// unavailable browser storage (private mode, blocked or cleared site data)
+// all read as unchecked -- the safe default.
+function readTrustDevicePreference(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return (
+      window.localStorage.getItem(STORAGE_KEYS.memberTrustDevicePreference) ===
+      "true"
+    );
+  } catch {
+    return false;
+  }
+}
+
 const PASSKEY_AUTH_ENABLED =
   process.env.NEXT_PUBLIC_PASSKEY_AUTH_ENABLED === "true";
 
@@ -109,6 +126,15 @@ export default function MemberLoginPage() {
   const [signInEmail, setSignInEmail] = useState("");
   const [signInPassword, setSignInPassword] = useState("");
   const [trustDevice, setTrustDevice] = useState(false);
+
+  // Restore the last explicit choice after mount. Server and first client
+  // render both start unchecked, so hydration matches. Read-only: this never
+  // writes, so the initial unchecked value can never overwrite a saved choice.
+  useEffect(() => {
+    if (readTrustDevicePreference()) {
+      setTrustDevice(true);
+    }
+  }, []);
   const [signInBusy, setSignInBusy] = useState(false);
   const [signInStatus, setSignInStatus] = useState<string | null>(null);
   const [signInError, setSignInError] = useState<string | null>(null);
@@ -628,7 +654,17 @@ export default function MemberLoginPage() {
           <input
             type="checkbox"
             checked={trustDevice}
-            onChange={(e) => setTrustDevice(e.target.checked)}
+            onChange={(e) => {
+              const next = e.target.checked;
+              setTrustDevice(next);
+              // Persist only the explicit choice. It takes effect at the next
+              // sign-in (setSharedDeviceMode below); it never moves or clears
+              // an already-active session.
+              writeCanonicalLocal(
+                STORAGE_KEYS.memberTrustDevicePreference,
+                String(next),
+              );
+            }}
             style={{ marginTop: 2 }}
           />
           <span>

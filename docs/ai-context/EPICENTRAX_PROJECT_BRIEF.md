@@ -231,7 +231,50 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Member entry refresh — 2026-09-25 (Deployed and verified; documentation promotion/closeout pending)
+### Remember member trust-device preference — 2026-09-25 (Independently reviewed locally; commit/preflight authorized, release pending)
+
+- **Intent:** Pap approved remembering the explicit "Trust this device" choice
+  per browser profile. A first visit defaults unchecked; checked and unchecked
+  choices persist between logins and through sign-out. Clearing site data
+  removes the preference. This does not grant authentication or permanent
+  device authority, and does not repair Admin/Member session interference.
+- **Implementation:** three reviewed files: `lib/storageKeys.ts`,
+  `app/member/login/page.tsx` and its test. Canonical device preference key
+  `epicentrax-member-trust-device` stores only "true" or "false", without
+  a legacy alias or migration. It is deliberately separate from the active
+  `epicentrax-shared-device` flag, which selects the live token backend and
+  is cleared by logout. The page starts unchecked for consistent server/client
+  rendering, restores the saved choice without writing on load, and persists
+  explicit changes via the safe storage helper. Missing/malformed/unavailable
+  storage defaults unchecked. Preference changes neither move tokens nor
+  change the active storage mode; the chosen mode applies at sign-in only.
+  The provider, runtime guard, adapter, account/logout and Admin login code
+  are unchanged, as is establish-session/refresh/navigate ordering.
+- **Independent review:** Lun passed fresh rebuilt Chromium and WebKit probes
+  at 29/29 each, covering persistence, logout retention, blocked/cleared storage,
+  next-login mode selection, cross-tab preference-toggle isolation, admitted
+  content and invalid-access rejection. Focused selection: 145/145; broader
+  selection: 169/170 with the known canonical-only admin-cache failure, also
+  reproduced on clean HEAD at 20/21. LEM reported 173/174 for a different
+  selection; do not conflate these counts or call the broader suite green.
+  Lint and whitespace checks passed. These are synthetic mounted-browser
+  results, not physical-iPhone acceptance or live account operations.
+- **Separate cross-tab lead:** opening member login in another tab and then
+  reloading a default-storage member tab reaches the account page on both
+  pre-change and candidate code without toggling the preference. Cause remains
+  undetermined within this scope. Separately, Admin login explicitly clears
+  shared member-local state and sets Admin mode; Pap reports simultaneous
+  Admin and Member tabs on his computer. That source behavior is a plausible
+  explanation of his interruption, not a confirmed incident trace. Neither
+  issue is fixed by remembering this checkbox. Session/authorization rules
+  must not be weakened to address either.
+- **Next gate:** commit the exact three-file repair plus this reconciled Brief,
+  then read-only release preflight; release requires Pap's separate approval.
+  No production write, account action or deployment occurred in this repair.
+- **Evidence:** `/private/tmp/epicentrax-trust-device-pref-g72GFK/` and
+  `/private/tmp/epicentrax-lun-trust-review-MAL50P/`.
+
+### Member entry refresh — 2026-09-25 (Deployed and closed out; physical-iPhone acceptance pending)
 
 - **Incident:** Pap reports two newly created accounts returning to login after
   password sign-in on iPhones at epicentrax.com; password resets did not help.
@@ -298,11 +341,21 @@ state override this subsection whenever they disagree, per the
   September 25 21:38:34Z). No real sign-in/reset/email, account/session change,
   database/storage write, migration, rollback, startup-unit restart or reboot
   occurred. Mel reconciled retained evidence without a fresh production read.
-- **Next gate:** separately authorize the exact documentation commit/push
-  while the webhook remains paused, then reviewed step 6 under the existing
-  execution ID to resume/verify the webhook and preserve/save/validate PM2.
-  Do not repeat steps 0–5. Physical-iPhone acceptance and Pap's exact password
-  login outcome remain outstanding. Reboot recovery remains unproven.
+- **Documentation promotion and closeout completed:** Pap separately
+  authorized docs-only commit `ef26e48e42773c76ea405a922689726e52ac3134`
+  and its one push while the webhook was paused. No deployment followed.
+  Step 6 ran once under `member-entry-20260926T023242Z`, using the original
+  02:37:06Z baseline and checksum-verified tool. Old dump preserved at
+  `/root/pm2-closeout-backup-20260926T024147Z-w8bdbhn5/dump.pm2.before`;
+  unsigned POST returned 401, secret continuity passed, PM2 saved/validated
+  at 02:41:48Z. Final retained 02:42:01Z state: same serving release and app
+  PID, webhook PID 4083096 online on port 9000, 22 release directories, no
+  worker, free lock. Exactly app and webhook are saved online with expected
+  paths; both domains' home pages return 200 at origin/public paths. Startup
+  unit remains enabled/inactive; reboot recovery is unproven. Documentation
+  is not deployed; serving remains `d85c4c6b`. Mel used retained evidence with
+  no fresh production connection. Physical-iPhone acceptance, the exact
+  password-to-login outcome and the separate incident leads remain open.
 - **Evidence:** `/private/tmp/epicentrax-iphone-login-loop-TJ4oD7/`,
   `/private/tmp/epicentrax-member-entry-refresh-XFCb1K/` (including
   `INVARIANT-ADDENDUM.md`), and
@@ -2529,14 +2582,14 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-25T20:38:53-06:00`
+**Generated at:** `2026-09-25T21:32:14-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `d85c4c6 fix(auth): refresh member workspace before entry navigation`
-**Commit date:** `2026-09-25T20:24:44-06:00`
-**origin/main:** `d85c4c6`
+**Commit:** `ef26e48 docs: reconcile verified member entry refresh release`
+**Commit date:** `2026-09-25T20:41:26-06:00`
+**origin/main:** `ef26e48`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `4`
 **Staged:** `0`
 **Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._

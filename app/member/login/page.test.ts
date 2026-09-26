@@ -217,3 +217,69 @@ test("the refresh adds no delay, retry, reload or duplicate session state", () =
   }
   assert.equal((SOURCE.match(/workspace\.refresh\(\);/g) || []).length, 2);
 });
+
+// ── Remembered "Trust this device" choice ───────────────────────────────────
+// A browser-scoped UI preference, distinct from the ACTIVE storage-mode marker
+// (`epicentrax-shared-device`, lib/supabase.ts) that decides where a live
+// session is read. Lifecycle behaviour is proven in mounted Chromium/WebKit.
+
+const STORAGE_KEYS_SOURCE = readFileSync(
+  fileURLToPath(new URL("../../../lib/storageKeys.ts", import.meta.url)),
+  "utf8",
+);
+const ACCOUNT_SESSION_SOURCE = readFileSync(
+  fileURLToPath(new URL("../../../lib/memberAccountSession.ts", import.meta.url)),
+  "utf8",
+);
+const SUPABASE_SOURCE = readFileSync(
+  fileURLToPath(new URL("../../../lib/supabase.ts", import.meta.url)),
+  "utf8",
+);
+
+test("the preference is a registered Tier 5 key, separate from the active storage-mode marker", () => {
+  assert.match(STORAGE_KEYS_SOURCE, /memberTrustDevicePreference: "epicentrax-member-trust-device",/);
+  assert.notEqual("epicentrax-member-trust-device", "epicentrax-shared-device");
+  // no legacy alias: a brand-new key has no fcoc- predecessor
+  const legacyBlock = STORAGE_KEYS_SOURCE.slice(STORAGE_KEYS_SOURCE.indexOf("export const LEGACY_STORAGE_KEYS"));
+  assert.equal(/memberTrustDevicePreference/.test(legacyBlock), false);
+  // the adapter's backend selection is still driven only by its own marker
+  assert.equal(/memberTrustDevicePreference|epicentrax-member-trust-device/.test(SUPABASE_SOURCE), false);
+});
+
+test("the checkbox starts unchecked and restores a saved choice read-only after mount", () => {
+  assert.match(SOURCE, /const \[trustDevice, setTrustDevice\] = useState\(false\);/);
+  const restore = SOURCE.slice(
+    SOURCE.indexOf("useEffect(() => {\n    if (readTrustDevicePreference())"),
+    SOURCE.indexOf("}, []);", SOURCE.indexOf("if (readTrustDevicePreference())")),
+  );
+  assert.match(restore, /setTrustDevice\(true\);/);
+  // restoring never writes, so it can never overwrite a saved choice
+  assert.equal(/writeCanonicalLocal|setItem|setSharedDeviceMode/.test(restore), false);
+});
+
+test("a missing, malformed or unavailable preference reads as unchecked", () => {
+  const reader = SOURCE.slice(
+    SOURCE.indexOf("function readTrustDevicePreference(): boolean {"),
+    SOURCE.indexOf("export default function MemberLoginPage()"),
+  );
+  assert.match(reader, /if \(typeof window === "undefined"\) \{\s*\n\s*return false;/);
+  assert.match(reader, /=== "true"/, "only an exact saved true restores checked");
+  assert.match(reader, /\} catch \{\s*\n\s*return false;/);
+});
+
+test("both explicit choices persist on change, without touching the active session mode", () => {
+  const handler = SOURCE.slice(
+    SOURCE.indexOf("const next = e.target.checked;"),
+    SOURCE.indexOf("}}", SOURCE.indexOf("const next = e.target.checked;")),
+  );
+  assert.match(handler, /writeCanonicalLocal\(\s*\n\s*STORAGE_KEYS\.memberTrustDevicePreference,\s*\n\s*String\(next\),/);
+  // code only (the handler's comment mentions setSharedDeviceMode by name)
+  const handlerCode = handler.replace(/^\s*\/\/.*$/gm, "");
+  assert.equal(/setSharedDeviceMode|signOut|removeItem/.test(handlerCode), false);
+  // the chosen mode is still applied only at sign-in
+  assert.equal((SOURCE.match(/setSharedDeviceMode\(!trustDevice\);/g) || []).length, 1);
+});
+
+test("sign-out and member-state cleanup leave the remembered choice in place", () => {
+  assert.equal(/memberTrustDevicePreference|epicentrax-member-trust-device/.test(ACCOUNT_SESSION_SOURCE), false);
+});
