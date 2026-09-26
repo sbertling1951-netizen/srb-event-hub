@@ -11,6 +11,7 @@ import {
   type ResolvedRegistration,
 } from "@/lib/memberAccountSession";
 import { saveMemberSession } from "@/lib/memberSession";
+import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
 import {
   dualRemoveLocal,
@@ -88,6 +89,7 @@ const primaryButtonStyle: React.CSSProperties = {
 
 export default function MemberLoginPage() {
   const router = useRouter();
+  const workspace = useMemberWorkspace();
 
   // Session startup: a valid authenticated session routes straight to
   // the person-centric account landing page. Only once we've confirmed
@@ -291,6 +293,12 @@ export default function MemberLoginPage() {
           registrations[0],
           authUserId,
         );
+        // The root provider persists across this route transition and, on
+        // this protected /member route family with no MemberSession yet, has
+        // settled on a sticky recovery_required. Refresh its snapshot before
+        // navigation so MemberRouteGuard cannot consume that stale state ahead
+        // of the new, coherent canonical MemberSession (same as Open Event).
+        workspace.refresh();
         router.push(destination);
         return;
       }
@@ -464,6 +472,11 @@ export default function MemberLoginPage() {
           : "Login successful. Opening check-in...",
       );
 
+      // Same boundary as account entry: the Temporary Event Access
+      // MemberSession is now coherent, so refresh the persisted provider
+      // snapshot before navigation rather than let MemberRouteGuard evaluate
+      // the stale recovery_required state from this sign-in page.
+      workspace.refresh();
       router.replace(destination);
 
       return;

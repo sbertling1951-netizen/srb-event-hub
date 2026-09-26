@@ -158,3 +158,62 @@ test("the affirmative trusted-device choice maps to persistent storage while unc
   assert.match(SOURCE, /your sign-in\s*will end when you close this browser tab or window/i);
   assert.doesNotMatch(SOURCE, /This is a shared device\./);
 });
+
+// ── Member entry refresh ordering ───────────────────────────────────────────
+// /member/login is inside the protected /member route family, where the root
+// provider settles on a sticky recovery_required before any MemberSession
+// exists. Both entry paths must refresh that persisted snapshot after the
+// coherent MemberSession is written and before navigating, exactly as the
+// account chooser's Open Event does, or MemberRouteGuard can act on the stale
+// state (reproduced in mounted WebKit: contextInvalid for accounts, a
+// sessionExpired login bounce for Temporary Event Access).
+
+const accountSignIn = SOURCE.slice(
+  SOURCE.indexOf("async function handleAccountSignIn()"),
+  SOURCE.indexOf("async function sendRecoveryLink()"),
+);
+const eventAccessEntry = SOURCE.slice(
+  SOURCE.indexOf("async function handleEnter()"),
+  SOURCE.indexOf("if (checkingSession) {"),
+);
+
+test("login reads the shared Member Workspace to refresh it", () => {
+  assert.match(
+    SOURCE,
+    /import \{ useMemberWorkspace \} from "@\/lib\/memberWorkspace\/useMemberWorkspace"/,
+  );
+  assert.match(SOURCE, /const workspace = useMemberWorkspace\(\);/);
+});
+
+test("single-registration account entry refreshes after session completion and before navigation", () => {
+  const complete = accountSignIn.indexOf("await enterResolvedRegistration(");
+  const refresh = accountSignIn.indexOf("workspace.refresh();");
+  const navigate = accountSignIn.indexOf("router.push(destination);");
+
+  assert.ok(complete >= 0, "shared session completion must run");
+  assert.ok(refresh > complete, "workspace refresh follows session completion");
+  assert.ok(navigate > refresh, "navigation follows workspace refresh");
+  // zero / multiple registrations keep their account-page routing, unrefreshed
+  assert.match(accountSignIn.slice(navigate), /router\.replace\("\/member\/account"\);/);
+  assert.equal((accountSignIn.match(/workspace\.refresh\(\);/g) || []).length, 1);
+});
+
+test("Temporary Event Access refreshes after its session is written and before navigation", () => {
+  const save = eventAccessEntry.indexOf("saveMemberSession({");
+  const refresh = eventAccessEntry.indexOf("workspace.refresh();");
+  const navigate = eventAccessEntry.indexOf("router.replace(destination);");
+
+  assert.ok(save >= 0, "the governed Temporary Event Access session is written");
+  assert.ok(refresh > save, "workspace refresh follows the session write");
+  assert.ok(navigate > refresh, "navigation follows workspace refresh");
+  // destinations unchanged: dashboard when arrived or check-in not open, else check-in
+  assert.match(eventAccessEntry, /arrived \|\| !checkinOpen \? "\/member" : "\/member\/checkin"/);
+  assert.equal((eventAccessEntry.match(/workspace\.refresh\(\);/g) || []).length, 1);
+});
+
+test("the refresh adds no delay, retry, reload or duplicate session state", () => {
+  for (const block of [accountSignIn, eventAccessEntry]) {
+    assert.equal(/setTimeout|location\.reload|window\.location\.(href|assign)|router\.refresh\(\)/.test(block), false);
+  }
+  assert.equal((SOURCE.match(/workspace\.refresh\(\);/g) || []).length, 2);
+});

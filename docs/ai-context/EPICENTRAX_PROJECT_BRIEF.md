@@ -231,7 +231,57 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Map nudging, member markers and image replacement — 2026-09-25 (Deployed and verified; documentation promotion/closeout pending)
+### Member entry refresh — 2026-09-25 (Independently reviewed locally; commit/preflight authorized, release pending)
+
+- **Incident:** Pap reports two newly created accounts returning to login after
+  password sign-in on iPhones at epicentrax.com; password resets did not help.
+  His own iPhone 16 Pro Max remains signed in. Affected accounts and exact
+  screen sequence are not independently identified. Do not reinterpret the
+  reported password method as Temporary Event Access (TEA).
+- **Confirmed bounded defect:** the login page established a coherent member
+  session, then navigated with stale shared workspace recovery state. Mounted
+  WebKit tests reproduced an account-page bounce and session clearing for
+  password entry, and login-page bounce for TEA. Chromium's original URL-only
+  diagnosis overstated success: rendered-content checks found it stuck on
+  "Checking member access…". These synthetic results establish a real race,
+  not the exact physical-iPhone password-to-login outcome Pap reported.
+- **Repair:** `app/member/login/page.tsx` uses the existing workspace hook and
+  calls `workspace.refresh()` after successful session establishment and before
+  navigation in the single-registration password and TEA paths, matching the
+  account chooser's Open Event precedent. Zero/multiple registration routing,
+  TEA destinations and failure handling are preserved. No delay, retry, forced
+  reload, duplicate state, identity or authority change is introduced. Provider,
+  runtime route guard, storage adapter, account page and server are untouched.
+- **Tests and independent review:** three files comprise the frozen repair:
+  login page, its test, and `components/auth/MemberRouteGuard.test.ts`. The
+  invariant adds an exact `/member/login` entry-surface exception requiring
+  both establish-session/refresh/navigate sequences and refresh-only workspace
+  usage; protected-route enforcement remains intact. Lun independently passed
+  108/108 focused tests, 8/8 negative cases, lint and whitespace checks. Fresh
+  Chromium/WebKit candidate runs pass 15/15 scenario checks each, including
+  ten repeated attempts per storage-mode/destination case with actual admitted
+  content and preserved sessions. Clean-HEAD before runs pass only 11/15 and
+  7/15 respectively. Scenario totals and repeated attempts are distinct counts.
+  LEM's full TypeScript output is byte-identical to the 16-error HEAD baseline.
+  Desktop Playwright/network-mocked evidence is not physical-iPhone acceptance.
+- **Open incident leads:** the password account-page versus reported login-page
+  discrepancy remains unresolved. Cross-tab effects of tab-only sessions are
+  unchanged and outside this repair. Untimestamped production log entries show
+  activation-email rate-limit errors, not tied to these members or the incident
+  window. No account/session recovery, live identity query, rate-limit change
+  or real sign-in/reset was performed by the repair/review agents. ADR-005 is
+  empty; substantive Member Workspace/identity sources governed the work.
+- **Next gate:** commit only the three reviewed files plus Mel's reconciled
+  Brief, then perform read-only release preflight. Product release needs Pap's
+  separate approval. Do not alter the guard or relax access checks. The exact
+  reported incident requires user acceptance and, if still failing, a narrowly
+  identified follow-up diagnosis.
+- **Evidence:** `/private/tmp/epicentrax-iphone-login-loop-TJ4oD7/`,
+  `/private/tmp/epicentrax-member-entry-refresh-XFCb1K/` (including
+  `INVARIANT-ADDENDUM.md`), and
+  `/private/tmp/epicentrax-lun-member-review-Lq907W/`.
+
+### Map nudging, member markers and image replacement — 2026-09-25 (Deployed and closed out; reduced-image loading accepted)
 
 - **Scope and state:** Pap approved three bounded repairs: pending/saved marker
   nudging and selection in the Master Map Editor; readable Member Coach Map
@@ -322,12 +372,28 @@ state override this subsection whenever they disagree, per the
   stayed online; port 9000 is not listening; no worker is running and the lock
   is free. PM2 is not saved (dump remains 13:23:54Z). No migration, image upload,
   publication, parking sync, rollback, startup-unit restart or reboot occurred.
-- **Next gate:** Pap's separate authorization is required to commit/push Mel's
-  exact reconciled Brief while the webhook remains paused, then execute the
-  reviewed step 6 under the same execution ID to resume/verify the webhook and
-  preserve/save/validate PM2. Do not repeat release steps 0–5. Live image
-  replacement/publication and iPhone acceptance remain separate outstanding
-  operations; WebKit authoring, pan/zoom and reboot recovery limitations remain.
+- **Documentation promotion and closeout completed:** Pap authorized the
+  docs-only `8d2188ade10ae52b35cf3ecc323eeb684ac6104e` commit/push while the
+  webhook was paused; no deployment followed. Step 6 ran once under execution
+  `map-combined-20260925T213003Z`, using the original pre-stop baseline and
+  checksum-verified tool. The old dump was preserved at
+  `/root/pm2-closeout-backup-20260925T213832Z-1fkfopbs/dump.pm2.before`;
+  unsigned webhook POST returned 401, secret continuity passed and PM2 was
+  saved/validated at 21:38:34Z. Final retained 21:38:46Z state: serving/app PID
+  unchanged, webhook PID 4074935 online on port 9000, 21 release directories,
+  no worker and free lock. Saved definitions contain exactly the app and
+  webhook, online with expected paths. Startup unit remains enabled/inactive;
+  reboot recovery is unproven. Documentation is not deployed; serving remains
+  `1a8a5043`. Mel used retained evidence, with no fresh production connection.
+- **Pap's subsequent map acceptance and deferral:** after archiving the old
+  large-image map and successfully saving the draft, Pap reports the iPhone
+  map page now loads correctly. This is user-reported loading acceptance, not
+  an independent measurement of every interaction or current stored map data.
+  Pap reports that draft promotion did not automatically archive/promote the
+  expected previous version; matching names alone do not establish lineage.
+  Investigating that reported workflow is explicitly deferred until after the
+  rally. No new map lifecycle repair is authorized. Anonymous storage-write
+  permissions, WebKit touch authoring and pan/zoom limitations remain open.
 - **Evidence:** `/private/tmp/epicentrax-map-nudge-coach-repair-CEaA1d/`,
   `/private/tmp/epicentrax-mastermap-replace-image-sCojjY/`,
   `/private/tmp/epicentrax-lun-review-fresh/`,
@@ -2433,14 +2499,14 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-25T15:36:34-06:00`
+**Generated at:** `2026-09-25T20:21:57-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `1a8a504 fix(maps): repair nudging, member markers and image replacement`
-**Commit date:** `2026-09-25T15:17:48-06:00`
-**origin/main:** `1a8a504`
+**Commit:** `8d2188a docs: reconcile verified combined map repairs release`
+**Commit date:** `2026-09-25T15:37:57-06:00`
+**origin/main:** `8d2188a`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `4`
 **Staged:** `0`
 **Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._

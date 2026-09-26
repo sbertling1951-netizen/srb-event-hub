@@ -19,6 +19,26 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = dirname(dirname(HERE));
 
+// True when every needle occurs, in the given order, inside the source slice
+// that starts at `from` and ends at `to` (both markers must exist).
+function inOrderWithin(src: string, from: string, to: string, needles: string[]) {
+  const start = src.indexOf(from);
+  const end = src.indexOf(to, start + 1);
+  if (start < 0 || end < 0) {
+    return false;
+  }
+  const block = src.slice(start, end);
+  let at = -1;
+  for (const needle of needles) {
+    const next = block.indexOf(needle, at + 1);
+    if (next < 0) {
+      return false;
+    }
+    at = next;
+  }
+  return true;
+}
+
 const SOURCE = readFileSync(
   fileURLToPath(new URL("./MemberRouteGuard.tsx", import.meta.url)),
   "utf8",
@@ -226,8 +246,26 @@ test("INVARIANT: every page that consumes useMemberWorkspace() enforces the shar
       route === "/member/account" &&
       /workspace\.refresh\(\);/.test(src) &&
       /await enterResolvedRegistration\(/.test(src);
+    // Member sign-in is likewise an entry surface, not an admitted workspace
+    // page. It may consume the context ONLY to refresh a newly established
+    // session before navigating into a guarded route -- on both of its entry
+    // paths, in that order -- and never reads identity/workspace fields.
+    const isMemberLoginEntryHandoff =
+      route === "/member/login" &&
+      inOrderWithin(src, "async function handleAccountSignIn()", "async function sendRecoveryLink()", [
+        "await enterResolvedRegistration(",
+        "workspace.refresh();",
+        "router.push(destination);",
+      ]) &&
+      inOrderWithin(src, "async function handleEnter()", "if (checkingSession) {", [
+        "saveMemberSession({",
+        "workspace.refresh();",
+        "router.replace(destination);",
+      ]) &&
+      (src.match(/workspace\.refresh\(\);/g) || []).length === 2 &&
+      !/workspace\.(?!refresh\(\))\w+/.test(src);
     assert.ok(
-      wrapped || selfEnforces || isAccountChooserHandoff,
+      wrapped || selfEnforces || isAccountChooserHandoff || isMemberLoginEntryHandoff,
       `${route} consumes useMemberWorkspace() but neither renders <MemberRouteGuard> nor self-enforces the shared identity state -- a recovery_required workspace could render through with null identity`,
     );
   }
