@@ -231,7 +231,7 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Member entry refresh — 2026-09-25 (Independently reviewed locally; commit/preflight authorized, release pending)
+### Member entry refresh — 2026-09-25 (Deployed and verified; documentation promotion/closeout pending)
 
 - **Incident:** Pap reports two newly created accounts returning to login after
   password sign-in on iPhones at epicentrax.com; password resets did not help.
@@ -271,15 +271,45 @@ state override this subsection whenever they disagree, per the
   window. No account/session recovery, live identity query, rate-limit change
   or real sign-in/reset was performed by the repair/review agents. ADR-005 is
   empty; substantive Member Workspace/identity sources governed the work.
-- **Next gate:** commit only the three reviewed files plus Mel's reconciled
-  Brief, then perform read-only release preflight. Product release needs Pap's
-  separate approval. Do not alter the guard or relax access checks. The exact
-  reported incident requires user acceptance and, if still failing, a narrowly
-  identified follow-up diagnosis.
+- **Commit and release:** Pap authorized product commit
+  `d85c4c6bdd200372b421c323edff2f43404857ff`, parent
+  `8d2188ade10ae52b35cf3ecc323eeb684ac6104e`; all four committed blobs match
+  Mel's manifest. The isolated build passed with 134 pages and placeholder
+  configuration; type checking was bypassed in that copy only and remains
+  covered by the separate retained baseline comparison. One normal push and
+  one deployment ran under `member-entry-20260926T023242Z`, with exactly
+  21 to 22 release directories. The application-only tooling manifest has
+  20 entries, distinct from its preserved source tooling's 25-entry manifest.
+- **Verified serving state (2026-09-26 02:37:27Z):** retained evidence records
+  serving `d85c4c6b` from
+  `/root/srb-event-hub-releases/20260926T023321Z-d85c4c6bdd20`, app PID
+  4080018 online with zero restarts, rollback
+  `20260925T213044Z-1a8a5043562a` (`1a8a5043`) complete, no worker and free
+  lock. Live, pinned and next-deployment configurations match project
+  `lastlzlewonsmwtolpvh` and origin `https://epicentrax.com`. Both domains
+  pass the established verifier, account-profile 401 with neutral body and
+  private/no-store, and system-status 401 at origin/public paths. All 52
+  new/retained asset checks pass, as do the login/account routes' own 13-asset
+  inventories per domain. Route-shell 200s prove reachability only.
+- **Pause boundary:** step 5 verified local/staged tool checksums, captured
+  this execution's baseline from the running webhook at 02:37:06Z, then
+  stopped only the webhook. The prior three baselines were preserved. Port
+  9000 is not listening; the app remains online. PM2 is not saved (dump remains
+  September 25 21:38:34Z). No real sign-in/reset/email, account/session change,
+  database/storage write, migration, rollback, startup-unit restart or reboot
+  occurred. Mel reconciled retained evidence without a fresh production read.
+- **Next gate:** separately authorize the exact documentation commit/push
+  while the webhook remains paused, then reviewed step 6 under the existing
+  execution ID to resume/verify the webhook and preserve/save/validate PM2.
+  Do not repeat steps 0–5. Physical-iPhone acceptance and Pap's exact password
+  login outcome remain outstanding. Reboot recovery remains unproven.
 - **Evidence:** `/private/tmp/epicentrax-iphone-login-loop-TJ4oD7/`,
   `/private/tmp/epicentrax-member-entry-refresh-XFCb1K/` (including
   `INVARIANT-ADDENDUM.md`), and
   `/private/tmp/epicentrax-lun-member-review-Lq907W/`.
+  Release preflight: `/private/tmp/epicentrax-member-entry-release-preflight-5yisRI/`;
+  execution: `/private/tmp/epicentrax-member-entry-release-exec-YTWmvk/`,
+  including `EXECUTION-RECORD.md` and `logs/paused-state.log`.
 
 ### Map nudging, member markers and image replacement — 2026-09-25 (Deployed and closed out; reduced-image loading accepted)
 
@@ -2499,14 +2529,14 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-25T20:21:57-06:00`
+**Generated at:** `2026-09-25T20:38:53-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `8d2188a docs: reconcile verified combined map repairs release`
-**Commit date:** `2026-09-25T15:37:57-06:00`
-**origin/main:** `8d2188a`
+**Commit:** `d85c4c6 fix(auth): refresh member workspace before entry navigation`
+**Commit date:** `2026-09-25T20:24:44-06:00`
+**origin/main:** `d85c4c6`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `4`
+**Tracked modified:** `1`
 **Staged:** `0`
 **Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
