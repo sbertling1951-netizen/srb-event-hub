@@ -231,15 +231,15 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### FCOC print logo resolution — 2026-09-27 (Release authorized; production verification pending)
+### FCOC print logo resolution — 2026-09-27 (Deployed and verified; Pap confirmed app update)
 
 - **Authorization:** Pap supplied the replacement logo, approved replacing the
   shared organization logo, and identified its URL as `/fcoc-logo.png`.
 - **Source finding:** `public/fcoc-logo.png` was a 48 × 48 PNG (4,410 bytes).
-  Print Center uses the Tenant logo for both nametags and coach plates; the
+  Print Center uses the Tenant logo for both nametags and coach plates.
   Live public page branding was subsequently verified as `/fcoc-logo.png`;
   the served image response was 4,410 bytes with a four-hour cache lifetime.
-- **Local change:** replaced that file with the supplied PNG unchanged:
+- **Change:** replaced that file with the supplied PNG unchanged:
   2267 × 1875, 252,929 bytes, SHA256
   `4d573c4d07427c030063dfd5c8eddd6a183bf41a6feac4e4c166de7d4096f253`.
   Print Center adds the asset hash prefix as a query version only for that
@@ -249,14 +249,25 @@ state override this subsection whenever they disagree, per the
 - **Validation:** replacement bytes match the supplied file; dimensions
   verified; 50/50 focused print tests pass, including preservation of absent
   and other-Tenant logos; both changed TypeScript files lint clean;
-  `git diff --check` passed. No browser or physical-print acceptance
-  claimed. Pap authorized making the logo live; the release includes the
-  previously approved trust-device preference commit. Production verification
-  remains pending; no successful deployment is claimed at this checkpoint.
+  `git diff --check` passed. Both public domains serve the exact replacement
+  SHA256 and dimensions at the versioned URL; both deployed Print Center
+  bundles contain the new reference. Pap confirmed the logo updated in the app.
+  No physical-print acceptance claimed.
+- **Production:** product commit `6f02f7ed4db8c95038d0846db26d1068db99b9dc`
+  deployed in `20260927T213451Z-6f02f7ed4db8`, including the previously approved
+  trust-device preference commit. One fast-forward product push, one deployment
+  (22 to 23 release directories); app online, PID 4118181. Rollback rotated to
+  `20260926T023321Z-d85c4c6bdd20`. Both-domain origin/public health, protected API
+  responses and retained/new assets passed the release verifier. No migration,
+  database write, account action or storage upload. Runtime closeout evidence
+  is maintained with the execution record below.
 - **Evidence:** `/private/tmp/epicentrax-fcoc-logo-frc63nsg/`, including
   `asset-record.json`, `local-replacement-record.json` and the original asset.
+  Release evidence: `/private/tmp/epicentrax-logo-release-xbyyxu69/`, execution
+  `logo-trust-20260927T213307Z`; `logo-live-verification.json`, `logs/`, `receipts/`
+  and `EXECUTION-RECORD.md`. Adapted release-gate mock suite: 80/80.
 
-### Remember member trust-device preference — 2026-09-25 (Independently reviewed locally; commit/preflight authorized, release pending)
+### Remember member trust-device preference — 2026-09-25 (Deployed with the September 27 logo release)
 
 - **Intent:** Pap approved remembering the explicit "Trust this device" choice
   per browser profile. A first visit defaults unchecked; checked and unchecked
@@ -293,9 +304,11 @@ state override this subsection whenever they disagree, per the
   explanation of his interruption, not a confirmed incident trace. Neither
   issue is fixed by remembering this checkbox. Session/authorization rules
   must not be weakened to address either.
-- **Next gate:** commit the exact three-file repair plus this reconciled Brief,
-  then read-only release preflight; release requires Pap's separate approval.
-  No production write, account action or deployment occurred in this repair.
+- **Release:** reviewed repair commit `009abf2d19c2d80dc0765d7e031667648daf9b2a`
+  is included unchanged in serving product commit `6f02f7ed4db8c95038d0846db26d1068db99b9dc`.
+  The earlier blocked pre-push attempt did not deploy; this approved combined
+  release completed on September 27. No live sign-in or account action was
+  performed to test it; physical-device preference acceptance remains open.
 - **Evidence:** `/private/tmp/epicentrax-trust-device-pref-g72GFK/` and
   `/private/tmp/epicentrax-lun-trust-review-MAL50P/`.
 
@@ -2607,14 +2620,14 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-27T15:32:17-06:00`
+**Generated at:** `2026-09-27T15:40:31-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `009abf2 fix(auth): remember member trust device preference`
-**Commit date:** `2026-09-25T21:33:20-06:00`
-**origin/main:** `ef26e48`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `6f02f7e fix(print): use high-resolution FCOC logo with fresh print URL`
+**Commit date:** `2026-09-27T15:32:23-06:00`
+**origin/main:** `6f02f7e`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `4`
+**Tracked modified:** `1`
 **Staged:** `0`
 **Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
