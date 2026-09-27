@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 
 import {
   type AttendeeRow,
@@ -38,7 +39,15 @@ test("Print no longer mislabels its default queue as attendees", () => {
 });
 
 test("Print Center uses canonical tenant logo branding without an FCOC fallback", () => {
-  assert.match(source, /const clubLogoUrl = tenant\?\.logoUrl \|\| null;/);
+  const expression = source.match(/const clubLogoUrl = ([\s\S]*?);/);
+  assert.ok(expression);
+  const resolve = (tenant: { logoUrl?: string | null } | null) =>
+    runInNewContext(expression[1], { tenant });
+  assert.equal(resolve(null), null);
+  assert.equal(resolve({ logoUrl: "" }), null);
+  assert.equal(resolve({ logoUrl: null }), null);
+  assert.equal(resolve({ logoUrl: "/fcoc-logo.png" }), "/fcoc-logo.png?v=4d573c4d0742");
+  assert.equal(resolve({ logoUrl: "https://example.org/other-logo.png" }), "https://example.org/other-logo.png");
   assert.match(source, /\{clubLogoUrl \? \(/);
   assert.doesNotMatch(source, /\/fcoc-logo\.svg/);
 });

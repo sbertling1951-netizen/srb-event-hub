@@ -231,6 +231,31 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### FCOC print logo resolution — 2026-09-27 (Release authorized; production verification pending)
+
+- **Authorization:** Pap supplied the replacement logo, approved replacing the
+  shared organization logo, and identified its URL as `/fcoc-logo.png`.
+- **Source finding:** `public/fcoc-logo.png` was a 48 × 48 PNG (4,410 bytes).
+  Print Center uses the Tenant logo for both nametags and coach plates; the
+  Live public page branding was subsequently verified as `/fcoc-logo.png`;
+  the served image response was 4,410 bytes with a four-hour cache lifetime.
+- **Local change:** replaced that file with the supplied PNG unchanged:
+  2267 × 1875, 252,929 bytes, SHA256
+  `4d573c4d07427c030063dfd5c8eddd6a183bf41a6feac4e4c166de7d4096f253`.
+  Print Center adds the asset hash prefix as a query version only for that
+  exact local logo URL, so both print formats request fresh bytes immediately.
+  Other Tenant logo URLs are unchanged. No image regeneration, storage upload,
+  Tenant metadata change or policy change. The previous asset is preserved.
+- **Validation:** replacement bytes match the supplied file; dimensions
+  verified; 50/50 focused print tests pass, including preservation of absent
+  and other-Tenant logos; both changed TypeScript files lint clean;
+  `git diff --check` passed. No browser or physical-print acceptance
+  claimed. Pap authorized making the logo live; the release includes the
+  previously approved trust-device preference commit. Production verification
+  remains pending; no successful deployment is claimed at this checkpoint.
+- **Evidence:** `/private/tmp/epicentrax-fcoc-logo-frc63nsg/`, including
+  `asset-record.json`, `local-replacement-record.json` and the original asset.
+
 ### Remember member trust-device preference — 2026-09-25 (Independently reviewed locally; commit/preflight authorized, release pending)
 
 - **Intent:** Pap approved remembering the explicit "Trust this device" choice
@@ -2582,12 +2607,12 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-25T21:32:14-06:00`
+**Generated at:** `2026-09-27T15:32:17-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `ef26e48 docs: reconcile verified member entry refresh release`
-**Commit date:** `2026-09-25T20:41:26-06:00`
+**Commit:** `009abf2 fix(auth): remember member trust device preference`
+**Commit date:** `2026-09-25T21:33:20-06:00`
 **origin/main:** `ef26e48`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `4`
 **Staged:** `0`

@@ -1040,7 +1040,9 @@ function AdminPrintPageInner() {
     printMode === "name_tags"
       ? settings?.name_tag_bg_url || null
       : settings?.coach_plate_bg_url || null;
-  const clubLogoUrl = tenant?.logoUrl || null;
+  const clubLogoUrl = tenant?.logoUrl === "/fcoc-logo.png"
+    ? "/fcoc-logo.png?v=4d573c4d0742"
+    : tenant?.logoUrl || null;
   const clubLogoAlt = tenant?.displayName
     ? `${tenant.displayName} logo`
     : "Event logo";
