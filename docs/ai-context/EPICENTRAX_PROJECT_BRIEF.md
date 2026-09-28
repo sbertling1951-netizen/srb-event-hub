@@ -231,7 +231,45 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Attendee cancellation dates — 2026-09-28 UTC (Deployed and verified; webhook paused, closeout pending)
+### Nametag cardstock layout — 2026-09-28 UTC (Reviewed; release authorized, not yet deployed)
+
+- **Intent:** Pap approved the centered, evenly spaced replacement PDF and
+  requested the app produce that layout on plain cardstock. Leave attendee
+  text, including the existing “None” value, unchanged.
+- **Local behavior:** `app/admin/print/page.tsx` uses Letter portrait with six
+  fixed slots, 3.875 × 2.90625-inch tags and 0.25-inch cutting gaps. Side
+  margins are 0.25 inch; intended top/bottom margins are 0.890625 inch.
+  The existing 4:3 card artwork is uniformly scaled, preserving its internal
+  layout. Partial sheets retain their slots. Queue guidance now says Letter
+  cardstock and specifies Actual Size/100%, with browser headers/footers off.
+  Coach plates, attendee data, print filtering and authority are unchanged.
+- **Validation:** 50 existing print, print-settings and key-retirement tests
+  pass; changed-page ESLint and diff checks pass. Actual print JSX, CSS and
+  grouping extracted from the source pass Chromium/WebKit print-media geometry
+  checks for 0, 1, 6, 7, 12 and 42 tags. Chromium PDFs have the expected
+  1/1/2/2/7 pages, preserved synthetic text, no extra blank pages, and intended
+  geometry within 0.5 point of browser rounding. All seven pages were visually
+  inspected. Coach-plate PDF text and geometry match the pre-change output.
+- **Review and preflight:** Lun independently passed source review, both-engine
+  geometry, 50 focused tests, lint and preservation. Lun could not run the PDF
+  parser or visual review. Mel checked Lun's fresh PDFs with the bundled
+  runtime: geometry/text and coach comparisons pass; full and partial sheets
+  were visually inspected. The fresh TypeScript output matches clean HEAD
+  byte-for-byte (16 existing errors). An isolated webpack build passed 134
+  pages with placeholder configuration and no secrets; type checking was
+  bypassed only in that copy and compared separately. Pap explicitly authorized
+  commit and deployment. Fresh production preflight observed serving
+  `e4261915f451203c96ebee0c1ef486677c3c6e2a`, 24 releases and both processes
+  online; that release is the intended rollback target. No migration is needed.
+- **Limits:** fixtures use synthetic data and extracted print markup, not a
+  signed-in full app session. WebKit print-media layout was tested, not native
+  Safari PDF output or physical printing. Deployment remains pending.
+  Review: `/private/tmp/epicentrax-nametag-layout-lun-review/REVIEW.md`;
+  supplemental verification: `/private/tmp/epicentrax-nametag-mel-reconciliation/`;
+  release evidence: `/private/tmp/epicentrax-nametag-release/`. Evidence: `/private/tmp/epicentrax-nametag-app-layout/`; approved PDF:
+  `/private/tmp/epicentrax-nametag-layout-inspect/output/pdf/NameTags-Centered.pdf`.
+
+### Attendee cancellation dates — 2026-09-28 UTC (Closed out; Pap reported working)
 
 - **Intent and behavior:** Pap requested visible, editable cancellation dates
   on attendee records. Existing `attendees.cancelled_at` remains the single
@@ -297,14 +335,17 @@ state override this subsection whenever they disagree, per the
   saved; dump timestamp remains 2026-09-27 21:45:32Z. Attempted/completed apply
   and push markers and all receipts remain intact. These are retained execution
   observations, not a fresh host probe by Mel.
-- **Next authorization boundary:** the documentation diff is being reconciled
-  while the webhook is paused. Documentation commit/push and step 60 (resume,
-  original-baseline secret-continuity verification and PM2 save) require separate
-  approval. Do not repeat migration or product-release steps. Until resumed,
-  the stopped webhook will not deploy documentation pushes. No closeout success
-  is claimed here; execution evidence will record it when performed.
-- **Limits and rollback:** signed-in cancellation-date acceptance and physical
-  devices remain untested. Ambiguous fall-back-hour input chooses the first
+- **Completed closeout (retained execution evidence):** documentation commit
+  `c4cb9095dc3d0487d60d5ab001b2757434395eda` was pushed while paused, with no
+  additional deployment. Step 60 resumed the webhook, verified the original
+  secret baseline and saved PM2 at 02:31:12Z with exactly the app and webhook.
+  Final app PID 4129902 and serving release stayed unchanged; webhook PID
+  4134261 was online, port 9000 listening, unsigned requests rejected with 401.
+  There remained 24 releases, no worker and a free lock; ledger stayed 266/266.
+  The earlier paused checkpoint above is historical. Pap subsequently reported
+  “works”; this is user-reported acceptance, not an agent-run account test.
+- **Limits and rollback:** Pap reported the feature working; independent
+  signed-in and physical-device tests remain unperformed. Ambiguous fall-back-hour input chooses the first
   occurrence. Audit covers timestamp UPDATEs, not INSERT/DELETE; no Auth context
   yields a null actor. Identical-value retries are no-op successes. An absent
   refreshed record shows the existing truthful unavailable-record error.
@@ -2711,14 +2752,14 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-27T20:25:11-06:00`
+**Generated at:** `2026-09-27T21:29:56-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `e426191 feat(attendees): add governed cancellation date editing`
-**Commit date:** `2026-09-27T19:02:22-06:00`
-**origin/main:** `e426191`
+**Commit:** `c4cb909 docs: reconcile verified cancellation date release`
+**Commit date:** `2026-09-27T20:28:47-06:00`
+**origin/main:** `c4cb909`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `2`
 **Staged:** `0`
 **Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._

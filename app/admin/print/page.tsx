@@ -1128,23 +1128,26 @@ top: 0 !important;
     }
 
     @page {
-      size: ${printMode === "coach_plates" ? "landscape" : "portrait"};
-      margin: ${printMode === "coach_plates" ? "0" : "0.2in"};
+      size: ${printMode === "coach_plates" ? "landscape" : "letter portrait"};
+      margin: ${printMode === "coach_plates" ? "0" : "0.25in"};
     }
 
     .name-tag-sheet {
       display: grid !important;
-      grid-template-columns: 4in 4in !important;
-      grid-template-rows: 3in 3in 3in !important;
+      grid-template-columns: repeat(2, 3.875in) !important;
+      grid-template-rows: repeat(3, 2.90625in) !important;
+      align-content: center !important;
       width: 8in !important;
-      height: 9in !important;
+      height: 10.5in !important;
       margin: 0 auto !important;
       padding: 0 !important;
-      gap: 0 !important;
+      gap: 0.25in !important;
       overflow: hidden !important;
       box-sizing: border-box !important;
       page-break-inside: avoid !important;
       break-inside: avoid-page !important;
+      page-break-after: always !important;
+      break-after: page !important;
     }
 
     .name-tag-sheet:last-child {
@@ -1391,7 +1394,7 @@ top: 0 !important;
           Print queue contains {printableRows.length} of{" "}
           {sortedFilteredAttendees.length} filtered attendees.
           {printMode === "name_tags"
-            ? ` This will print ${printableNameTags.length} name tag${printableNameTags.length === 1 ? "" : "s"} on ${printableNameTagSheetCount} Avery 5164 sheet${printableNameTagSheetCount === 1 ? "" : "s"}.`
+            ? ` This will print ${printableNameTags.length} name tag${printableNameTags.length === 1 ? "" : "s"} on ${printableNameTagSheetCount} Letter cardstock sheet${printableNameTagSheetCount === 1 ? "" : "s"}, six per page with ¼-inch cutting gaps. Print portrait at 100% (Actual Size), with headers and footers off.`
             : ""}
         </p>
         </PageSection>
@@ -1768,12 +1771,13 @@ top: 0 !important;
                 className="name-tag-sheet"
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(2, 4in)",
-                  gridTemplateRows: "repeat(3, 3in)",
+                  gridTemplateColumns: "repeat(2, 3.875in)",
+                  gridTemplateRows: "repeat(3, 2.90625in)",
                   justifyContent: "center",
-                  gap: 0,
+                  alignContent: "center",
+                  gap: "0.25in",
                   width: "8in",
-                  height: "9in",
+                  height: "10.5in",
                   margin: "0 auto",
                   pageBreakInside: "avoid",
                   breakInside: "avoid-page",
@@ -1794,6 +1798,9 @@ top: 0 !important;
                       height: "3in",
                       minHeight: "3in",
                       maxHeight: "3in",
+                      // Preserve the artwork's 4:3 layout inside the cardstock grid.
+                      transform: "scale(0.96875)",
+                      transformOrigin: "top left",
                       boxSizing: "border-box",
                       overflow: "hidden",
                       border: "1px solid #ddd",
