@@ -1,5 +1,5 @@
 "use client";
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
@@ -22,6 +22,8 @@ import {
   useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
 import { supabase } from "@/lib/supabase";
+
+import styles from "./photoDetails.module.css";
 
 // TODO: Update this interface if photo table shape changes
 interface Photo {
@@ -83,6 +85,7 @@ function PhotoLibraryPageInner() {
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [modalPhoto, setModalPhoto] = useState<Photo | null>(null);
   const [saving, setSaving] = useState(false);
+  const saveInFlightRef = useRef(false);
   const [modalEdits, setModalEdits] = useState<Partial<Photo>>({});
   const loadGenerationRef = useRef(0);
   const currentUserIdRef = useRef<string | null>(null);
@@ -238,53 +241,72 @@ function PhotoLibraryPageInner() {
     setModalEdits((edits) => ({ ...edits, [field]: value }));
   }
   async function handleSave() {
-    if (!modalPhoto) {
+    if (!modalPhoto || saveInFlightRef.current) {
       return;
     }
+    saveInFlightRef.current = true;
     setSaving(true);
     setError(null);
 
-    let nextStatus = modalEdits.photo_status ?? modalPhoto.photo_status;
-    const nextFeaturedLevel = modalEdits.featured_level ?? 0;
+    try {
+      let nextStatus = modalEdits.photo_status ?? modalPhoto.photo_status;
+      const nextFeaturedLevel = modalEdits.featured_level ?? 0;
 
-    // Preserve existing "Featured requires Approved" UX, now keyed off
-    // featured_level (the governed RPC derives is_featured from this).
-    if (nextFeaturedLevel > 0 && nextStatus !== "approved") {
-      nextStatus = "approved";
-    }
+      // Preserve existing "Featured requires Approved" UX, now keyed off
+      // featured_level (the governed RPC derives is_featured from this).
+      if (nextFeaturedLevel > 0 && nextStatus !== "approved") {
+        nextStatus = "approved";
+      }
 
-    const { data, error } = await supabase.rpc("manage_event_photo", {
-      p_photo_id: modalPhoto.id,
-      p_photo_status: nextStatus,
-      p_member_caption: modalEdits.member_caption ?? null,
-      p_admin_caption: modalEdits.admin_caption ?? null,
-      p_show_caption: modalEdits.show_caption ?? false,
-      p_featured_level: nextFeaturedLevel,
-    });
-    if (error) {
-      setError(`Failed to save changes: ${error.message}`);
+      const { data, error } = await supabase.rpc("manage_event_photo", {
+        p_photo_id: modalPhoto.id,
+        p_photo_status: nextStatus,
+        p_member_caption: modalEdits.member_caption ?? null,
+        p_admin_caption: modalEdits.admin_caption ?? null,
+        p_show_caption: modalEdits.show_caption ?? false,
+        p_featured_level: nextFeaturedLevel,
+      });
+      if (error) {
+        setError(`Failed to save changes: ${error.message}`);
+        return;
+      }
+      const scope = currentScope();
+      if (scope) {invalidateAdminPhotoCache(scope);}
+      // Refresh local state for the updated photo from the RPC's returned row.
+      setPhotos((prev) =>
+        prev.map((p) =>
+          p.id === modalPhoto.id
+            ? {
+                ...p,
+                photo_status: data.photo_status,
+                member_caption: data.member_caption,
+                admin_caption: data.admin_caption,
+                show_caption: data.show_caption,
+                is_featured: data.is_featured,
+                featured_level: data.featured_level,
+              }
+            : p,
+        ),
+      );
+      closeModal();
+    } catch (saveError) {
+      setError(`Failed to save changes: ${saveError instanceof Error ? saveError.message : "Please try again."}`);
+    } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
-      return;
     }
-    const scope = currentScope();
-    if (scope) {invalidateAdminPhotoCache(scope);}
-    // Refresh local state for the updated photo from the RPC's returned row.
-    setPhotos((prev) =>
-      prev.map((p) =>
-        p.id === modalPhoto.id
-          ? {
-              ...p,
-              photo_status: data.photo_status,
-              member_caption: data.member_caption,
-              admin_caption: data.admin_caption,
-              show_caption: data.show_caption,
-              is_featured: data.is_featured,
-              featured_level: data.featured_level,
-            }
-          : p,
-      ),
-    );
-    closeModal();
+  }
+
+  function handlePhotoDetailsKeyDown(e: KeyboardEvent<HTMLFormElement>) {
+    if (e.key !== "Enter" || e.defaultPrevented || e.nativeEvent.isComposing ||
+        e.altKey || e.shiftKey) {return;}
+    const target = e.target as HTMLElement;
+    // Buttons retain their native action; captions retain ordinary newlines.
+    if (target.closest("button")) {return;}
+    if (e.repeat || saveInFlightRef.current) {e.preventDefault(); return;}
+    if ((target.closest("textarea") || target.isContentEditable) && !e.metaKey && !e.ctrlKey) {return;}
+    e.preventDefault();
+    e.currentTarget.requestSubmit();
   }
 
   // Responsive grid styles
@@ -450,129 +472,139 @@ function PhotoLibraryPageInner() {
 
       <Dialog
         open={modalPhoto !== null}
-        onClose={closeModal}
+        onClose={() => { if (!saveInFlightRef.current) {closeModal();} }}
         title="Photo Details"
+        className={styles.dialog}
+        dismissOnBackdrop={false}
         footer={
           <>
             <AppButton onClick={closeModal} disabled={saving}>
               Close
             </AppButton>
-            <AppButton variant="primary" onClick={() => void handleSave()} loading={saving}>
+            <AppButton variant="primary" type="submit" form="photo-details-form" loading={saving}>
               Save
             </AppButton>
           </>
         }
       >
         {modalPhoto ? (
-          <div style={{ display: "grid", gap: "var(--space-4)", minWidth: 0 }}>
-            <div
-              style={{
-                padding: "var(--space-2) var(--space-3)",
-                background: "var(--color-bg-muted)",
-                borderRadius: "var(--radius-medium)",
-                fontSize: "var(--font-size-caption)",
-              }}
-            >
-              <div style={{ overflowWrap: "anywhere" }}>
-                <strong>Photo ID:</strong> {modalPhoto.id}
+          <form
+            id="photo-details-form"
+            className={styles.body}
+            onKeyDown={handlePhotoDetailsKeyDown}
+            onSubmit={(e) => { e.preventDefault(); void handleSave(); }}
+          >
+            <div className={styles.preview}>
+              <div
+                style={{
+                  padding: "var(--space-2) var(--space-3)",
+                  background: "var(--color-bg-muted)",
+                  borderRadius: "var(--radius-medium)",
+                  fontSize: "var(--font-size-caption)",
+                }}
+              >
+                <div style={{ overflowWrap: "anywhere" }}>
+                  <strong>Photo ID:</strong> {modalPhoto.id}
+                </div>
+                <div>
+                  <strong>Featured Level:</strong> {modalPhoto.featured_level ?? 0}
+                </div>
               </div>
-              <div>
-                <strong>Featured Level:</strong> {modalPhoto.featured_level ?? 0}
-              </div>
+
+              {modalPhoto.fullUrl || modalPhoto.thumbnailUrl ? (
+                <img
+                  src={modalPhoto.fullUrl || modalPhoto.thumbnailUrl}
+                  alt={modalPhoto.member_caption || "Photo"}
+                  className={styles.image}
+                />
+              ) : null}
             </div>
 
-            {modalPhoto.fullUrl || modalPhoto.thumbnailUrl ? (
-              <img
-                src={modalPhoto.fullUrl || modalPhoto.thumbnailUrl}
-                alt={modalPhoto.member_caption || "Photo"}
-                style={{
-                  width: "100%",
-                  maxHeight: 260,
-                  objectFit: "contain",
-                  borderRadius: "var(--radius-medium)",
-                  background: "var(--color-bg-muted)",
-                }}
-              />
-            ) : null}
+            <div className={styles.fields}>
+              {error ? <Alert tone="danger">{error}</Alert> : null}
+              <p className="app-subtle-text" style={{ margin: 0 }}>
+                Enter saves. In captions, use ⌘ Enter or Ctrl+Enter to save.
+                Drag the bottom-right corner to resize.
+              </p>
+              <Field label="Status">
+                {(controlProps) => (
+                  <Select
+                    {...controlProps}
+                    value={modalEdits.photo_status}
+                    onChange={(e) => {
+                      const newStatus = e.target.value as Photo["photo_status"];
 
-            <Field label="Status">
-              {(controlProps) => (
-                <Select
-                  {...controlProps}
-                  value={modalEdits.photo_status}
+                      setModalEdits((prev) => ({
+                        ...prev,
+                        photo_status: newStatus,
+                        featured_level:
+                          newStatus === "approved" ? prev.featured_level : 0,
+                      }));
+                    }}
+                  >
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                  </Select>
+                )}
+              </Field>
+
+              <Field label="Member Caption">
+                {(controlProps) => (
+                  <Textarea
+                    {...controlProps}
+                    value={modalEdits.member_caption ?? ""}
+                    onChange={(e) =>
+                      updateModalEdits("member_caption", e.target.value)
+                    }
+                  />
+                )}
+              </Field>
+
+              <Field label="Admin Caption">
+                {(controlProps) => (
+                  <Textarea
+                    {...controlProps}
+                    value={modalEdits.admin_caption ?? ""}
+                    onChange={(e) =>
+                      updateModalEdits("admin_caption", e.target.value)
+                    }
+                    rows={2}
+                  />
+                )}
+              </Field>
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-5)" }}>
+                <Checkbox
+                  label="Show Caption"
+                  checked={!!modalEdits.show_caption}
+                  onChange={(e) =>
+                    updateModalEdits("show_caption", e.target.checked)
+                  }
+                />
+                <Checkbox
+                  label="Featured"
+                  checked={(modalEdits.featured_level ?? 0) > 0}
                   onChange={(e) => {
-                    const newStatus = e.target.value as Photo["photo_status"];
+                    const checked = e.target.checked;
 
+                    // Compatibility mapping for this single checkbox:
+                    // unchecked -> featured_level 0, checked -> featured_level 1.
+                    // Levels 2/3 remain reachable only from Admin Photos'
+                    // dropdown; this preserves Photo Library's existing
+                    // single-checkbox UX unchanged.
                     setModalEdits((prev) => ({
                       ...prev,
-                      photo_status: newStatus,
-                      featured_level:
-                        newStatus === "approved" ? prev.featured_level : 0,
+                      featured_level: checked ? 1 : 0,
+                      photo_status: checked
+                        ? "approved"
+                        : (prev.photo_status as Photo["photo_status"]),
                     }));
                   }}
-                >
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="rejected">Rejected</option>
-                </Select>
-              )}
-            </Field>
-
-            <Field label="Member Caption">
-              {(controlProps) => (
-                <Textarea
-                  {...controlProps}
-                  value={modalEdits.member_caption ?? ""}
-                  onChange={(e) =>
-                    updateModalEdits("member_caption", e.target.value)
-                  }
                 />
-              )}
-            </Field>
-
-            <Field label="Admin Caption">
-              {(controlProps) => (
-                <Textarea
-                  {...controlProps}
-                  value={modalEdits.admin_caption ?? ""}
-                  onChange={(e) =>
-                    updateModalEdits("admin_caption", e.target.value)
-                  }
-                  rows={2}
-                />
-              )}
-            </Field>
-
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-5)" }}>
-              <Checkbox
-                label="Show Caption"
-                checked={!!modalEdits.show_caption}
-                onChange={(e) =>
-                  updateModalEdits("show_caption", e.target.checked)
-                }
-              />
-              <Checkbox
-                label="Featured"
-                checked={(modalEdits.featured_level ?? 0) > 0}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-
-                  // Compatibility mapping for this single checkbox:
-                  // unchecked -> featured_level 0, checked -> featured_level 1.
-                  // Levels 2/3 remain reachable only from Admin Photos'
-                  // dropdown; this preserves Photo Library's existing
-                  // single-checkbox UX unchanged.
-                  setModalEdits((prev) => ({
-                    ...prev,
-                    featured_level: checked ? 1 : 0,
-                    photo_status: checked
-                      ? "approved"
-                      : (prev.photo_status as Photo["photo_status"]),
-                  }));
-                }}
-              />
+              </div>
             </div>
-          </div>
+          </form>
         ) : null}
       </Dialog>
     </div>

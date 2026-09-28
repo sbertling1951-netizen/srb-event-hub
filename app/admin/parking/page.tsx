@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AdminReturnLink } from "@/components/admin/AdminReturnLink";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
@@ -204,6 +204,9 @@ function ParkingAdminPageInner() {
   } | null>(null);
   const [clearConfirmation, setClearConfirmation] = useState<ParkingSite | null>(null);
   const [lastAction, setLastAction] = useState<string | null>(null);
+  const placementKeyboardRef = useRef<HTMLDivElement>(null);
+  const placementInFlightRef = useRef(false);
+  const [placementSaving, setPlacementSaving] = useState(false);
 
   const [showLabels, setShowLabels] = useState(true);
   const [showQueuePanel, setShowQueuePanel] = useState(true);
@@ -1228,12 +1231,26 @@ function ParkingAdminPageInner() {
     return true;
   }
 
+  async function savePlacement(args: Parameters<typeof assignAttendeeToSite>[0]) {
+    if (placementInFlightRef.current) {return;}
+    placementInFlightRef.current = true;
+    setPlacementSaving(true);
+    try {
+      await assignAttendeeToSite(args);
+    } catch (err) {
+      showError(mapSitePlacementError(err, "Could not save placement. Please try again."));
+    } finally {
+      placementInFlightRef.current = false;
+      setPlacementSaving(false);
+    }
+  }
+
   async function assignSelectedToSite(site: ParkingSite, allowOverride = false) {
     if (!selectedAttendee) {
       showError("Select an attendee first.");
       return;
     }
-    await assignAttendeeToSite({
+    await savePlacement({
       attendee: selectedAttendee,
       site,
       allowOverride,
@@ -1241,6 +1258,7 @@ function ParkingAdminPageInner() {
   }
 
   function beginPlacement() {
+    if (loading || placementInFlightRef.current || placementConfirmation || clearConfirmation) {return;}
     if (!selectedAttendee || !selectedSite) {
       showError("Select an attendee and a destination site first.");
       return;
@@ -1257,6 +1275,23 @@ function ParkingAdminPageInner() {
       return;
     }
     void assignSelectedToSite(selectedSite);
+  }
+
+  function handlePlacementKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    // Holding Enter while the review opens must not activate its newly
+    // focused confirmation button. A fresh press still works normally.
+    if (e.key === "Enter" && e.repeat && (placementConfirmation || clearConfirmation)) {
+      e.preventDefault();
+      return;
+    }
+    // Only the surface focused by a site click owns this shortcut. Inputs,
+    // buttons and dialog controls keep their native keyboard behavior.
+    if (e.target !== e.currentTarget || e.key !== "Enter" || e.defaultPrevented ||
+        e.repeat || e.nativeEvent.isComposing || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) {return;}
+    if (!placementAction.enabled || loading || placementInFlightRef.current ||
+        placementConfirmation || clearConfirmation) {return;}
+    e.preventDefault();
+    beginPlacement();
   }
 
   async function clearSite(site: ParkingSite) {
@@ -1312,6 +1347,7 @@ function ParkingAdminPageInner() {
     const selectedId = site.id || site.master_site_id;
 
     setSelectedSiteId(selectedId);
+    placementKeyboardRef.current?.focus({ preventScroll: true });
     showStatus(
       `Selected site ${site.display_label || site.site_number}. Review the placement action before continuing.`,
     );
@@ -1341,6 +1377,7 @@ function ParkingAdminPageInner() {
         <AppButton
           variant={placementAction.label === "Review conflict" ? "danger" : "primary"}
           onClick={beginPlacement}
+          loading={placementSaving}
         >
           {placementAction.label === "Review conflict" ? "Review conflict" : placementAction.label}
         </AppButton>
@@ -1349,6 +1386,7 @@ function ParkingAdminPageInner() {
         <AppButton
           variant="secondary"
           onClick={() => setClearConfirmation(selectedSite)}
+          disabled={placementSaving}
         >
           Unassign {selectedSiteOccupantName} from{" "}
           {selectedSite.display_label || selectedSite.site_number}
@@ -1518,6 +1556,7 @@ function ParkingAdminPageInner() {
                       variant="danger"
                       style={{ marginTop: "var(--space-3)" }}
                       onClick={() => setClearConfirmation(selectedSite)}
+                      disabled={placementSaving}
                     >
                       Unassign attendee
                     </AppButton>
@@ -1605,6 +1644,9 @@ function ParkingAdminPageInner() {
 
   return (
     <div
+      ref={placementKeyboardRef}
+      tabIndex={-1}
+      onKeyDown={handlePlacementKeyDown}
       style={{
         padding: isNarrow ? 12 : "8px 8px 8px 0",
         width: "100%",
@@ -1618,12 +1660,13 @@ function ParkingAdminPageInner() {
         message={placementConfirmation ? `Move ${`${placementConfirmation.attendee.pilot_first || ""} ${placementConfirmation.attendee.pilot_last || ""}`.trim() || "the selected attendee"} to ${placementConfirmation.site.display_label || placementConfirmation.site.site_number}. ${`${placementConfirmation.occupant?.pilot_first || ""} ${placementConfirmation.occupant?.pilot_last || ""}`.trim() || "The current occupant"} will become unassigned and return to the Parking queue.` : ""}
         confirmLabel={placementConfirmation ? `Move and unassign ${`${placementConfirmation.occupant?.pilot_first || ""} ${placementConfirmation.occupant?.pilot_last || ""}`.trim() || "occupant"}` : "Confirm"}
         danger
+        busy={placementSaving}
         onCancel={() => { setPlacementConfirmation(null); showStatus("Site move cancelled."); }}
         onConfirm={async () => {
           if (!placementConfirmation) {return;}
           const { attendee, site } = placementConfirmation;
+          await savePlacement({ attendee, site, allowOverride: true });
           setPlacementConfirmation(null);
-          await assignAttendeeToSite({ attendee, site, allowOverride: true });
         }}
       />
       <ConfirmDialog
@@ -1738,6 +1781,12 @@ function ParkingAdminPageInner() {
             />
           </div>
           <div style={{ marginTop: "var(--space-3)", flexShrink: 0 }}>
+            {selectedAttendee && selectedSite && placementAction.enabled && (
+              <p className="app-subtle-text" style={{ margin: "0 0 var(--space-2)" }}>
+                {placementSaving ? "Saving placement…" :
+                  `Press Enter to ${placementAction.label === "Review conflict" ? "review the occupied site" : "save / confirm placement"}.`}
+              </p>
+            )}
             <FormActions className="parking-map-controls">
               {/* Two intentional pairs so the toolbar is always exactly one row
                   of four (pairs side by side) or two rows of two (pairs

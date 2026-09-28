@@ -231,7 +231,68 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Member Check-In saved site report — 2026-09-28 (Committed and deployed; member acceptance pending)
+### Photo Details size and keyboard save — 2026-09-28 (Release authorized)
+
+- **Intent and observed defect:** Pap's Safari Photo Library screenshot shows
+  the narrow Photo Details dialog clipping Close/Save below its content. Pap
+  requested Enter-to-save and a larger, resizable window.
+- **Change:** a Photo Library-only CSS module gives the existing shared Dialog
+  a larger, viewport-bounded, natively resizable layout. Photo and fields sit
+  side by side when space permits and stack when narrower. Only the form body
+  scrolls; title and Close/Save stay visible. Save submits that same form.
+  Enter saves from ordinary controls; captions retain newlines and support
+  Command/Ctrl+Enter. A synchronous in-flight guard prevents duplicate saves;
+  failure appears inside the open dialog and permits retry. Backdrop dragging
+  does not dismiss edits. Existing `manage_event_photo` authority, fields,
+  Featured/Approved semantics and shared dialog implementation are unchanged.
+- **Validation:** existing Photo Library tests pass 20/20, touched TS files
+  lint clean, and `git diff --check` passes. Browser fixtures mount the actual
+  Photo Library page, shared Dialog and CSS with synthetic photo data and a
+  mocked RPC. Chromium and WebKit pass native drag-resizing, footer visibility
+  at 1460x900, 1024x600 and 390x600, Enter-save, caption newlines, Ctrl+Enter,
+  rapid-submit suppression, visible save error and successful retry. Desktop
+  and narrow WebKit screenshots were visually inspected. Full TypeScript
+  diagnostics match the clean-HEAD baseline after path normalization (43
+  existing errors; no new diagnostic). Evidence:
+  `/private/tmp/photo-details-browser/` and `/private/tmp/photo-details-typescript.log`.
+- **Delivery:** only the Photo Library page/test, its new scoped CSS module
+  and this Brief changed for this request. Pap explicitly approved committing
+  and deploying this together with the Parking shortcut. The exact combined
+  cohort is six files, with no database migration or production data write.
+  Fresh preflight found `20260928T195226Z-e6bfab5c46e2` serving, 26 releases,
+  both services online, a clean controller and a free deployment lock.
+  Full signed-in Safari acceptance remains pending after release.
+
+### Parking Enter-to-save shortcut — 2026-09-28 (Release authorized)
+
+- **Intent and behavior:** Pap requested name selection, site selection, then
+  Enter to save/confirm without scrolling to the action button. Clicking a site
+  now focuses the Parking surface with `preventScroll`; Enter uses the existing
+  placement action and governed RPC path for assign, move or confirm. A hint
+  appears beside the map. Occupied sites still open the existing review dialog;
+  holding Enter cannot confirm that newly opened dialog. Search fields and
+  native controls retain their own keyboard actions. Saving has a synchronous
+  in-flight guard shared by the button, shortcut and conflict confirmation.
+- **Scope:** `app/admin/parking/page.tsx`, behavioral coverage in
+  `app/admin/parking/placementKeyboard.test.ts`, and this Brief only. No
+  placement authority, migration, map gesture/geometry, or database changes.
+  The existing `record_site_placement` boundary remains authoritative.
+- **Validation:** `node --import tsx --test` on the new keyboard tests and the
+  existing Parking page/reconciliation/attendee-target tests passes 61/61.
+  Isolated Chromium and WebKit fixtures execute the actual page handlers and
+  verify focus without scrolling, Enter, rapid/held keys, search and occupied
+  review. These are synthetic handler fixtures, not a signed-in full-app or
+  native Safari acceptance test. ESLint has zero errors and the same existing
+  `handleSiteClick` dependency warning as HEAD. Full `tsc --noEmit --incremental
+  false --noErrorTruncation` output matches a fresh clean-HEAD archive after
+  checkout-path normalization: 43 existing errors with the current generated
+  `.next` types (27 generated route checks plus the prior 16 source errors).
+  No new TypeScript diagnostic; `git diff --check` passes.
+- **Delivery:** Pap approved the combined Photo Details/Parking release.
+  No production placement write or migration is included. Fresh full-app
+  acceptance and application deployment remain pending.
+
+### Member Check-In saved site report — 2026-09-28 (Committed and deployed; Pap confirmed persistence)
 
 - **Reported behavior:** Pap enters a site on Member Check-In and sees it
   disappear after Save and on return. Source confirmed the form deliberately
@@ -278,8 +339,8 @@ state override this subsection whenever they disagree, per the
   Both public domains passed home and Member Check-In HTML/13 referenced assets
   per page, served the new report RPC name and help text, and returned 401 for
   protected Admin/Vendor APIs. This verifies released content, not a signed-in
-  member save/reopen interaction. Pap's fresh Member Check-In acceptance remains
-  pending; confirmed placement still belongs exclusively to Parking.
+  member save/reopen interaction. Pap subsequently confirmed: "my site persists
+  in member check-in now." Confirmed placement still belongs exclusively to Parking.
 - **Operational closeout:** documentation promotion pauses only the deployment
   webhook while the application keeps serving. Closeout resumes the webhook,
   compares its signing-secret fingerprint and app PID/release/count to the
@@ -2870,16 +2931,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-28T13:55:29-06:00`
+**Generated at:** `2026-09-28T14:37:27-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `e6bfab5 fix(checkin): restore saved member site reports and record parking repair`
-**Commit date:** `2026-09-28T13:51:06-06:00`
-**origin/main:** `e6bfab5`
+**Commit:** `9d1021e docs: reconcile member site report and parking release`
+**Commit date:** `2026-09-28T14:01:17-06:00`
+**origin/main:** `9d1021e`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `4`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `2`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records

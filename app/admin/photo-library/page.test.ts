@@ -124,7 +124,7 @@ test("Close/Save render as real AppButtons in the Dialog footer -- Save carries 
   const footerEnd = PAGE_SOURCE.indexOf("}\n      >", footerIdx);
   const footerBlock = PAGE_SOURCE.slice(footerIdx, footerEnd);
   assert.match(footerBlock, /<AppButton onClick=\{closeModal\} disabled=\{saving\}>/);
-  assert.match(footerBlock, /variant="primary" onClick=\{\(\) => void handleSave\(\)\} loading=\{saving\}/);
+  assert.match(footerBlock, /variant="primary" type="submit" form="photo-details-form" loading=\{saving\}/);
 });
 
 test("the Status select, Member/Admin Caption textareas, and Show Caption/Featured checkboxes route through the canonical Field/Select/Textarea/Checkbox primitives", () => {
