@@ -217,6 +217,24 @@ also rejected. These protections apply even when the Event's selected map is
 unchanged. A future map-transition design may support such work only after all
 affected placements are governedly cleared or replaced with preserved history.
 
+### 6.2 Retained obsolete vacant inventory
+
+Pap authorized the current 271-site Saint George inventory and a
+history-preserving restoration on September 28, 2026. Owner maintenance may
+retire explicitly approved obsolete **vacant** inventory by setting
+`parking_sites.retired_at` and a required `retirement_reason` containing the
+approval/change reference. Retirement preserves the row ID, former master-site
+identity, other inventory fields, and every history reference. No history is
+deleted, rewritten, or reassigned. The database rejects occupancy on a retired
+row. Browser operational SELECT policies exclude retired rows; owner audit
+queries retain access. Existing access requirements still apply to active rows.
+
+This creates no automatic retirement, browser mutation, or restoration action.
+The current one-time maintenance scope is the three exact legacy rows named in
+`20261028000000_restore_saint_george_parking_inventory.sql`. The other 271 rows
+use the existing audited stale-map correction lifecycle and exact equivalence
+proof. Active inventory retains every existing mismatch and ambiguity stop.
+
 ## 7. History Model
 
 `site_placement_history` is append-only evidence and decision history, not

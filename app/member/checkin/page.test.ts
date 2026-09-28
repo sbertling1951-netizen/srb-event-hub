@@ -108,13 +108,16 @@ test("Confirmed site is a visually and textually distinct line from the report i
   assert.match(confirmedBlock!, /confirmedSite\./);
 });
 
-test("the report input never displays a stored value -- it always starts blank and is cleared after a successful submit, so it can never be mistaken for a confirmed or previously-reported site", () => {
+test("the report input restores only the member's saved report and remains visible after saving", () => {
   assert.match(source, /const \[siteReport, setSiteReport\] = useState\(""\)/);
+  assert.match(source, /"get_my_latest_site_report"/);
+  assert.match(source, /reportRows\[0\]\?\.raw_reported_value/);
   assert.equal(/setSiteReport\(attendeeRow/.test(source), false);
   assert.equal(/setSiteReport\(.*assigned_site/.test(source), false);
   const saveStart = source.indexOf("async function saveCheckin(");
   const saveBody = source.slice(saveStart, source.indexOf("\n  const participantCapacity"));
-  assert.match(saveBody, /setSiteReport\(""\)/);
+  assert.doesNotMatch(saveBody, /setSiteReport\(""\)/);
+  assert.match(source, /Your latest saved report is shown here/);
 });
 
 test("a successful check-in response is never used to populate assigned_site into local attendee state -- that field is not confirmed placement", () => {
@@ -344,7 +347,7 @@ test("the site-report control uses Field + Input, preserving the exact value, up
   assert.match(source, /import \{ Checkbox, Field, Input \} from "@\/components\/ui\/Field";/);
   assert.match(
     source,
-    /<Field\s*\n\s*label="What site are you parked in\?"\s*\n\s*help="Leave this blank if you don't know your site yet or haven't parked\. This tells us where you are -- it does not assign or reserve a site\."\s*\n\s*>/,
+    /<Field\s*\n\s*label="What site are you parked in\?"\s*\n\s*help="Your latest saved report is shown here\. Change it if you have moved, or leave this blank if you don't know your site yet\. This does not assign or reserve a site\."\s*\n\s*>/,
   );
   assert.match(source, /value=\{siteReport\}/);
   assert.match(source, /onChange=\{\(e\) => setSiteReport\(e\.target\.value\.toUpperCase\(\)\)\}/);

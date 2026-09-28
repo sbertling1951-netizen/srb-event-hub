@@ -231,6 +231,78 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Member Check-In saved site report — 2026-09-28 (Database applied; application release authorized)
+
+- **Reported behavior:** Pap enters a site on Member Check-In and sees it
+  disappear after Save and on return. Source confirmed the form deliberately
+  cleared the field and never read previous reports. A read-only Saint George
+  query found three saved reports, latest `2026-09-28T19:09:15.800256Z`; that
+  aggregate does not prove which report belongs to Pap's specific attempt.
+- **Change:** Member Check-In now reads its verified member's latest
+  saved report into the report field and no longer clears it after Save.
+  The new read-only `get_my_latest_site_report` RPC reuses the existing
+  authenticated/temporary identity resolver, filters by both Event and resolved
+  attendee, and returns only the latest raw report and timestamp. Confirmed
+  placement and the existing check-in write boundary are unchanged.
+- **Validation:** page tests 36/36; migration boundary tests 2/2; six isolated
+  PostgreSQL checks cover latest-report ordering, Event/member isolation,
+  unverified callers, temporary-credential forwarding, denied direct table
+  access and report preservation. The existing identity resolver is a test
+  double in that isolated fixture, not live authentication proof. ESLint and
+  diff checks pass. Full TypeScript output is byte-identical to clean HEAD
+  (16 pre-existing errors). An isolated webpack production build passed with
+  placeholder configuration; type checking was bypassed only in that temporary
+  copy and verified separately by the baseline comparison. No signed-in
+  browser test yet.
+- **Database and release authorization:** Pap explicitly authorized commit and
+  deployment. The linked dry run listed only
+  `20261029000000_add_member_site_report_self_read.sql`; it is now applied to
+  `lastlzlewonsmwtolpvh`. Read-only verification confirms ledger 268 through
+  `20261029000000`, the restricted function grants and search path, zero results
+  for an unverified caller, and the same three Saint George reports. No report
+  mutation occurred. The application release is pending; production preflight
+  found `20260928T033445Z-24cec7ff0a8b` serving, 25 releases and both services
+  online. Include the earlier applied parking repair in this source promotion.
+
+### Saint George parking restoration — 2026-09-28 (Production database repaired; Pap confirmed map restored)
+
+- **Incident and approval:** Parking Admin rejected Saint George inventory
+  because all 274 rows referenced older maps. Pap approved using the selected
+  map's 271 sites and explicitly requested immediate restoration with history
+  preserved. Event `382a358b-7d2d-4390-a920-8013a70c560b`; selected map
+  `adf95966-86c0-4071-8c93-3effc385b787` (revision 12).
+- **Applied repair:** migration `20261028000000_restore_saint_george_parking_inventory.sql`
+  uses the existing owner-only correction lifecycle to relink 271 exact
+  four-field equivalents from archived map `e053b78a-d075-4f4d-a7c5-95a13deaa58a`
+  (revision 336). Each correction has an applied audit record. Three vacant
+  legacy rows are retained with `retired_at` and an approval-bearing reason;
+  two have placement-history references and must never be deleted to clear
+  this error. A restrictive browser SELECT policy excludes retired inventory;
+  a database constraint prohibits its occupancy. The accepted Site Placement
+  Implementation Specification §6.2 records this bounded maintenance rule.
+- **Live verification:** linked project `lastlzlewonsmwtolpvh`, owner session;
+  ledger 267 migrations through `20261028000000`. All 274 original parking
+  rows remain, exactly 271 active and three retired. Every original field is
+  unchanged except the 271 corrected `master_site_id` values; retired rows
+  retain all original fields. The authenticated database role returns 271
+  current sites, and the actual Parking reconciliation function accepts that
+  live result. No attendee, placement-history, map, or marker mutation occurred.
+- **Validation:** six isolated PostgreSQL scenarios passed: successful repair
+  and RLS visibility, history/field preservation, retired occupancy rejection,
+  inventory drift, map-revision drift, atomic rollback after a late equivalence
+  failure, and schema-only fresh replay (success assertions share one scenario).
+  Existing Parking reconciliation tests pass 5/5. Diff checks pass. The linked
+  dry run listed only this migration. The CLI's optional Docker catalog-cache
+  warning did not prevent application; the live ledger and data were verified.
+  A local publishable-key REST probe returned 401; authenticated-role SQL
+  independently verified operational visibility. Pap then confirmed the live
+  map is visible after refresh: "oh yay i have a map."
+- **Delivery:** database repair applied and accepted; the migration and
+  governing documentation are included in the authorized Member Check-In
+  source promotion. Do not rerun the applied migration manually.
+  Evidence and isolated test harness:
+  `/private/tmp/saint-george-parking-repair-20260928/`.
+
 ### Nametag cardstock layout — 2026-09-28 UTC (Deployed and verified; native print acceptance pending)
 
 - **Intent:** Pap approved the centered, evenly spaced replacement PDF and
@@ -2772,16 +2844,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-27T21:40:07-06:00`
+**Generated at:** `2026-09-28T13:50:54-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `24cec7f fix(print): center nametags with cardstock cutting gaps`
-**Commit date:** `2026-09-27T21:30:24-06:00`
-**origin/main:** `24cec7f`
+**Commit:** `0886758 docs: reconcile verified nametag cardstock release`
+**Commit date:** `2026-09-27T21:40:34-06:00`
+**origin/main:** `0886758`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `4`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `4`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
@@ -2860,14 +2932,14 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `266`
-- Latest migration: `20261027000000_govern_attendee_cancellation_date.sql`
+- Total migration files: `268`
+- Latest migration: `20261029000000_add_member_site_report_self_read.sql`
 - Latest five:
-  - `20261023000000_repair_legacy_stored_area_template_parent_links.sql`
-  - `20261024000000_retire_branson_legacy_duplicate_parking_site.sql`
   - `20261025000000_separate_member_roster_from_optional_sharing.sql`
   - `20261026000000_enforce_admin_checkin_registration_eligibility.sql`
   - `20261027000000_govern_attendee_cancellation_date.sql`
+  - `20261028000000_restore_saint_george_parking_inventory.sql`
+  - `20261029000000_add_member_site_report_self_read.sql`
 
 ### Identity-audit inventory
 - SQL files: `14`

@@ -100,9 +100,8 @@ function MemberCheckinPageInner() {
     null,
   );
   const [shareWithAttendees, setShareWithAttendees] = useState(false);
-  // Always starts blank -- this is a forward-looking report prompt, never
-  // a display of stored state, so it can never be confused with a
-  // previously confirmed or previously reported value.
+  // Restored from the member's own latest report; confirmed placement stays
+  // separate and continues to come only from Parking.
   const [siteReport, setSiteReport] = useState("");
   const [requiresTemporaryCredentials, setRequiresTemporaryCredentials] =
     useState<boolean | null>(null);
@@ -247,6 +246,20 @@ function MemberCheckinPageInner() {
       setConfirmedSite(
         (Array.isArray(placementRows) ? placementRows[0] : null) ||
           (null as ConfirmedSitePlacement | null),
+      );
+
+      const { data: reportRows, error: reportError } = await supabase.rpc(
+        "get_my_latest_site_report",
+        {
+          p_event_id: event.id,
+          ...memberIdentityRpcArgs(session),
+        },
+      );
+      if (reportError) {
+        throw reportError;
+      }
+      setSiteReport(
+        (Array.isArray(reportRows) ? reportRows[0]?.raw_reported_value : null) || "",
       );
 
       const { data: memberRows, error: memberError } = await supabase.rpc(
@@ -417,9 +430,8 @@ function MemberCheckinPageInner() {
       // this response reflects submit_member_checkin's own Arrival/sharing
       // update, and assigned_site is only a legacy compatibility
       // projection this page must never present as confirmed placement.
-      // The site report just submitted is evidence only, recorded
-      // separately; it is cleared below rather than echoed back as if it
-      // were now a stored, confirmed value.
+      // The separately recorded report remains visible in its own field;
+      // it never supplies the confirmed placement above.
       setAttendee((prev) =>
         prev
           ? {
@@ -429,7 +441,6 @@ function MemberCheckinPageInner() {
             }
           : prev,
       );
-      setSiteReport("");
 
       // Check-in itself has already been governedly recorded above. The
       // sharing-preference write is a separate governed call against a
@@ -601,7 +612,7 @@ function MemberCheckinPageInner() {
 
             <Field
               label="What site are you parked in?"
-              help="Leave this blank if you don't know your site yet or haven't parked. This tells us where you are -- it does not assign or reserve a site."
+              help="Your latest saved report is shown here. Change it if you have moved, or leave this blank if you don't know your site yet. This does not assign or reserve a site."
             >
               {(controlProps) => (
                 <Input
