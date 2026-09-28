@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { AttendeeCancellationDate } from "@/app/admin/attendees/AttendeeCancellationDate";
 import {
   type AttendeeEditorState,
   type AttendeeRow,
@@ -992,6 +993,33 @@ test("AttendeeActionRow: never depends on horizontal scrolling for the primary a
 
 // --- 5. Cancellation metadata surfaced only where relevant ----------------
 
+test("a cancelled registration cannot be cancelled again to overwrite its date", () => {
+  const html = renderToStaticMarkup(
+    <AttendeeActionRow attendee={baseAttendee({ registration_status: "cancelled" })}
+      canEdit showBackToPending={false} onSelect={noop}
+      onUpdateDataStatus={asyncNoop} onCancelRegistration={asyncNoop} />,
+  );
+  assert.match(html, /<button[^>]*disabled=""[^>]*aria-label="Cancel/);
+  const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+  const cancel = source.slice(source.indexOf("async function onCancelRegistration("), source.indexOf("async function reconcileCapacityToMaterializedRoster("));
+  assert.ok(cancel.includes('.neq("registration_status", "cancelled")'));
+  assert.ok(cancel.includes('.eq("event_id", attendee.event_id)'));
+});
+
+test("cancellation reports success only when a row changed; a zero-row result refreshes and says nothing changed", () => {
+  const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+  const cancel = source.slice(source.indexOf("async function onCancelRegistration("), source.indexOf("async function reconcileCapacityToMaterializedRoster("));
+  assert.match(cancel, /\.neq\("registration_status", "cancelled"\)\s*\.select\("id"\);/);
+  const refresh = cancel.indexOf("await loadQueue(currentEvent.id)");
+  const successGate = cancel.indexOf("if ((data ?? []).length > 0) {");
+  const success = cancel.indexOf('showFlash("Registration cancelled.")');
+  assert.ok(refresh > 0 && refresh < successGate && successGate < success, "refresh, then success only for a changed row");
+  assert.equal((cancel.match(/Registration cancelled\./g) || []).length, 1);
+  // "Already cancelled" is claimed only from the refreshed record.
+  assert.match(cancel, /refreshed\?\.registration_status === "cancelled"\s*\?\s*"No change was made: this registration was already cancelled/);
+  assert.ok(cancel.includes("No change was made to this registration."));
+});
+
 test("formatCancellationDetail: returns null for an active (non-cancelled) record", () => {
   const active = baseAttendee({ registration_status: "active" });
   assert.equal(formatCancellationDetail(active), null);
@@ -1026,12 +1054,19 @@ test("formatCancellationDetail: still identifies the record as cancelled even if
   assert.equal(formatCancellationDetail(cancelled), "Cancelled");
 });
 
-test("cancellation details are rendered only inside the selected-record workspace's 'More details' disclosure, conditioned on formatCancellationDetail", () => {
+test("cancelled records expose their cancellation date and an authorized edit control", () => {
   const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
-  assert.ok(source.includes("attendee && formatCancellationDetail(attendee) ? ("));
-  assert.ok(source.includes("Cancellation Details"));
+  assert.ok(source.includes('<AttendeeCancellationDate key='));
+  const cancelled = baseAttendee({ registration_status: "cancelled", cancelled_at: null });
+  const render = (attendee: AttendeeRow, canEdit: boolean) => renderToStaticMarkup(
+    <AttendeeCancellationDate attendee={attendee} canEdit={canEdit} onSaved={noop} />,
+  );
+  assert.match(render(cancelled, true), /Not recorded/);
+  assert.match(render(cancelled, true), /Edit cancellation date/);
+  assert.doesNotMatch(render(cancelled, false), /Edit cancellation date/);
+  assert.equal(render(baseAttendee(), true), "");
 });
 
 // --- 6. Deferred areas were not touched -----------------------------------
@@ -1846,7 +1881,7 @@ test("Cancel Registration now lives in the record workspace as a separated destr
 
   assert.match(
     primaryActionsSource,
-    /<AppButton\s+variant="danger"\s+disabled=\{!canEdit \|\| !attendee\}\s+onClick=\{\(\) => attendee && void onCancelRegistration\(attendee\)\}\s*>\s*Cancel Registration/,
+    /<AppButton\s+variant="danger"\s+disabled=\{!canEdit \|\| !attendee \|\| attendee.registration_status === "cancelled"\}\s+onClick=\{\(\) => attendee && void onCancelRegistration\(attendee\)\}\s*>\s*Cancel Registration/,
   );
 });
 

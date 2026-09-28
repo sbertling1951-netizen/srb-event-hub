@@ -11,6 +11,7 @@ import React, {
   useState,
 } from "react";
 
+import { AttendeeCancellationDate } from "@/app/admin/attendees/AttendeeCancellationDate";
 import {
   additionalDraftHasData,
   ATTENDEE_EDIT_SECTIONS,
@@ -487,7 +488,7 @@ export function AttendeeActionRow(props: {
           visually compete with it. */}
       <AppButton
         variant="danger"
-        disabled={!canEdit}
+        disabled={!canEdit || attendee.registration_status === "cancelled"}
         onClick={() => void onCancelRegistration(attendee)}
         aria-label={`Cancel "${name}"'s registration`}
       >
@@ -1048,6 +1049,7 @@ function AttendeeList(props: {
               <div className="responsive-list-item-meta">
                 {attendee.email ? <span>{attendee.email}</span> : null}
               </div>
+              {formatCancellationDetail(attendee) ? <div>{formatCancellationDetail(attendee)}</div> : null}
 
               <div className="responsive-list-item-badges">
                 <AttendeeStatusLink
@@ -1141,6 +1143,7 @@ function AttendeeList(props: {
                       </span>
                       {attendee.email ? ` · ${attendee.email}` : ""}
                     </div>
+                    {formatCancellationDetail(attendee) ? <div>{formatCancellationDetail(attendee)}</div> : null}
                   </button>
                 </td>
                 <td>{dataStatusBadges(attendee)}</td>
@@ -1245,6 +1248,7 @@ export function AttendeeRecordWorkspace(props: {
     nextStatus: string,
   ) => Promise<void>;
   onCancelRegistration: (attendee: AttendeeRow) => Promise<void>;
+  onCancellationDateSaved: (attendeeId: string, cancelledAt: string) => void;
   onPrevious?: () => void;
   onNext?: () => void;
   operationalStatus?: CanonicalAttendeePlacementResult | null;
@@ -1279,6 +1283,7 @@ export function AttendeeRecordWorkspace(props: {
     onRemoveAdditionalParticipant,
     onUpdateDataStatus,
     onCancelRegistration,
+    onCancellationDateSaved,
     onPrevious,
     onNext,
     operationalStatus,
@@ -2116,23 +2121,11 @@ export function AttendeeRecordWorkspace(props: {
             <div style={{ marginTop: 4, whiteSpace: "pre-wrap" }}>{state.notes}</div>
           </div>
         ) : null}
-
-        {attendee && formatCancellationDetail(attendee) ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: "10px 12px",
-              borderRadius: 10,
-              background: "#fef2f2",
-              border: "1px solid #fecaca",
-              fontSize: 13,
-            }}
-          >
-            <strong>Cancellation Details</strong>
-            <div style={{ marginTop: 4 }}>{formatCancellationDetail(attendee)}</div>
-          </div>
-        ) : null}
       </details>
+      {attendee?.registration_status === "cancelled" ? (
+        <AttendeeCancellationDate key={`${attendee.id}:${attendee.cancelled_at ?? ""}`}
+          attendee={attendee} canEdit={canEdit} onSaved={onCancellationDateSaved} />
+      ) : null}
     </div>
   );
 
@@ -2556,7 +2549,7 @@ export function AttendeeRecordWorkspace(props: {
             matching its presentation elsewhere on this page. */}
         <AppButton
           variant="danger"
-          disabled={!canEdit || !attendee}
+          disabled={!canEdit || !attendee || attendee.registration_status === "cancelled"}
           onClick={() => attendee && void onCancelRegistration(attendee)}
         >
           Cancel Registration
@@ -3729,6 +3722,9 @@ created_at
   }
 
   async function onCancelRegistration(attendee: AttendeeRow) {
+    if (attendee.registration_status === "cancelled") {
+      return;
+    }
     const confirmed = await confirmViaDialog(
       "Cancel registration?",
       `Cancel the registration for ${displayPilotName(attendee)}? This marks the registration as cancelled but does not delete any history.`,
@@ -3743,7 +3739,7 @@ created_at
       setError(null);
       setStatus("Cancelling registration...");
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("attendees")
         .update({
           registration_status: "cancelled",
@@ -3751,17 +3747,31 @@ created_at
           cancelled_by: admin?.adminUser?.id ?? null,
           cancellation_reason: "Cancelled by Admin",
         })
-        .eq("id", attendee.id);
+        .eq("id", attendee.id)
+        .eq("event_id", attendee.event_id)
+        .neq("registration_status", "cancelled")
+        .select("id");
 
       if (error) {
         throw error;
       }
 
-      showFlash("Registration cancelled.");
+      const freshAttendees = currentEvent?.id
+        ? await loadQueue(currentEvent.id)
+        : undefined;
 
-      if (currentEvent?.id) {
-        await loadQueue(currentEvent.id);
+      if ((data ?? []).length > 0) {
+        showFlash("Registration cancelled.");
+        return;
       }
+
+      // Nothing changed. Only the refreshed, authorized record may say why.
+      const refreshed = freshAttendees?.find((row) => row.id === attendee.id);
+      setStatus(
+        refreshed?.registration_status === "cancelled"
+          ? "No change was made: this registration was already cancelled. Its existing cancellation details were kept."
+          : "No change was made to this registration. Review the refreshed record before trying again.",
+      );
     } catch (err: any) {
       console.error("onCancelRegistration error:", err);
       setError(err?.message ?? "Could not cancel registration.");
@@ -4999,6 +5009,16 @@ created_at
         onRemoveAdditionalParticipant={removeAdditionalParticipant}
         onUpdateDataStatus={updateDataStatus}
         onCancelRegistration={onCancelRegistration}
+        onCancellationDateSaved={(attendeeId, cancelledAt) => {
+          const row = attendees.find((item) => item.id === attendeeId);
+          if (row && editorOpenRef.current && editorStateRef.current.id === attendeeId) {
+            selectedBaselineFingerprintRef.current = attendeeConcurrencyFingerprint({
+              ...row, cancelled_at: cancelledAt,
+            });
+          }
+          setAttendees((previous) => previous.map((row) => row.id === attendeeId
+            ? { ...row, cancelled_at: cancelledAt } : row));
+        }}
         onPrevious={canGoPrevious ? () => goToWorkspaceOffset(-1) : undefined}
         onNext={canGoNext ? () => goToWorkspaceOffset(1) : undefined}
         operationalStatus={operationalStatus}

@@ -231,6 +231,102 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Attendee cancellation dates — 2026-09-27 (Independent review passed; release preflight pending)
+
+- **Intent:** Pap requested visible, editable cancellation dates on attendee
+  records. The existing `attendees.cancelled_at` timestamp remains the single
+  source; no second date column or historical-date backfill is introduced.
+- **Local behavior:** cancelled records show their date in both list layouts
+  and in the record workspace. Authorized operators can correct or supply the
+  cancellation date/time using a separate explicit save, in browser-local time.
+  Active registrations have no date editor. Cancelling an already-cancelled
+  record is disabled, and the existing cancellation UPDATE now also refuses
+  already-cancelled rows so a stale click cannot overwrite their date.
+- **Governance:** proposed migration `20261027000000` adds a narrow correction
+  RPC, checking Event authority before taking the attendee row lock, then
+  revalidating authority and lifecycle against the locked row. It checks
+  `event.attendees.manage`, Event mutability, cancelled status, finite/nonfuture
+  input and the expected prior timestamp. It changes only `cancelled_at`.
+  An immutable, client-inaccessible audit records timestamp changes from both
+  the RPC and existing direct RLS-governed UPDATEs. Original `cancelled_by`,
+  cancellation reason, registration status, identity and parking are preserved.
+- **Validation:** 126 attendee-page tests and 44 workflow/date/SQL-contract tests
+  pass. Chromium and WebKit mounted-component checks cover local-time editing,
+  invalid dates, saved results, cancel, missing dates, stale-write rejection,
+  read-only access and hiding the editor for active registrations. An isolated
+  PostgreSQL WASM runtime applied the exact migration and passed 19 assertions;
+  its authority/lifecycle functions and schema are synthetic boundaries, so
+  this is not a full migration replay or production-policy parity proof.
+  TypeScript output is byte-identical to clean HEAD (16 existing errors).
+- **LEM verification:** all eight cohort hashes matched before and after his
+  run. A fresh isolated Supabase project replayed 266/266 migrations, and a
+  rollback fixture passed 40 checks using the real authority resolver,
+  lifecycle guard and attendee triggers. The fixture temporarily reproduced
+  retained deployed attendee grants because the local image's default grants
+  differ; no general production-policy parity is claimed. Replaying the new
+  migration under retained production default privileges confirmed its explicit
+  audit-table/function ACLs. Focused tests passed again; supplemental Chromium
+  and WebKit checks covered microsecond expected timestamps, daylight-saving
+  boundaries, record switches and late save responses. Signed-in full-page
+  live-stack, physical-device and production-build checks remain unperformed.
+- **Environment correction:** Mel's earlier launch attempts failed, but the
+  missing-executable diagnosis was not established. LEM verified the declared
+  Docker executable exists and successfully started Docker. His isolated stack
+  is stopped with its volume retained; the existing local project was untouched.
+  Direct tsx page tests also completed in his run; the earlier stall remains
+  unexplained. Neither prior environment issue is an outstanding replay blocker.
+- **Bounded corrections verified:** LEM changed only the RPC, cancellation
+  handler and their two tests; the other four cohort files stayed frozen.
+  Missing and unauthorized attendees now share `authorization_denied` [42501]
+  before any row lock. A fresh isolated replay again passed 266/266 migrations.
+  Real two-session tests showed unauthorized callers avoid the held lock;
+  authorized callers wait, then reject a deleted row, a move to an unauthorized
+  Event or a move to an archived Event. Both authorized and pre-correction
+  controls demonstrated that the harness detects lock acquisition. The
+  unchanged-row control succeeded; only that case changed a date and audited.
+  Explicit audit/function ACLs remained intact under retained deployed defaults.
+- **Cancellation feedback:** success now requires a returned changed row.
+  Zero-row results refresh the roster; an already-cancelled explanation is
+  shown only when the refreshed authorized record establishes it. The real
+  page with mocked HTTP and shell/session boundaries passed four scenarios in
+  each browser (eight total): changed, already cancelled, still active and
+  absent. This is mounted-page evidence, not signed-in live-stack proof.
+  Page tests passed 127/127 and workflow/date/SQL tests 45/45. Date-editor probes
+  passed again, TypeScript remained byte-identical to the 16-error baseline,
+  and lint retained only the existing warning.
+- **Mel's review decision:** the two requested corrections are supported by
+  retained evidence and all eight submitted hashes match. When a refreshed
+  record disappears, the existing unavailable-record error takes precedence
+  over the new no-change status. This truthful outcome is accepted without
+  expanding shared message handling; no false success is shown. Lun's
+  independent review subsequently passed with no blocking finding. Mel verified
+  the report and all eight frozen file hashes; commit/build and production
+  migration preflight are next, not authorized production execution.
+- **Independent review:** Lun reports rerunning 127 page tests, 45 focused
+  tests, the disposable migration replay and rollback fixture, two-session
+  races, all eight cancellation browser cases and the date-editor probes.
+  Lint retained one existing warning and TypeScript matched the 16-error
+  baseline. His initial fixture encountered retained synthetic audit residue;
+  resetting only the disposable project allowed a clean rollback run. The
+  stack was stopped afterward. Final hashes, Git/index and stash matched.
+  Fresh evidence is the review report; execution harnesses live in the prior
+  evidence directories. No shared-database or production verification is
+  inferred from this local PASS. No architectural conflict was identified.
+- **Recorded limits:** ambiguous fall-back-hour input chooses the first local
+  occurrence. Audit coverage is timestamp UPDATEs only, not INSERT or DELETE;
+  operations without Auth context have a null actor. Identical-value retries
+  are intentionally no-op successes. No production contact, shared migration
+  application, real attendee change, commit, push or deployment occurred.
+- **Evidence:** `/private/tmp/epicentrax-cancellation-date-review/` (tests,
+  mounted-component browser harness and type comparison) and
+  `/private/tmp/epicentrax-cancellation-db-check/` (isolated SQL harness).
+  LEM verification: `/private/tmp/epicentrax-cancellation-date-verify-kv2GcM/`
+  (`FINDINGS.md`, replay, rollback fixture, ACL parity and browser logs).
+  Corrections: `/private/tmp/epicentrax-cancellation-corrections-p8NnJ0/`
+  (`FINDINGS.md`, exact correction diff, rollback/race/ACL and browser logs).
+  Independent review:
+  `/private/tmp/epicentrax-cancellation-independent-review-lun-20260927/REPORT.md`.
+
 ### FCOC print logo resolution — 2026-09-27 (Deployed and verified; Pap confirmed app update)
 
 - **Authorization:** Pap supplied the replacement logo, approved replacing the
@@ -2620,16 +2716,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-27T15:40:31-06:00`
+**Generated at:** `2026-09-27T16:15:31-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `6f02f7e fix(print): use high-resolution FCOC logo with fresh print URL`
-**Commit date:** `2026-09-27T15:32:23-06:00`
-**origin/main:** `6f02f7e`
+**Commit:** `0ec8f6f docs: reconcile verified logo and trust preference release`
+**Commit date:** `2026-09-27T15:41:21-06:00`
+**origin/main:** `0ec8f6f`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `3`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `5`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
@@ -2708,14 +2804,14 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `265`
-- Latest migration: `20261026000000_enforce_admin_checkin_registration_eligibility.sql`
+- Total migration files: `266`
+- Latest migration: `20261027000000_govern_attendee_cancellation_date.sql`
 - Latest five:
-  - `20261022000000_create_super_admin_passport_refund_review.sql`
   - `20261023000000_repair_legacy_stored_area_template_parent_links.sql`
   - `20261024000000_retire_branson_legacy_duplicate_parking_site.sql`
   - `20261025000000_separate_member_roster_from_optional_sharing.sql`
   - `20261026000000_enforce_admin_checkin_registration_eligibility.sql`
+  - `20261027000000_govern_attendee_cancellation_date.sql`
 
 ### Identity-audit inventory
 - SQL files: `14`
