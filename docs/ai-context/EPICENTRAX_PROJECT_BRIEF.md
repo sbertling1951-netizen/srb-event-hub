@@ -231,7 +231,7 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Member Check-In saved site report — 2026-09-28 (Database applied; application release authorized)
+### Member Check-In saved site report — 2026-09-28 (Committed and deployed; member acceptance pending)
 
 - **Reported behavior:** Pap enters a site on Member Check-In and sees it
   disappear after Save and on return. Source confirmed the form deliberately
@@ -260,9 +260,35 @@ state override this subsection whenever they disagree, per the
   `lastlzlewonsmwtolpvh`. Read-only verification confirms ledger 268 through
   `20261029000000`, the restricted function grants and search path, zero results
   for an unverified caller, and the same three Saint George reports. No report
-  mutation occurred. The application release is pending; production preflight
-  found `20260928T033445Z-24cec7ff0a8b` serving, 25 releases and both services
-  online. Include the earlier applied parking repair in this source promotion.
+  mutation occurred. The production API also returns an empty result for an
+  unverified caller. This promotion includes the earlier applied parking repair.
+- **Development baseline and deployed release:** product commit
+  `e6bfab5c46e2ef226a8983400465728b95ce5946` contains the exact eight-file
+  cohort: Member Check-In page/test, read RPC migration/test/SQL fixture, the
+  previously applied parking migration, its specification and this Brief.
+  One fast-forward push promoted it to main. GitHub delivery timed out before
+  reaching the host; the idle deployment lock, unchanged controller and release
+  count were verified before running the existing guarded worker once for the
+  exact SHA. The production build passed, including its TypeScript stage and
+  134 pages. Candidate and activated-release checks passed.
+- **Live release verification:** serving `20260928T195226Z-e6bfab5c46e2`;
+  rollback `20260928T033445Z-24cec7ff0a8b`; exactly one new release, 25 to 26.
+  Both services were online, and the serving process directory and recorded SHA
+  matched. Previous, candidate and next-deployment configuration bytes agree.
+  Both public domains passed home and Member Check-In HTML/13 referenced assets
+  per page, served the new report RPC name and help text, and returned 401 for
+  protected Admin/Vendor APIs. This verifies released content, not a signed-in
+  member save/reopen interaction. Pap's fresh Member Check-In acceptance remains
+  pending; confirmed placement still belongs exclusively to Parking.
+- **Operational closeout:** documentation promotion pauses only the deployment
+  webhook while the application keeps serving. Closeout resumes the webhook,
+  compares its signing-secret fingerprint and app PID/release/count to the
+  pre-stop receipt, and verifies/saves both PM2 entries. Evidence:
+  `/private/tmp/member-site-report-deploy.log`,
+  `/private/tmp/member-site-report-live-verification.log`, and the host-private
+  `/root/member-site-report-closeout-20260928.json` continuity receipt.
+  No unrelated source files changed. The automatic webhook delivery timeout
+  remains an observed release-path issue; its external cause was not diagnosed.
 
 ### Saint George parking restoration — 2026-09-28 (Production database repaired; Pap confirmed map restored)
 
@@ -2844,16 +2870,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-28T13:50:54-06:00`
+**Generated at:** `2026-09-28T13:55:29-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `0886758 docs: reconcile verified nametag cardstock release`
-**Commit date:** `2026-09-27T21:40:34-06:00`
-**origin/main:** `0886758`
+**Commit:** `e6bfab5 fix(checkin): restore saved member site reports and record parking repair`
+**Commit date:** `2026-09-28T13:51:06-06:00`
+**origin/main:** `e6bfab5`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `4`
+**Tracked modified:** `1`
 **Staged:** `0`
-**Untracked:** `4`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
