@@ -231,101 +231,96 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Attendee cancellation dates — 2026-09-27 (Independent review passed; release preflight pending)
+### Attendee cancellation dates — 2026-09-28 UTC (Deployed and verified; webhook paused, closeout pending)
 
-- **Intent:** Pap requested visible, editable cancellation dates on attendee
-  records. The existing `attendees.cancelled_at` timestamp remains the single
-  source; no second date column or historical-date backfill is introduced.
-- **Local behavior:** cancelled records show their date in both list layouts
-  and in the record workspace. Authorized operators can correct or supply the
-  cancellation date/time using a separate explicit save, in browser-local time.
-  Active registrations have no date editor. Cancelling an already-cancelled
-  record is disabled, and the existing cancellation UPDATE now also refuses
-  already-cancelled rows so a stale click cannot overwrite their date.
-- **Governance:** proposed migration `20261027000000` adds a narrow correction
-  RPC, checking Event authority before taking the attendee row lock, then
-  revalidating authority and lifecycle against the locked row. It checks
-  `event.attendees.manage`, Event mutability, cancelled status, finite/nonfuture
-  input and the expected prior timestamp. It changes only `cancelled_at`.
-  An immutable, client-inaccessible audit records timestamp changes from both
-  the RPC and existing direct RLS-governed UPDATEs. Original `cancelled_by`,
-  cancellation reason, registration status, identity and parking are preserved.
-- **Validation:** 126 attendee-page tests and 44 workflow/date/SQL-contract tests
-  pass. Chromium and WebKit mounted-component checks cover local-time editing,
-  invalid dates, saved results, cancel, missing dates, stale-write rejection,
-  read-only access and hiding the editor for active registrations. An isolated
-  PostgreSQL WASM runtime applied the exact migration and passed 19 assertions;
-  its authority/lifecycle functions and schema are synthetic boundaries, so
-  this is not a full migration replay or production-policy parity proof.
-  TypeScript output is byte-identical to clean HEAD (16 existing errors).
-- **LEM verification:** all eight cohort hashes matched before and after his
-  run. A fresh isolated Supabase project replayed 266/266 migrations, and a
-  rollback fixture passed 40 checks using the real authority resolver,
-  lifecycle guard and attendee triggers. The fixture temporarily reproduced
-  retained deployed attendee grants because the local image's default grants
-  differ; no general production-policy parity is claimed. Replaying the new
-  migration under retained production default privileges confirmed its explicit
-  audit-table/function ACLs. Focused tests passed again; supplemental Chromium
-  and WebKit checks covered microsecond expected timestamps, daylight-saving
-  boundaries, record switches and late save responses. Signed-in full-page
-  live-stack, physical-device and production-build checks remain unperformed.
-- **Environment correction:** Mel's earlier launch attempts failed, but the
-  missing-executable diagnosis was not established. LEM verified the declared
-  Docker executable exists and successfully started Docker. His isolated stack
-  is stopped with its volume retained; the existing local project was untouched.
-  Direct tsx page tests also completed in his run; the earlier stall remains
-  unexplained. Neither prior environment issue is an outstanding replay blocker.
-- **Bounded corrections verified:** LEM changed only the RPC, cancellation
-  handler and their two tests; the other four cohort files stayed frozen.
-  Missing and unauthorized attendees now share `authorization_denied` [42501]
-  before any row lock. A fresh isolated replay again passed 266/266 migrations.
-  Real two-session tests showed unauthorized callers avoid the held lock;
-  authorized callers wait, then reject a deleted row, a move to an unauthorized
-  Event or a move to an archived Event. Both authorized and pre-correction
-  controls demonstrated that the harness detects lock acquisition. The
-  unchanged-row control succeeded; only that case changed a date and audited.
-  Explicit audit/function ACLs remained intact under retained deployed defaults.
-- **Cancellation feedback:** success now requires a returned changed row.
-  Zero-row results refresh the roster; an already-cancelled explanation is
-  shown only when the refreshed authorized record establishes it. The real
-  page with mocked HTTP and shell/session boundaries passed four scenarios in
-  each browser (eight total): changed, already cancelled, still active and
-  absent. This is mounted-page evidence, not signed-in live-stack proof.
-  Page tests passed 127/127 and workflow/date/SQL tests 45/45. Date-editor probes
-  passed again, TypeScript remained byte-identical to the 16-error baseline,
-  and lint retained only the existing warning.
-- **Mel's review decision:** the two requested corrections are supported by
-  retained evidence and all eight submitted hashes match. When a refreshed
-  record disappears, the existing unavailable-record error takes precedence
-  over the new no-change status. This truthful outcome is accepted without
-  expanding shared message handling; no false success is shown. Lun's
-  independent review subsequently passed with no blocking finding. Mel verified
-  the report and all eight frozen file hashes; commit/build and production
-  migration preflight are next, not authorized production execution.
-- **Independent review:** Lun reports rerunning 127 page tests, 45 focused
-  tests, the disposable migration replay and rollback fixture, two-session
-  races, all eight cancellation browser cases and the date-editor probes.
-  Lint retained one existing warning and TypeScript matched the 16-error
-  baseline. His initial fixture encountered retained synthetic audit residue;
-  resetting only the disposable project allowed a clean rollback run. The
-  stack was stopped afterward. Final hashes, Git/index and stash matched.
-  Fresh evidence is the review report; execution harnesses live in the prior
-  evidence directories. No shared-database or production verification is
-  inferred from this local PASS. No architectural conflict was identified.
-- **Recorded limits:** ambiguous fall-back-hour input chooses the first local
-  occurrence. Audit coverage is timestamp UPDATEs only, not INSERT or DELETE;
-  operations without Auth context have a null actor. Identical-value retries
-  are intentionally no-op successes. No production contact, shared migration
-  application, real attendee change, commit, push or deployment occurred.
-- **Evidence:** `/private/tmp/epicentrax-cancellation-date-review/` (tests,
-  mounted-component browser harness and type comparison) and
-  `/private/tmp/epicentrax-cancellation-db-check/` (isolated SQL harness).
-  LEM verification: `/private/tmp/epicentrax-cancellation-date-verify-kv2GcM/`
-  (`FINDINGS.md`, replay, rollback fixture, ACL parity and browser logs).
-  Corrections: `/private/tmp/epicentrax-cancellation-corrections-p8NnJ0/`
-  (`FINDINGS.md`, exact correction diff, rollback/race/ACL and browser logs).
-  Independent review:
-  `/private/tmp/epicentrax-cancellation-independent-review-lun-20260927/REPORT.md`.
+- **Intent and behavior:** Pap requested visible, editable cancellation dates
+  on attendee records. Existing `attendees.cancelled_at` remains the single
+  source. Cancelled records show the date in both list layouts and the record
+  workspace. Authorized operators can correct or supply it through a separate
+  explicit save in browser-local time. Active registrations have no date editor.
+  Cancellation refuses already-cancelled rows and reports success only for a
+  changed row; zero-row outcomes refresh before explaining the result.
+- **Governance:** applied migration `20261027000000` adds the correction RPC,
+  checking Event authority before locking and revalidating authority/lifecycle
+  against the locked row. It enforces `event.attendees.manage`, mutable Event,
+  cancelled status, finite/nonfuture input and exact expected prior timestamp.
+  It changes only `cancelled_at`. An immutable, client-inaccessible audit records
+  changed timestamp UPDATEs through both the RPC and existing RLS-governed paths.
+  Original cancellation actor/reason, status, identity and parking are preserved.
+- **Reviewed implementation:** product commit
+  `e4261915f451203c96ebee0c1ef486677c3c6e2a`, parent
+  `0ec8f6f8f4b1caece863d1e5c36ea77561625401`, contains exactly the eight reviewed
+  files. Lun independently passed 127 page tests, 45 focused tests, isolated
+  migration replay, rollback/ACL checks and two-session lock/race checks.
+  Unauthorized calls avoid held locks; authorized waiting calls revalidate
+  moved, archived or deleted records. Chromium/WebKit cancellation probes
+  passed four cases each; date-editor probes cover microseconds, DST, switching
+  records and late responses. Browser HTTP/session boundaries were mocked.
+  TypeScript remained byte-identical to the 16-error baseline; lint retained
+  one existing warning. The isolated production build passed 134 pages with
+  type checking bypassed only in that disposable copy and checked separately.
+- **Release-tooling correction:** independent review exposed whitespace
+  normalization hiding literal changes in the schema-delta verifier. The
+  repaired helper compares exact raw statement content and fails closed for
+  unsupported dump formats. Its expected artifact was derived independently
+  from before/after disposable schema dumps; Mel verified all 13 raw addition
+  hunks. Lun's focused re-review passed 30 delta tests, 144 release mocks and
+  29 PM2-helper tests. The earlier outer-dollar-tag finding was retracted:
+  those fixtures are invalid PostgreSQL. Fixture execution 29/29 is retained
+  LEM evidence, not freshly rerun by Lun. Only the repaired 119-entry toolset
+  was used; the defective original was preserved and not executed.
+- **Production migration:** authorized execution
+  `canceldate-20260928T021304Z` applied the migration once at 02:15:20Z UTC.
+  Its SHA256 is
+  `67fe1f377bb8f4f1186ce640b8c32c5a47743e6c56246dff075094453061b17a`.
+  Independent post-apply verification proved exactly 16 added schema statements,
+  no baseline statement changes, expected bodies/owners/search paths/grants,
+  audit RLS and protections, and ledger 266/266 with no pending or remote-only
+  migration. Seven prerequisite bodies stayed unchanged. A fresh final dump
+  was byte-identical to the verified post-apply dump. The CLI emitted a
+  certificate warning; successful application is established by the independent
+  database checks, not the exit status or an assumed explanation of the warning.
+- **Deployment:** one fast-forward push and one deployment, 23 to 24 release
+  directories. Serving `e4261915f451203c96ebee0c1ef486677c3c6e2a` from
+  `/root/srb-event-hub-releases/20260928T021657Z-e4261915f451`.
+  Rollback rotated to `20260927T213451Z-6f02f7ed4db8`
+  (`6f02f7ed4db8c95038d0846db26d1068db99b9dc`). Both-domain health, protected
+  API responses, 52 retained/new asset checks and route shells passed.
+  The attendees route's 15 assets per domain load and its served code contains
+  the correction call. This is deployment evidence, not signed-in acceptance.
+- **Verified paused checkpoint (02:22Z UTC):** app online, PID 4129902,
+  zero restarts; webhook stopped and port 9000 closed; no worker, lock free.
+  Local HEAD and remote main were the product commit, worktree clean and stash
+  preserved before Mel's documentation reconciliation. The staged PM2 helper
+  was checksummed, and the secret baseline was captured before stopping the
+  webhook without printing the secret. App PID stayed unchanged. PM2 was not
+  saved; dump timestamp remains 2026-09-27 21:45:32Z. Attempted/completed apply
+  and push markers and all receipts remain intact. These are retained execution
+  observations, not a fresh host probe by Mel.
+- **Next authorization boundary:** the documentation diff is being reconciled
+  while the webhook is paused. Documentation commit/push and step 60 (resume,
+  original-baseline secret-continuity verification and PM2 save) require separate
+  approval. Do not repeat migration or product-release steps. Until resumed,
+  the stopped webhook will not deploy documentation pushes. No closeout success
+  is claimed here; execution evidence will record it when performed.
+- **Limits and rollback:** signed-in cancellation-date acceptance and physical
+  devices remain untested. Ambiguous fall-back-hour input chooses the first
+  occurrence. Audit covers timestamp UPDATEs, not INSERT/DELETE; no Auth context
+  yields a null actor. Identical-value retries are no-op successes. An absent
+  refreshed record shows the existing truthful unavailable-record error.
+  Application rollback is compatible with the additive migration, which stays
+  applied, but restores the old overwrite behavior, now audited. No automatic
+  database reversal. No real attendee correction/read, startup-unit restart or
+  reboot was part of this release; reboot recovery remains unproven.
+- **Evidence:** implementation `/private/tmp/epicentrax-cancellation-date-review/`;
+  SQL verification `/private/tmp/epicentrax-cancellation-date-verify-kv2GcM/`;
+  corrections `/private/tmp/epicentrax-cancellation-corrections-p8NnJ0/`;
+  product review `/private/tmp/epicentrax-cancellation-independent-review-lun-20260927/`;
+  preflight `/private/tmp/epicentrax-cancellation-release-preflight-y3qG1r/`;
+  repaired tooling `/private/tmp/epicentrax-cancellation-delta-repair-pBQJ2S/`;
+  re-review `/private/tmp/epicentrax-cancellation-delta-rereview-lun-20260928/`;
+  execution `/private/tmp/epicentrax-cancellation-release-exec-hx4t98/`
+  (`EXECUTION-RECORD.md`, logs and execution-scoped receipts).
 
 ### FCOC print logo resolution — 2026-09-27 (Deployed and verified; Pap confirmed app update)
 
@@ -2716,16 +2711,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-27T16:15:31-06:00`
+**Generated at:** `2026-09-27T20:25:11-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `0ec8f6f docs: reconcile verified logo and trust preference release`
-**Commit date:** `2026-09-27T15:41:21-06:00`
-**origin/main:** `0ec8f6f`
+**Commit:** `e426191 feat(attendees): add governed cancellation date editing`
+**Commit date:** `2026-09-27T19:02:22-06:00`
+**origin/main:** `e426191`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `3`
+**Tracked modified:** `1`
 **Staged:** `0`
-**Untracked:** `5`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
