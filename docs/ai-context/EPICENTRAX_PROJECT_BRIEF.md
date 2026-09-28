@@ -231,7 +231,7 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Photo Details size and keyboard save — 2026-09-28 (Release authorized)
+### Photo Details size and keyboard save — 2026-09-28 (Committed and deployed; Safari acceptance pending)
 
 - **Intent and observed defect:** Pap's Safari Photo Library screenshot shows
   the narrow Photo Details dialog clipping Close/Save below its content. Pap
@@ -261,9 +261,29 @@ state override this subsection whenever they disagree, per the
   cohort is six files, with no database migration or production data write.
   Fresh preflight found `20260928T195226Z-e6bfab5c46e2` serving, 26 releases,
   both services online, a clean controller and a free deployment lock.
-  Full signed-in Safari acceptance remains pending after release.
+  Full signed-in Safari acceptance remains pending.
+- **Development baseline and deployed release:** product commit
+  `1dbbbd8eb6b739313dec16c6e5ae77ceee7ae786` contains exactly the two Parking
+  files, three Photo Library files and this Brief. One fast-forward main push
+  triggered one successful automatic deployment, 26 to 27 releases. Serving
+  `20260928T203734Z-1dbbbd8eb6b7`; rollback
+  `20260928T195226Z-e6bfab5c46e2`. Production compilation, TypeScript and
+  134-page generation passed. Candidate and activated-service checks passed;
+  exact serving SHA/process, rollback and both online services were verified.
+  Previous, candidate and next-deployment configuration bytes match.
+- **Public verification and closeout:** both domains passed home (13 assets),
+  Parking (16), Photo Library (15) and Member Check-In (13) page/asset checks.
+  Served code contains the Parking Enter hint, Photo Details form/save hint,
+  native resize CSS and retained member-report read function. Protected Admin
+  and Vendor APIs return 401 without authentication. Documentation promotion
+  pauses only the webhook; closeout resumes it, verifies the original signing
+  secret and unchanged app PID/release/count, then saves both PM2 services.
+  Evidence: `/private/tmp/parking-photo-deploy.log`,
+  `/private/tmp/parking-photo-live-verification.log` and host-private
+  `/root/parking-photo-closeout-20260928.json`. No unrelated files, migration
+  or production data write are included.
 
-### Parking Enter-to-save shortcut — 2026-09-28 (Release authorized)
+### Parking Enter-to-save shortcut — 2026-09-28 (Committed and deployed; live workflow acceptance pending)
 
 - **Intent and behavior:** Pap requested name selection, site selection, then
   Enter to save/confirm without scrolling to the action button. Clicking a site
@@ -289,8 +309,9 @@ state override this subsection whenever they disagree, per the
   `.next` types (27 generated route checks plus the prior 16 source errors).
   No new TypeScript diagnostic; `git diff --check` passes.
 - **Delivery:** Pap approved the combined Photo Details/Parking release.
-  No production placement write or migration is included. Fresh full-app
-  acceptance and application deployment remain pending.
+  This is deployed in `1dbbbd8` / `20260928T203734Z-1dbbbd8eb6b7`, with the
+  verified release and closeout recorded above. No production placement write
+  or migration was performed. Fresh full-app acceptance remains pending.
 
 ### Member Check-In saved site report — 2026-09-28 (Committed and deployed; Pap confirmed persistence)
 
@@ -2931,16 +2952,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-28T14:37:27-06:00`
+**Generated at:** `2026-09-28T14:40:25-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `9d1021e docs: reconcile member site report and parking release`
-**Commit date:** `2026-09-28T14:01:17-06:00`
-**origin/main:** `9d1021e`
+**Commit:** `1dbbbd8 fix(admin): add Parking Enter shortcut and usable photo details editor`
+**Commit date:** `2026-09-28T14:37:30-06:00`
+**origin/main:** `1dbbbd8`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `4`
+**Tracked modified:** `1`
 **Staged:** `0`
-**Untracked:** `2`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
