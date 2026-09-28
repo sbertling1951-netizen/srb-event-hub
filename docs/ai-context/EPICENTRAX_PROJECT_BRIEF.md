@@ -231,12 +231,12 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Nametag cardstock layout — 2026-09-28 UTC (Reviewed; release authorized, not yet deployed)
+### Nametag cardstock layout — 2026-09-28 UTC (Deployed and verified; native print acceptance pending)
 
 - **Intent:** Pap approved the centered, evenly spaced replacement PDF and
   requested the app produce that layout on plain cardstock. Leave attendee
   text, including the existing “None” value, unchanged.
-- **Local behavior:** `app/admin/print/page.tsx` uses Letter portrait with six
+- **Behavior:** `app/admin/print/page.tsx` uses Letter portrait with six
   fixed slots, 3.875 × 2.90625-inch tags and 0.25-inch cutting gaps. Side
   margins are 0.25 inch; intended top/bottom margins are 0.890625 inch.
   The existing 4:3 card artwork is uniformly scaled, preserving its internal
@@ -260,10 +260,30 @@ state override this subsection whenever they disagree, per the
   bypassed only in that copy and compared separately. Pap explicitly authorized
   commit and deployment. Fresh production preflight observed serving
   `e4261915f451203c96ebee0c1ef486677c3c6e2a`, 24 releases and both processes
-  online; that release is the intended rollback target. No migration is needed.
+  online; that release is now the rollback target. No migration was needed.
+- **Verified deployment:** product commit
+  `24cec7ff0a8b15d0510ccadee16042f50c89f842`, parent `c4cb9095`, contains only
+  the print page and Brief. One fast-forward product push deployed exactly one
+  release, 24 to 25 directories, serving `20260928T033445Z-24cec7ff0a8b`.
+  Rollback is `20260928T021657Z-e4261915f451`. App PID 4138692 is online;
+  serving, pinned and next-deployment project/origin values agree. Both-domain
+  health and protected-API checks pass, along with 52 new/retained home asset
+  checks. The print route and its 13 assets per domain load; served code contains
+  the Letter cardstock text and 0.25-inch gaps/3.875-inch tag widths. This is
+  release-content verification, not signed-in or physical-print acceptance.
+- **Operational closeout:** execution `nametag-20260928T033000Z` uses fresh
+  application-only tooling and a per-execution pre-stop secret baseline;
+  release mocks pass 80/80 and closeout tests 29/29. The deployment webhook
+  alone is paused for this documentation promotion, leaving the app online.
+  Normal closeout resumes it and validates/saves PM2 using the original
+  baseline. Consult `/private/tmp/epicentrax-nametag-release/EXECUTION-RECORD.md`
+  and execution-scoped receipts for the completed closeout and final service
+  state; a documentation push while paused must not create a second release.
+  No migration, attendee change, storage write or startup-unit change is included.
 - **Limits:** fixtures use synthetic data and extracted print markup, not a
   signed-in full app session. WebKit print-media layout was tested, not native
-  Safari PDF output or physical printing. Deployment remains pending.
+  Safari PDF output or physical printing. Pap must check a fresh live print
+  preview at Actual Size; the earlier gapless PDF exercised the old release.
   Review: `/private/tmp/epicentrax-nametag-layout-lun-review/REVIEW.md`;
   supplemental verification: `/private/tmp/epicentrax-nametag-mel-reconciliation/`;
   release evidence: `/private/tmp/epicentrax-nametag-release/`. Evidence: `/private/tmp/epicentrax-nametag-app-layout/`; approved PDF:
@@ -2752,14 +2772,14 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-27T21:29:56-06:00`
+**Generated at:** `2026-09-27T21:40:07-06:00`
 **Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `c4cb909 docs: reconcile verified cancellation date release`
-**Commit date:** `2026-09-27T20:28:47-06:00`
-**origin/main:** `c4cb909`
+**Commit:** `24cec7f fix(print): center nametags with cardstock cutting gaps`
+**Commit date:** `2026-09-27T21:30:24-06:00`
+**origin/main:** `24cec7f`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `2`
+**Tracked modified:** `1`
 **Staged:** `0`
 **Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
