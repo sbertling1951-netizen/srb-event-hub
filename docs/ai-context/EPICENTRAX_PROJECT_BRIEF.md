@@ -283,6 +283,74 @@ state override this subsection whenever they disagree, per the
   `/root/parking-photo-closeout-20260928.json`. No unrelated files, migration
   or production data write are included.
 
+### Event photo contributor access and continuous slideshow loop — 2026-09-28 (Release authorized; production verification pending)
+
+- **Intent:** Pap authorized restoring legitimate Co-Pilot and additional-
+  participant photo access first, followed by continuous slideshow playback.
+  Parking remains deferred and is not part of this release candidate.
+- **Photo change:** New uploads derive one canonical contributor Person on the
+  server from the authenticated account, eligible Person/Event Participation,
+  applicable role instance, and exact Event registration. `attendee_id`
+  remains registration context and `attendees.person_id` remains Pilot-only.
+  New Storage uploads and metadata rows are bound to that same contributor,
+  Event, registration, and canonical object path. Same-Event approved gallery
+  access is separate from pending ownership and original download. Legacy rows
+  without a contributor Person retain their established access without
+  invented attribution; `is_own_attendee` is unchanged.
+- **Slideshow change:** Automatic server-owned advancement wraps from the last
+  item to the first after its duration. Public current/next state, image, and
+  caption authorization use the same wrapped index. Row locking,
+  `state_version`, durations, Pause/Resume/End, manual Next/Previous
+  boundaries, private-Draft exclusions, approval checks, and rendition limits
+  remain governed as before. The presenter preview shows the wrapped next
+  item.
+- **Local files:** Photo migration `20261029100000_govern_event_photo_person_contributors.sql`
+  and slideshow migration `20261029200000_loop_presentation_session.sql`,
+  with focused source tests and the affected member/presenter routes. Neither
+  migration is applied to the linked or production database.
+- **Validation:** The photo route and migration source suite passes 14/14, the
+  member photo suite passes 24/24, and the disposable full-schema local
+  contributor finalization matrix passes after replay through both new
+  migrations. That matrix covers server-derived contributor resolution,
+  Storage uploader/object/path binding, duplicate serialization, direct INSERT
+  denial, original-read authority, cleanup ownership, revocation, private
+  lifecycle, and legacy-owner behavior. A real authenticated Storage sequence
+  against the disposable API passed upload `200`, governed finalization `200`,
+  authenticated byte download `200`, unfinalized cleanup `200`, and post-cleanup
+  read denial `400`. Two independent PostgreSQL connections concurrently
+  finalizing the same object produced exactly one `photo_id` and one empty
+  result. The continuous-loop database fixture exercised session lifecycle,
+  wrapped advance, anonymous presentation reads, and private-Draft exclusion.
+  The continuous-loop migration source suite passes; the presenter suite retains
+  two pre-existing clean-HEAD source assertion failures unrelated to this loop
+  diff. Full TypeScript comparison found 16 existing diagnostics in the changed
+  checkout versus 43 in the clean checkout, with no changed-only diagnostics;
+  generated Next.js types account for the different totals. No diagnostics
+  occurred in the changed photo/loop implementation files. Local
+  `supabase db lint` reports four unrelated pre-existing function errors and
+  existing warnings, none in the new migrations. Evidence was collected in the
+  disposable project `epicentra-photo-validation-20260928-3029` on ports
+  `55421-55424`; the canonical project was not started.
+- **Independent completion:** Mel executed eight further checks against the
+  real disposable Storage API. The Co-Pilot resolves as its own contributor;
+  each contributor cannot download or delete the other's pending original;
+  the Co-Pilot cannot claim the Pilot's object. The actual upload handler
+  performed a successful finalization before receiving a simulated lost
+  response: it returned a recoverable conflict, made zero cleanup calls, and
+  retained both the committed row in My Uploads and the original bytes.
+  Same-Event approved gallery metadata remained visible while the other
+  contributor's original RPC and Storage bytes remained denied. All eight
+  checks passed. The disposable stack is stopped with test volumes preserved.
+- **Evidence limits:** Native Safari and signed-in live acceptance remain
+  pending. The clean presenter suite was 66/68 with two existing source-test
+  failures (`all_approved` deck creation and Manual Selection authoring).
+- **Release state:** Pap explicitly authorized commit and deployment of photos
+  and slideshow only. Production preflight verified the app's Supabase target
+  `lastlzlewonsmwtolpvh`, the ledger through `20261029000000`, and a dry run
+  listing exactly the two photo/loop migrations above. Production application
+  and migration verification are pending. Deferred Parking files remain in
+  the canonical checkout and are excluded from this release.
+
 ### Parking Enter-to-save shortcut — 2026-09-28 (Committed and deployed; live workflow acceptance pending)
 
 - **Intent and behavior:** Pap requested name selection, site selection, then
@@ -2952,16 +3020,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-28T14:40:25-06:00`
-**Branch:** `chore/epicentrax-p1d2-positive-create-wording`
-**Commit:** `1dbbbd8 fix(admin): add Parking Enter shortcut and usable photo details editor`
-**Commit date:** `2026-09-28T14:37:30-06:00`
-**origin/main:** `1dbbbd8`
+**Generated at:** `2026-09-28T20:19:26-06:00`
+**Branch:** `codex/photo-contributors-slideshow-loop`
+**Commit:** `45b73d0 docs: reconcile deployed Parking and Photo Details fixes`
+**Commit date:** `2026-09-28T14:40:28-06:00`
+**origin/main:** `45b73d0`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `5`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `15`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
@@ -3040,17 +3108,17 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `268`
-- Latest migration: `20261029000000_add_member_site_report_self_read.sql`
+- Total migration files: `270`
+- Latest migration: `20261029200000_loop_presentation_session.sql`
 - Latest five:
-  - `20261025000000_separate_member_roster_from_optional_sharing.sql`
-  - `20261026000000_enforce_admin_checkin_registration_eligibility.sql`
   - `20261027000000_govern_attendee_cancellation_date.sql`
   - `20261028000000_restore_saint_george_parking_inventory.sql`
   - `20261029000000_add_member_site_report_self_read.sql`
+  - `20261029100000_govern_event_photo_person_contributors.sql`
+  - `20261029200000_loop_presentation_session.sql`
 
 ### Identity-audit inventory
-- SQL files: `14`
+- SQL files: `13`
 - Markdown files: `25`
 - Latest five:
   - `baseline-diagnostics/stage7_identity_integrity_verification.md`

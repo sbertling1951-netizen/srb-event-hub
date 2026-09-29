@@ -581,7 +581,11 @@ function AdminSlideshowPageInner() {
       setItems(rows);
 
       const current = rows.find((i) => i.sequence_number === currentIndex);
-      const next = rows.find((i) => i.sequence_number === currentIndex + 1);
+      const nextIndex = rows.length > 0 ? (currentIndex + 1) % rows.length : null;
+      const next =
+        nextIndex === null
+          ? undefined
+          : rows.find((i) => i.sequence_number === nextIndex);
 
       const resolvedCurrent =
         current?.content_type === "photo"
@@ -1067,6 +1071,8 @@ function AdminSlideshowPageInner() {
   const totalSlides = items.length;
   const isFirstSlide = session ? session.current_index <= 0 : true;
   const isLastSlide = session ? session.current_index >= totalSlides - 1 : true;
+  const isWrappedNextSlide =
+    Boolean(session && totalSlides > 0 && session.current_index === totalSlides - 1);
 
   // Audience-launch transitional decision (Stage 5 Part 12, option B):
   // the session id is appended as ?session=<id> so the URL shape is
@@ -1630,9 +1636,11 @@ function AdminSlideshowPageInner() {
             </>
           ) : (
             <div style={{ opacity: 0.6, marginTop: 12 }}>
-              {isLive && !isLastSlide
-                ? "No renderable content for the next slide."
-                : "End of deck."}
+              {isLive
+                ? isWrappedNextSlide
+                  ? "Next slide is the first slide."
+                  : "No renderable content for the next slide."
+                : "No live presentation."}
             </div>
           )}
         </div>

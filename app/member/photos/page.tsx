@@ -12,7 +12,7 @@ import { Field, Textarea } from "@/components/ui/Field";
 import { HelpButton } from "@/components/ui/HelpButton";
 import { PageSection } from "@/components/ui/PageSection";
 import { logEngagement } from "@/lib/engagement";
-import { memberIdentityRpcArgs } from "@/lib/memberSession";
+import { shareProtectedPhotoFile } from "@/lib/memberPhotoShare";
 import { useMemberWorkspace } from "@/lib/memberWorkspace";
 import { supabase } from "@/lib/supabase";
 
@@ -28,7 +28,6 @@ function MemberPhotosPageInner() {
   const [uploading, setUploading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [memberCaption, setMemberCaption] = useState("");
-  const [memberName, setMemberName] = useState("");
 
   type UploadedPhoto = {
     id: string;
@@ -44,6 +43,7 @@ function MemberPhotosPageInner() {
     id: string;
     storage_path: string;
     attendee_id: string | null;
+    contributor_person_id: string | null;
     member_caption: string | null;
     admin_caption: string | null;
     photographer_name_snapshot: string | null;
@@ -60,6 +60,7 @@ function MemberPhotosPageInner() {
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(
     null,
   );
+  const [selectedPhotoIsOwned, setSelectedPhotoIsOwned] = useState(false);
   const [viewerMessage, setViewerMessage] = useState("");
   const [downloadingPhotoId, setDownloadingPhotoId] = useState<string | null>(
     null,
@@ -73,38 +74,10 @@ function MemberPhotosPageInner() {
       return;
     }
 
-    if (attendeeId) {
-      void loadUploads(attendeeId);
-
-      void (async () => {
-        if (!workspaceEvent?.id) {
-          return;
-        }
-
-        const { data: recordData } = await supabase.rpc(
-          "get_my_attendee_record",
-          {
-            p_event_id: workspaceEvent.id,
-            ...memberIdentityRpcArgs(session),
-          },
-        );
-
-        const data = Array.isArray(recordData) ? recordData[0] : null;
-
-        if (data) {
-          const photographerName =
-            data.nickname?.trim() ||
-            [data.pilot_first, data.pilot_last]
-              .filter(Boolean)
-              .join(" ")
-              .trim();
-
-          setMemberName(photographerName || "");
-        }
-      })();
+    if (attendeeId && workspaceEvent?.id) {
+      void loadUploads(workspaceEvent.id, attendeeId);
     } else {
       setUploads([]);
-      setMemberName("");
     }
 
     if (workspaceEvent?.id) {
@@ -324,12 +297,14 @@ function MemberPhotosPageInner() {
     return renditionUrl;
   }
 
-  async function loadUploads(attendeeId: string) {
-    const { data, error } = await supabase
-      .from("event_photos")
-      .select("id, storage_path, photo_status, uploaded_at, member_caption")
-      .eq("attendee_id", attendeeId)
-      .order("uploaded_at", { ascending: false });
+  async function loadUploads(eventId: string, attendeeId: string) {
+    const { data, error } = await supabase.rpc(
+      "read_my_event_photo_uploads",
+      {
+        p_event_id: eventId,
+        p_attendee_id: attendeeId,
+      },
+    );
 
     if (error) {
       console.error("load uploads error:", error);
@@ -351,7 +326,7 @@ function MemberPhotosPageInner() {
     const { data, error: approvedPhotosError } = await supabase
       .from("event_photos")
       .select(
-        "id, storage_path, attendee_id, member_caption, admin_caption, photographer_name_snapshot, show_caption",
+        "id, storage_path, attendee_id, contributor_person_id, member_caption, admin_caption, photographer_name_snapshot, show_caption",
       )
       .eq("event_id", eventId)
       .eq("photo_status", "approved")
@@ -401,13 +376,17 @@ function MemberPhotosPageInner() {
     try {
       setRefreshing(true);
       setError(null);
+      if (!workspaceEvent?.id) {
+        return;
+      }
+
       await Promise.all([
-        loadUploads(attendeeId),
+        loadUploads(workspaceEvent.id, attendeeId),
         workspaceEvent?.id
           ? loadApprovedPhotos(workspaceEvent.id)
           : Promise.resolve(),
       ]);
-    } catch (err) {
+    } catch {
       setError("Unable to refresh. Check connection.");
     } finally {
       setRefreshing(false);
@@ -436,38 +415,29 @@ function MemberPhotosPageInner() {
       setError(null);
       // Removed setStatus("Uploading photo...");
 
-      const extension = file.name.split(".").pop() || "jpg";
-
-      const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-      const fileName = `${workspaceEvent.id}/${attendeeId}/${uniqueId}.${extension}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("event-photos")
-        .upload(fileName, file);
-
-      if (uploadError) {
-        throw uploadError;
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        throw new Error("Photo upload requires an authenticated account.");
       }
 
-      const { error: insertError } = await supabase
-        .from("event_photos")
-        .insert({
-          event_id: workspaceEvent.id,
-          attendee_id: attendeeId,
-          photographer_name_snapshot: memberName || null,
-          storage_path: fileName,
-          photo_status: "pending",
-          caption_status: memberCaption.trim() ? "pending" : "pending",
-          member_caption: memberCaption.trim() || null,
-        });
+      const formData = new FormData();
+      formData.set("eventId", workspaceEvent.id);
+      formData.set("attendeeId", attendeeId);
+      formData.set("caption", memberCaption.trim());
+      formData.set("file", file);
 
-      if (insertError) {
-        throw insertError;
+      const response = await fetch("/api/photos/upload", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error("Photo upload failed.");
       }
 
       setUploadCompleted((prev) => prev + 1);
-      await loadUploads(attendeeId);
+      await loadUploads(workspaceEvent.id, attendeeId);
     } catch (err) {
       console.error("photo upload error:", JSON.stringify(err, null, 2));
 
@@ -484,7 +454,7 @@ function MemberPhotosPageInner() {
   // pendingDeletePhoto -- this function itself is the exact prior governed
   // deletion path, called exactly once, only from that dialog's onConfirm.
   async function deletePhoto(photo: UploadedPhoto) {
-    if (!attendeeId) {
+    if (!attendeeId || !workspaceEvent) {
       setError("No attendee found.");
       return;
     }
@@ -516,7 +486,7 @@ function MemberPhotosPageInner() {
         throw deleteError;
       }
 
-      await loadUploads(attendeeId);
+      await loadUploads(workspaceEvent.id, attendeeId);
 
       setStatus("Photo deleted.");
     } catch (err) {
@@ -530,6 +500,7 @@ function MemberPhotosPageInner() {
 
   function closeViewer() {
     setSelectedPhotoIndex(null);
+    setSelectedPhotoIsOwned(false);
     setViewerMessage("");
   }
 
@@ -572,12 +543,15 @@ function MemberPhotosPageInner() {
       setDownloadingPhotoId(photo.id);
       setViewerMessage("");
 
-      const fullUrl = await ensureFullPhotoUrl(photo);
-      if (!fullUrl) {
-        throw new Error("Photo download failed.");
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        throw new Error("Photo download requires an authenticated account.");
       }
 
-      const response = await fetch(fullUrl);
+      const response = await fetch(`/api/photos/original?photoId=${photo.id}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
 
       if (!response.ok) {
         throw new Error("Photo download failed.");
@@ -607,41 +581,19 @@ function MemberPhotosPageInner() {
       return;
     }
 
-    const shareUrl = (await ensureFullPhotoUrl(photo)) || photo.previewUrl || "";
-    const shareTitle = "Event photo";
+    const result = await shareProtectedPhotoFile(photo.id, photoFileName(photo), {
+      getAccessToken: async () => {
+        const { data: sessionData } = await supabase.auth.getSession();
+        return sessionData.session?.access_token || null;
+      },
+      fetch,
+      File,
+      canShare: (data) => navigator.canShare?.(data) === true,
+      share: (data) => navigator.share(data),
+    });
 
-    try {
-      const canShareFiles =
-        typeof navigator.canShare === "function" && typeof File !== "undefined";
-      const fullUrl = (await ensureFullPhotoUrl(photo)) || photo.previewUrl || "";
-
-      if (canShareFiles) {
-        try {
-          const response = await fetch(fullUrl);
-
-          if (!response.ok) {
-            throw new Error("Photo download failed.");
-          }
-
-          const file = new File([await response.blob()], photoFileName(photo), {
-            type: response.headers.get("content-type") || "image/jpeg",
-          });
-
-          if (navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file], title: shareTitle });
-            return;
-          }
-        } catch (shareError) {
-          console.error("photo file share error:", shareError);
-        }
-      }
-
-      await navigator.share({ title: shareTitle, url: shareUrl });
-    } catch (shareError) {
-      if ((shareError as Error).name !== "AbortError") {
-        console.error("photo share error:", shareError);
-        setViewerMessage("The photo could not be shared.");
-      }
+    if (result === "fallback") {
+      setViewerMessage("File sharing is unavailable. Use Download Photo instead.");
     }
   }
 
@@ -653,6 +605,29 @@ function MemberPhotosPageInner() {
   // Fetch the larger "full" rendition only for whichever photo is actually
   // open right now -- covers the initial click as well as Previous/Next
   // navigation, without ever eagerly fetching "full" for the whole gallery.
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!selectedPhoto) {
+      setSelectedPhotoIsOwned(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void supabase
+      .rpc("is_event_photo_owner", { p_photo_id: selectedPhoto.id })
+      .then(({ data, error }) => {
+        if (!cancelled) {
+          setSelectedPhotoIsOwned(!error && data === true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPhoto?.id]);
+
   useEffect(() => {
     if (selectedPhoto && !selectedPhoto.viewUrl) {
       void ensureGalleryViewUrl(selectedPhoto);
@@ -668,7 +643,7 @@ function MemberPhotosPageInner() {
   const selectedPhotographer =
     selectedPhoto?.photographer_name_snapshot?.trim() || "";
   const isOwnSelectedPhoto = Boolean(
-    selectedPhoto && attendeeId && selectedPhoto.attendee_id === attendeeId,
+    selectedPhoto && selectedPhotoIsOwned,
   );
   const canSharePhoto =
     typeof navigator !== "undefined" && typeof navigator.share === "function";

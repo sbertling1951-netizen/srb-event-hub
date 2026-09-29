@@ -167,8 +167,12 @@ test("Slice 1 leaves the upload progress widget, gallery grid, and viewer modal 
   assert.match(PAGE_SOURCE, /Share Photo/);
 });
 
-test("Slice 1 leaves every load/upload/delete/download/share/rendition function and its storage/RPC/query calls unchanged", () => {
-  assert.match(PAGE_SOURCE, /async function loadUploads\(attendeeId: string\) \{/);
+test("photo loading uses the governed event-scoped upload RPC while preserving the surrounding photo actions", () => {
+  assert.match(
+    PAGE_SOURCE,
+    /async function loadUploads\(eventId: string, attendeeId: string\) \{/,
+  );
+  assert.match(PAGE_SOURCE, /"read_my_event_photo_uploads"/);
   assert.match(PAGE_SOURCE, /async function loadApprovedPhotos\(eventId: string\) \{/);
   assert.match(PAGE_SOURCE, /async function uploadPhoto\(file: File\) \{/);
   assert.match(PAGE_SOURCE, /async function deletePhoto\(photo: UploadedPhoto\) \{/);
@@ -240,7 +244,7 @@ test("the ConfirmDialog is wired with pendingDeletePhoto/deletingPhotoId state, 
 });
 
 test("deletePhoto retains its exact attendee check, pending-status guard, storage removal, table deletion, reload, status text, and error handling", () => {
-  assert.match(PAGE_SOURCE, /async function deletePhoto\(photo: UploadedPhoto\) \{\s*\n\s*if \(!attendeeId\) \{\s*\n\s*setError\("No attendee found\."\);/);
+  assert.match(PAGE_SOURCE, /async function deletePhoto\(photo: UploadedPhoto\) \{\s*\n\s*if \(!attendeeId \|\| !workspaceEvent\) \{\s*\n\s*setError\("No attendee found\."\);/);
   assert.match(
     PAGE_SOURCE,
     /if \(photo\.photo_status !== "pending"\) \{\s*\n\s*setError\(\s*\n\s*"This photo has already been reviewed and can no longer be deleted\.",/,
@@ -253,7 +257,10 @@ test("deletePhoto retains its exact attendee check, pending-status guard, storag
     PAGE_SOURCE,
     /supabase\s*\n\s*\.from\("event_photos"\)\s*\n\s*\.delete\(\)\s*\n\s*\.eq\("id", photo\.id\);/,
   );
-  assert.match(PAGE_SOURCE, /await loadUploads\(attendeeId\);\s*\n\s*\n\s*setStatus\("Photo deleted\."\);/);
+  assert.match(
+    PAGE_SOURCE,
+    /await loadUploads\(workspaceEvent\.id, attendeeId\);\s*\n\s*setStatus\("Photo deleted\."\);/,
+  );
   assert.match(
     PAGE_SOURCE,
     /setError\(err instanceof Error \? err\.message : "Could not delete photo\."\);\s*\n\s*\} finally \{\s*\n\s*setDeletingPhotoId\(null\);/,

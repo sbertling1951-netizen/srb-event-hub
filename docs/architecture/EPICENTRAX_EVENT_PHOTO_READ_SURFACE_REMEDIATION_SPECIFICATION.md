@@ -1,6 +1,6 @@
 # EpicentraX Event Photo Read-Surface Remediation Specification
 
-**Status:** Accepted P0 security design; implementation not yet authorized
+**Status:** Accepted P0 security design; bounded local implementation remains unreleased
 
 **Date:** 2026-09-09
 
@@ -160,9 +160,52 @@ This P0 does not authorize or require:
 - any migration, policy, code, storage, or production change until a separate
   implementation authorization is given.
 
-## 8. Implementation handoff
+## 8. Implementation amendment — 2026-09-28 (local, unreleased)
 
-The next permitted technical task is a bounded implementation plan that names
-the exact migration, helper/RPC, application, slideshow, and test changes
-needed to satisfy this specification. It must include rollback and deployment
-verification without weakening existing Event isolation.
+The bounded implementation preserves the following rules:
+
+- Gallery authority is role-independent: an eligible Person/Event
+  Participation, represented through the applicable role instance and exact
+  registration context, permits same-Event approved gallery viewing. The
+  Pilot-only `attendees.person_id` bridge is not used as a universal Person
+  slot.
+- New photos persist one server-derived canonical contributor Person. The
+  browser may provide Event and registration context as a request hint, but
+  it cannot choose the contributor Person, photographer attribution, object
+  path, or metadata binding. Storage upload and metadata insertion are bound
+  to the same verified Person, Event, registration, and canonical path.
+- Gallery viewing and contributor ownership remain separate capabilities.
+  Pending read/delete and original download require the contributor Person or
+  Event administration; same-Event participants receive only the governed
+  resized gallery rendition.
+- Historical rows without a contributor Person retain their established
+  Pilot-owner and Event-administrator behavior. No historical contributor is
+  inferred or backfilled, and legacy rows do not grant their registration
+  owner ownership of newly admitted contributors' photos.
+- `is_own_attendee` remains unchanged. It continues to serve the legacy
+  registration-owner path only; the new contributor path uses the canonical
+  Person/Event participation relationship.
+
+The disposable full-schema local behavioral matrix now proves the contributor
+finalization and object-claim boundary for the cases listed in the local
+checkpoint. The corrected fixture also proves private-Draft denial for direct
+metadata reads, legacy ownership, the owner helper, and My Uploads, and
+replays successfully after a fresh local full-schema reset. Executable route
+tests prove ambiguous upload finalization preserves the object and protected
+original delivery uses only the governed photo-id path. This is implementation
+evidence only; it does not replace the broader required proof matrix,
+separate-connection concurrency, production migration, real-role presentation
+replay, or live acceptance.
+
+## 9. Implementation handoff
+
+The local implementation and bounded validation are complete in the isolated
+checkout. Disposable full-schema replay, real authenticated Storage checks,
+two-connection finalization serialization, and presentation lifecycle/wrapping
+checks passed. An independent actual-handler test proved a committed upload
+survives a simulated lost finalization response without cleanup. Actual Storage
+checks denied cross-contributor original reads, claims and deletes on a shared
+registration. The disposable stack is stopped with test volumes preserved.
+Pap authorized the photo/loop release on 2026-09-28. The Development checkpoint
+records migration, deployment and live-acceptance evidence; native Safari and
+signed-in acceptance remain separate from these local proofs.
