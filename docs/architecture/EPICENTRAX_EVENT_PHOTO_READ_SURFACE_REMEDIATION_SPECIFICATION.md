@@ -1,6 +1,6 @@
 # EpicentraX Event Photo Read-Surface Remediation Specification
 
-**Status:** Accepted P0 security design; bounded local implementation remains unreleased
+**Status:** Accepted P0 security design; contributor amendment deployed 2026-09-28
 
 **Date:** 2026-09-09
 
@@ -160,7 +160,7 @@ This P0 does not authorize or require:
 - any migration, policy, code, storage, or production change until a separate
   implementation authorization is given.
 
-## 8. Implementation amendment — 2026-09-28 (local, unreleased)
+## 8. Implementation amendment — 2026-09-28 (deployed; signed-in acceptance pending)
 
 The bounded implementation preserves the following rules:
 
@@ -206,6 +206,10 @@ checks passed. An independent actual-handler test proved a committed upload
 survives a simulated lost finalization response without cleanup. Actual Storage
 checks denied cross-contributor original reads, claims and deletes on a shared
 registration. The disposable stack is stopped with test volumes preserved.
-Pap authorized the photo/loop release on 2026-09-28. The Development checkpoint
-records migration, deployment and live-acceptance evidence; native Safari and
-signed-in acceptance remain separate from these local proofs.
+Pap authorized the photo/loop release on 2026-09-28. Product commit
+`fe6c8b75ea4bff0b41b5e7cf6af985620d5670fe` and migrations `20261029100000`
+and `20261029200000` are deployed. Production function bodies match source;
+photo/Storage counts are unchanged, and Jan's Saint George Co-Pilot upload and
+gallery predicates now permit access through the existing canonical Person.
+The Development checkpoint records release evidence and rollback identity.
+Native Safari and signed-in acceptance remain separate from these proofs.

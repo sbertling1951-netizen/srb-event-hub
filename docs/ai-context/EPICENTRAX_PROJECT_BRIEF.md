@@ -283,7 +283,7 @@ state override this subsection whenever they disagree, per the
   `/root/parking-photo-closeout-20260928.json`. No unrelated files, migration
   or production data write are included.
 
-### Event photo contributor access and continuous slideshow loop — 2026-09-28 (Release authorized; production verification pending)
+### Event photo contributor access and continuous slideshow loop — 2026-09-28 (Committed and deployed; signed-in acceptance pending)
 
 - **Intent:** Pap authorized restoring legitimate Co-Pilot and additional-
   participant photo access first, followed by continuous slideshow playback.
@@ -304,10 +304,10 @@ state override this subsection whenever they disagree, per the
   boundaries, private-Draft exclusions, approval checks, and rendition limits
   remain governed as before. The presenter preview shows the wrapped next
   item.
-- **Local files:** Photo migration `20261029100000_govern_event_photo_person_contributors.sql`
+- **Release files:** Photo migration `20261029100000_govern_event_photo_person_contributors.sql`
   and slideshow migration `20261029200000_loop_presentation_session.sql`,
-  with focused source tests and the affected member/presenter routes. Neither
-  migration is applied to the linked or production database.
+  with focused source tests and the affected member/presenter routes. Both
+  migrations are applied to production; no Parking migration is included.
 - **Validation:** The photo route and migration source suite passes 14/14, the
   member photo suite passes 24/24, and the disposable full-schema local
   contributor finalization matrix passes after replay through both new
@@ -344,12 +344,37 @@ state override this subsection whenever they disagree, per the
 - **Evidence limits:** Native Safari and signed-in live acceptance remain
   pending. The clean presenter suite was 66/68 with two existing source-test
   failures (`all_approved` deck creation and Manual Selection authoring).
-- **Release state:** Pap explicitly authorized commit and deployment of photos
-  and slideshow only. Production preflight verified the app's Supabase target
-  `lastlzlewonsmwtolpvh`, the ledger through `20261029000000`, and a dry run
-  listing exactly the two photo/loop migrations above. Production application
-  and migration verification are pending. Deferred Parking files remain in
-  the canonical checkout and are excluded from this release.
+- **Release state and substantive baseline:** Product commit
+  `fe6c8b75ea4bff0b41b5e7cf6af985620d5670fe` was fast-forwarded to `main`.
+  The existing guarded webhook deployed exactly one new release,
+  `20260929T022028Z-fe6c8b75ea4b`; rollback is
+  `20260928T203734Z-1dbbbd8eb6b7`. The production build passed all 136 routes.
+  Candidate and activated-release checks passed. Both application domains
+  passed member-photo and presenter page checks with 52 referenced asset
+  checks total; unauthenticated upload/original requests returned the expected
+  privacy-preserving 404 responses, and the protected Admin API returned 401.
+- **Production database proof:** The verified app and CLI target is
+  `lastlzlewonsmwtolpvh` on PostgreSQL 17.6. Exactly migrations
+  `20261029100000` and `20261029200000` were applied; the ledger ends at
+  `20261029200000`, and Parking `20261030000000` is absent. All 15 deployed
+  function bodies match the committed migrations. Authenticated direct photo
+  INSERT and anonymous finalization are denied; authenticated governed
+  finalization is permitted. Before/after counts were unchanged: 157 photo
+  rows, 439 photo objects, 974 Parking rows and 18 placement-history rows.
+  No historical contributors were attributed. A read-only predicate check for
+  Jan Bertling's verified Saint George Co-Pilot registration now returns
+  upload allowed, gallery allowed and the existing canonical Person. This
+  checks the production database boundary, not a signed-in browser upload.
+- **Closeout:** The Development checkpoint was reconciled and
+  `npm run context:update` run. Documentation promotion is separate from the
+  serving product release. The canonical checkout's nine deferred Parking
+  files remain byte-identical and excluded. Native Safari upload, original
+  sharing/download and full-deck loop acceptance remain for Pap. Local
+  evidence: `/private/tmp/photo-release-build.log`,
+  `/private/tmp/photo-final-independent-results.txt`,
+  `/private/tmp/photo-release-db-after.json`,
+  `/private/tmp/photo-release-jan-access.json` and
+  `/private/tmp/photo-release-live-verification.log`.
 
 ### Parking Enter-to-save shortcut — 2026-09-28 (Committed and deployed; live workflow acceptance pending)
 
@@ -3020,16 +3045,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-28T20:19:26-06:00`
+**Generated at:** `2026-09-28T20:24:42-06:00`
 **Branch:** `codex/photo-contributors-slideshow-loop`
-**Commit:** `45b73d0 docs: reconcile deployed Parking and Photo Details fixes`
-**Commit date:** `2026-09-28T14:40:28-06:00`
-**origin/main:** `45b73d0`
+**Commit:** `fe6c8b7 fix(photos): enable participant uploads and loop slideshow playback`
+**Commit date:** `2026-09-28T20:19:48-06:00`
+**origin/main:** `fe6c8b7`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `5`
+**Tracked modified:** `2`
 **Staged:** `0`
-**Untracked:** `15`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
