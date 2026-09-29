@@ -983,10 +983,33 @@ function AdminSlideshowPageInner() {
     setBusy(true);
     showStatus(pendingMessage);
 
-    const { data, error: controlError } = await supabase.rpc(rpcName, {
+    let { data, error: controlError } = await supabase.rpc(rpcName, {
       p_session_id: session.id,
       p_expected_version: session.state_version,
     });
+
+    // End targets this session, not a slide position. A looping session's
+    // timed advance moves state_version between this console's 5s refreshes,
+    // so a confirmed End retries once with the authoritative version when
+    // the same session is still live. The RPC still enforces that version.
+    if (
+      rpcName === "end_presentation_session" &&
+      controlError &&
+      isStalePresentationVersionError(new Error(controlError.message))
+    ) {
+      const { data: liveRow } = await supabase
+        .from("presentation_sessions")
+        .select("state_version")
+        .eq("id", session.id)
+        .eq("status", "live")
+        .maybeSingle();
+      if (liveRow) {
+        ({ data, error: controlError } = await supabase.rpc(rpcName, {
+          p_session_id: session.id,
+          p_expected_version: liveRow.state_version,
+        }));
+      }
+    }
 
     if (controlError) {
       if (isStalePresentationVersionError(new Error(controlError.message))) {

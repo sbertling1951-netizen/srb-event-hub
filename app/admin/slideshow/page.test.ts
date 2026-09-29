@@ -178,6 +178,23 @@ test("stale-version reconciliation path exists and does not blindly retry", () =
   assert.match(PAGE_SOURCE, /reconcileAfterStaleVersion/);
 });
 
+test("a confirmed End survives a looping timed advance with exactly one version-checked retry for the same live session", () => {
+  const start = PAGE_SOURCE.indexOf("async function runControl(");
+  const end = PAGE_SOURCE.indexOf("const handlePause =", start);
+  const body = PAGE_SOURCE.slice(start, end);
+  const retryIdx = body.indexOf('rpcName === "end_presentation_session" &&');
+  assert.notEqual(retryIdx, -1);
+  const retry = body.slice(retryIdx, body.indexOf("if (controlError) {", retryIdx));
+  // End only, only after stale_version, re-read by this session id while live.
+  assert.match(retry, /isStalePresentationVersionError/);
+  assert.match(retry, /\.eq\("id", session\.id\)\s*\.eq\("status", "live"\)/);
+  // The retry still goes through the governed RPC with an expected version.
+  assert.match(retry, /p_expected_version: liveRow\.state_version/);
+  // Bounded: one retry, no loop; a second stale_version reconciles as before.
+  assert.equal((retry.match(/supabase\.rpc\(/g) ?? []).length, 1);
+  assert.equal(/\b(while|for)\s*\(/.test(retry), false);
+});
+
 test("presenter performs no direct write to presentation_sessions or presentation_session_items", () => {
   const prohibited: RegExp[] = [
     /\.from\(\s*["']presentation_sessions["']\s*\)\s*\.\s*(update|insert|delete|upsert)/,
@@ -393,7 +410,10 @@ test("loadLiveSession, handleStart, and runControl all route their session row t
   assert.match(handleStartBody, /acceptSessionRow\(row\)/);
   assert.match(handleStartBody, /loadSessionItems\(row\.id, row\.current_index, generation\)/);
 
-  const runControlBody = PAGE_SOURCE.slice(runControlIdx, runControlIdx + 2800);
+  const runControlBody = PAGE_SOURCE.slice(
+    runControlIdx,
+    PAGE_SOURCE.indexOf("const handlePause =", runControlIdx),
+  );
   const bumpCount = (runControlBody.match(/\+\+stateGenerationRef\.current/g) || []).length;
   assert.ok(bumpCount >= 2, `expected runControl to bump the generation in both its branches, found ${bumpCount}`);
   assert.match(runControlBody, /acceptSessionRow\(null\)/, "the end-session branch must sync acceptedSessionRef too");

@@ -15,6 +15,11 @@ const VIEWER_SOURCE = readFileSync(
   "utf8",
 );
 
+const IMAGE_SOURCE = readFileSync(
+  fileURLToPath(new URL("./PresentationSlideImage.tsx", import.meta.url)),
+  "utf8",
+);
+
 const PRESENTER_SOURCE = readFileSync(
   fileURLToPath(new URL("../../admin/slideshow/page.tsx", import.meta.url)),
   "utf8",
@@ -151,27 +156,25 @@ test("the viewer never reads a raw storage path from the session response, and n
 });
 
 test("image and caption are delivered exclusively through the governed presentation routes, keyed by session id and slot", () => {
-  assert.match(VIEWER_SOURCE, /\/api\/slideshow\/presentation-image\?session=/);
+  assert.match(IMAGE_SOURCE, /\/api\/slideshow\/presentation-image\?session=/);
   assert.match(VIEWER_SOURCE, /\/api\/slideshow\/presentation-caption\?session=/);
   assert.match(VIEWER_SOURCE, /slot=current/);
-  assert.match(VIEWER_SOURCE, /slot=next/);
+  assert.match(VIEWER_SOURCE, /slot: "next"/);
   // No direct anon table read of event_photos survives anywhere.
   assert.equal(/\.from\(\s*["']event_photos["']\s*\)/.test(VIEWER_SOURCE), false);
 });
 
-test("ineligible or not-yet-loaded current item is not rendered from a stale image", () => {
-  // currentImageLoaded resets to false the instant the resolved image src
-  // itself changes, and the visible photo (and its caption) are gated on
-  // that flag -- never on the mere presence of a content_ref_id, which
-  // says nothing about whether the underlying photo is still approved.
-  assert.match(VIEWER_SOURCE, /setCurrentImageLoaded\(false\)/);
-  assert.match(VIEWER_SOURCE, /\},\s*\[currentImageSrc\]\)/);
-  assert.match(VIEWER_SOURCE, /currentImageLoaded/);
+test("only live, eligible current/next photos are retained, with session-scoped identity keys", () => {
+  assert.match(VIEWER_SOURCE, /publicState\?\.session_active && !pollError/);
+  assert.match(VIEWER_SOURCE, /key=\{`\$\{sessionId\}:\$\{photo.contentRefId\}`\}/);
+  assert.match(IMAGE_SOURCE, /response.headers.get\("X-Presentation-Content-Ref"\) !== contentRefId/);
+  assert.match(IMAGE_SOURCE, /decodedImage.decode\(\)/);
 });
 
-test("next item is preloaded but the full Event gallery is not", () => {
-  assert.match(VIEWER_SOURCE, /nextImageSrc/);
-  assert.equal(/\.range\(0,\s*999\)/.test(VIEWER_SOURCE), false, "must not bulk-load the whole approved-photo gallery");
+test("only the next item is prepared, with no full Event gallery preload", () => {
+  assert.match(VIEWER_SOURCE, /next_content_ref_id/);
+  assert.match(VIEWER_SOURCE, /slot: "next"/);
+  assert.equal(/\.range\(0,\s*999\)/.test(VIEWER_SOURCE), false);
 });
 
 test("a browser cannot submit an arbitrary storage path, photo id, or Event id to the image/caption routes -- only the session id and a fixed slot label", () => {

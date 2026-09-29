@@ -60,6 +60,9 @@ export async function GET(request: Request) {
     status: 200,
     headers: {
       "Content-Type": rendition.contentType,
+      // Bind a prefetched rendition to the photo actually resolved server-side.
+      // A slot may have advanced since the viewer's latest state poll.
+      "X-Presentation-Content-Ref": resolved.contentRefId,
       // Never cached beyond the immediate request -- the slide can advance
       // at any moment and this URL must not remain visually "correct" after
       // it does.

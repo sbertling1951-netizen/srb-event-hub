@@ -231,6 +231,132 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Vendor invitation activation repair — 2026-09-29 (Production migration applied; vendor acceptance pending)
+
+- **Incident and live read-only evidence:** Kleen Tank could authenticate after
+  password reset but still could not enter the Vendor workspace. The matching
+  account has one pending invitation, no contact Person link and no auth Person
+  link; no resolution audit row persisted. Nginx records repeated HTTP 500s on
+  `/api/vendor/session`, including the latest reported attempt. Production
+  source and audit inspection used read-only queries; activation was not called.
+- **Confirmed defect and local repair:** the deployed
+  `activate_vendor_invitation` declares a `person_id` output variable and uses
+  an unqualified `person_id` in its contact-update predicate. Mel reproduced
+  PostgreSQL error 42702 with the exact deployed function, synthetic records
+  and a stub resolver in a disposable, network-isolated PostgreSQL container.
+  LEM prepared forward migration `20261031000000` qualifying that statement
+  with `vc`; all other function behavior, signature, owner, grants and identity
+  checks remain unchanged. No applied migration was edited.
+- **Validation:** five regression checks pass. Applying the migration in that
+  local fixture changes the same attempt from error to `activated_new_person`,
+  saves the contact link and active access, and preserves service-only execution.
+  Repeat activation returns `no_pending_invitation`. This tests the activation
+  function; it does not execute the real production identity resolver. Production
+  HTTP errors are consistent with the reproduced defect; their database exception
+  text was not captured. The linked dry run selects only `20261031000000`.
+  The required `npm run db:verify-replay -- --stop` passed in a separate,
+  unlinked disposable project: all 273 migrations rebuilt from zero without
+  errors. Local verification containers were stopped afterward.
+- **Production application and verification:** Pap explicitly authorized this
+  single database fix on September 29. Fresh target/hash/dry-run checks selected
+  only `20261031000000`; `supabase db push --linked --yes` applied it to verified
+  project `lastlzlewonsmwtolpvh`. Independent read-only verification confirms
+  273 ledger entries through `20261031000000`, an installed function body exactly
+  matching the tested migration, and execution denied to anon/authenticated and
+  allowed to service_role. The CLI subsequently warned that its local pg-delta
+  catalog cache could not read a certificate; this did not undo the independently
+  verified application, and the migration was not retried.
+- **Current delivery position:** the production database now includes the
+  activation repair; the application release remains
+  `6281d03cd6b3907891497e2fd75cec9afe26ad84`. The migration, regression test and
+  this reconciliation remain uncommitted locally; no Git commit/push or app
+  deployment was authorized or performed. KT's access was still pending at
+  15:18:53 UTC, with no post-repair sign-in recorded. The next safe step is KT's
+  own Vendor Login attempt, then read-only activation/acceptance verification.
+  No account was manually activated, invitation resent, or password changed.
+  Existing slideshow work and SMS deferral are preserved. The reset page's
+  ignored session error and missing first-time password setup remain separate,
+  unimplemented UX findings. Evidence:
+  `/private/tmp/epicentrax-vendor-access-check/` and
+  `/private/tmp/epicentrax-slideshow-lem/vendor-activation-report.md`.
+
+### Audience slideshow transition repair — 2026-09-29 (Authorized for main promotion and webhook deployment)
+
+- **Reported defect:** Pap's `IMG_2077.HEIC` shows "Waiting for the next
+  slide..." between photos. The viewer preloaded the next-slot URL but
+  discarded that image on promotion, requesting the current-slot URL again
+  and hiding the photo until that new request loaded. Chromium and WebKit
+  fixtures reproduce the message and duplicate download on clean HEAD.
+- **Local correction:** retain only the authorized current/next photos in
+  mounted, session-and-photo-keyed components. Decode the next rendition
+  before display and promote the same image when the authoritative poll makes
+  it current. The image route identifies the photo it actually resolved in a
+  response header; the viewer rejects mismatched responses when a slot moves
+  during delivery. Requests still use only session/slot, fresh server-side
+  authorization, 2048px renditions and `no-store`; no original, raw storage
+  path, signed URL, database change or browser-owned slide order is added.
+  Obsolete, ineligible and ended-session images release their object URLs;
+  polling failures clear the buffer. Failed delivery retries the latest slot.
+  Polls cannot overlap, and captions are gated to their requested photo.
+- **Validation:** viewer/image/caption and executable component/route tests
+  pass 40/40. Actual-page browser fixtures use synthetic photos and mocked
+  session/image/caption services; they verify prepared-image promotion,
+  looping, bounded retention, blank/ineligible/end clearing, failed and
+  mismatched responses, and late-response cleanup. Full TypeScript output
+  is byte-identical to clean HEAD after path normalization (43 pre-existing
+  diagnostics). Touched-file lint and diff checks pass. An isolated webpack
+  production compilation generates 136 pages with placeholder configuration;
+  type checking is bypassed only in that temporary build and checked
+  independently by the full comparison. Evidence:
+  `/private/tmp/epicentrax-slideshow-transition/`.
+- **End Presentation repair (LEM):** Pap clarified that End was failing;
+  authoring became available once End succeeded. LEM reproduced a stale-version
+  failure in Chromium and WebKit against the actual presenter with mocked SQL
+  compare-and-set behavior: automatic slide advancement can move the version
+  between the presenter's refresh and End. End now refreshes the version of the
+  same still-live session and retries the governed RPC once; a second conflict
+  follows existing reconciliation. Authorization and version checks remain,
+  and other controls are unchanged. The fixtures verify End after advancement,
+  paused End, already-ended sessions and bounded retry under repeated conflict.
+  This proves a source defect, not the exact error Pap saw in production.
+- **Independent review and additional validation:** LEM found no blocking
+  transition-repair issue and reran all 14 viewer browser checks successfully.
+  The expanded suites report 111/113 passing; both failed presenter assertions
+  also fail on clean HEAD. All eight touched slideshow files pass lint and
+  diff checks. Final pre-release verification also passed the exact production
+  `npm run build` (Turbopack), including TypeScript and all 136 pages, with the
+  unchanged repository configuration, placeholder Supabase values and the full
+  viewer/presenter changes in an isolated copy. The earlier alternate webpack
+  mode fails on baseline page exports; no repository check was disabled.
+  Evidence:
+  `/private/tmp/epicentrax-slideshow-lem/REPORT.md`.
+- **Known limits:** a failed poll clears photos immediately, preserving the
+  fail-closed behavior but interrupting display during connection loss. Failed
+  renditions retry each second while eligible. A pre-existing caption response
+  can race a server advance; no caption-route identity change was made. Native
+  projector acceptance and any production proxy restriction on blob images
+  remain unverified. No live presentation was ended during diagnosis.
+- **Authorized delivery:** Pap requested commit and push and explicitly
+  directed use of the GitHub push webhook to deploy. The release cohort is
+  eight slideshow implementation/test files, the already-applied vendor
+  activation migration/test, and this Brief, preserving the vendor-SMS
+  deferral. Main promotion and live deployment verification are pending this
+  commit. The serving baseline at preflight remains
+  `6281d03cd6b3907891497e2fd75cec9afe26ad84`; native Safari/projector acceptance
+  remains pending after release. No additional database write is required.
+
+### Vendor invitations by text — 2026-09-29 (Deferred until after Saint George)
+
+- **Pap's request:** add the ability to send a vendor-access invitation by
+  text message (SMS), alongside the existing email invitation option.
+- **Current behavior:** Vendor Access Invitations sends email; the contact's
+  mobile-phone field does not send a text invitation. This is source-confirmed,
+  not a live delivery test.
+- **Scope and timing:** recorded for post-Saint George consideration. Preserve
+  governed vendor-access activation and the separate Event admission boundary.
+  Delivery design remains to be scoped; no implementation, message sending,
+  migration or deployment is authorized by this deferred item.
+
 ### Parking resumption and occupied-site repair — 2026-09-28 (Committed and deployed; live Safari acceptance pending)
 
 - **Scope and product position:** Pap requested LEM resume Parking after
@@ -3260,16 +3386,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-28T21:27:42-06:00`
-**Branch:** `codex/parking-arrival-confirmation`
-**Commit:** `6281d03 Add arrival and parking confirmation and repair occupied-site overrides`
-**Commit date:** `2026-09-28T21:23:05-06:00`
-**origin/main:** `6281d03`
+**Generated at:** `2026-09-29T09:25:53-06:00`
+**Branch:** `codex/slideshow-vendor-activation-fixes`
+**Commit:** `df86333 docs: reconcile deployed Parking confirmation and override repair`
+**Commit date:** `2026-09-28T21:28:11-06:00`
+**origin/main:** `df86333`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `7`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `4`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
@@ -3348,17 +3474,17 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `272`
-- Latest migration: `20261030100000_fix_site_placement_override_and_retry.sql`
+- Total migration files: `273`
+- Latest migration: `20261031000000_fix_activate_vendor_invitation_ambiguous_person_id.sql`
 - Latest five:
-  - `20261029000000_add_member_site_report_self_read.sql`
   - `20261029100000_govern_event_photo_person_contributors.sql`
   - `20261029200000_loop_presentation_session.sql`
   - `20261030000000_confirm_arrival_and_parking.sql`
   - `20261030100000_fix_site_placement_override_and_retry.sql`
+  - `20261031000000_fix_activate_vendor_invitation_ambiguous_person_id.sql`
 
 ### Identity-audit inventory
-- SQL files: `13`
+- SQL files: `14`
 - Markdown files: `25`
 - Latest five:
   - `baseline-diagnostics/stage7_identity_integrity_verification.md`

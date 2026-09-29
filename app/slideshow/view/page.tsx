@@ -5,6 +5,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { supabase } from "@/lib/supabase";
 
+import PresentationSlideImage from "./PresentationSlideImage";
+
 // Poll interval for the audience-safe authoritative read contract
 // (Stage 6 Part 6). Durable database state remains authoritative; this
 // is a short-interval refetch, not a second command/state model --
@@ -34,6 +36,12 @@ type PublicSessionRow = {
 };
 
 export default function SlideshowViewPage() {
+  const searchParams = useSearchParams();
+  const sessionIdParam = searchParams.get("session");
+  return <SlideshowSession key={sessionIdParam ?? ""} sessionIdParam={sessionIdParam} />;
+}
+
+function SlideshowSession({ sessionIdParam }: { sessionIdParam: string | null }) {
   type FullscreenCapableElement = HTMLDivElement & {
     webkitRequestFullscreen?: () => Promise<void> | void;
   };
@@ -43,8 +51,6 @@ export default function SlideshowViewPage() {
     webkitFullscreenElement?: Element | null;
   };
 
-  const searchParams = useSearchParams();
-  const sessionIdParam = searchParams.get("session");
   const sessionId =
     sessionIdParam && UUID_PATTERN.test(sessionIdParam) ? sessionIdParam : null;
   const invalidSessionFormat = Boolean(sessionIdParam) && !sessionId;
@@ -59,7 +65,7 @@ export default function SlideshowViewPage() {
   );
   const [pollError, setPollError] = useState<string | null>(null);
 
-  const [currentImageLoaded, setCurrentImageLoaded] = useState(false);
+  const [captionPhotoId, setCaptionPhotoId] = useState<string | null>(null);
   const [currentCaption, setCurrentCaption] = useState<string | null>(null);
   const [photographerName, setPhotographerName] = useState<string | null>(
     null,
@@ -154,29 +160,33 @@ export default function SlideshowViewPage() {
     }
 
     let cancelled = false;
+    let polling = false;
 
     async function poll() {
-      const { data, error } = await supabase.rpc(
-        "read_public_presentation_session",
-        { p_session_id: sessionId },
-      );
+      if (polling) { return; }
+      polling = true;
+      try {
+        const { data, error } = await supabase.rpc(
+          "read_public_presentation_session",
+          { p_session_id: sessionId },
+        );
 
-      if (cancelled) {
-        return;
+        if (cancelled) { return; }
+        if (error) { throw error; }
+
+        const row = (Array.isArray(data) ? data[0] : null) as
+          | PublicSessionRow
+          | null;
+        setPollError(null);
+        setPublicState(row ?? null);
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to read presentation session", error);
+          setPollError("Unable to reach the presentation right now.");
+        }
+      } finally {
+        polling = false;
       }
-
-      if (error) {
-        console.error("Failed to read presentation session", error);
-        setPollError("Unable to reach the presentation right now.");
-        return;
-      }
-
-      const row = (Array.isArray(data) ? data[0] : null) as
-        | PublicSessionRow
-        | null;
-
-      setPollError(null);
-      setPublicState(row ?? null);
     }
 
     void poll();
@@ -204,6 +214,7 @@ export default function SlideshowViewPage() {
     }
 
     let cancelled = false;
+    const photoId = publicState.current_content_ref_id;
 
     async function resolveCaption() {
       try {
@@ -222,6 +233,7 @@ export default function SlideshowViewPage() {
         }
 
         const body = await response.json();
+        if (cancelled) { return; }
         const caption = body?.caption as
           | {
               memberCaption: string | null;
@@ -237,6 +249,7 @@ export default function SlideshowViewPage() {
           return;
         }
 
+        setCaptionPhotoId(photoId);
         setCurrentCaption(
           caption.showCaption
             ? caption.adminCaption?.trim() ||
@@ -260,31 +273,22 @@ export default function SlideshowViewPage() {
     };
   }, [sessionId, publicState?.current_content_type, publicState?.current_content_ref_id]);
 
-  // Image delivery, current + next. Neither URL is a Supabase storage
-  // signed URL any more -- both point at this app's own governed,
-  // session/slot-scoped delivery route (20261010000000 removed the raw
-  // storage_path from read_public_presentation_session's response
-  // entirely, and the anonymous storage.objects policy that used to
-  // authorize a direct read is gone). The route re-validates liveness
-  // and re-resolves the real object on every single request, so these
-  // URLs carry no reusable, long-lived access on their own. The
-  // content_ref_id + sequence_number query values exist only to force
-  // the browser to re-fetch when the underlying slide actually changes
-  // (the route ignores their values); the route's own "Cache-Control:
-  // no-store" response header is the real cache-correctness guarantee.
-  const currentImageSrc =
-    sessionId && publicState?.current_content_type === "photo"
-      ? `/api/slideshow/presentation-image?session=${sessionId}&slot=current&cr=${publicState.current_content_ref_id ?? ""}&v=${publicState.sequence_number ?? 0}`
-      : null;
-
-  const nextImageSrc =
-    sessionId && publicState?.next_content_type === "photo"
-      ? `/api/slideshow/presentation-image?session=${sessionId}&slot=next&cr=${publicState.next_content_ref_id ?? ""}&v=${publicState.sequence_number ?? 0}`
-      : null;
-
-  useEffect(() => {
-    setCurrentImageLoaded(false);
-  }, [currentImageSrc]);
+  // Keep only the live, eligible current/next photos returned by the
+  // authoritative poll. Stable photo keys promote the already-decoded next
+  // image without a second download. Ended, denied or blank slots do not
+  // retain the previous photo; polling failures release the buffer as well.
+  const photos: { contentRefId: string; slot: "current" | "next" }[] = [];
+  if (sessionId && publicState?.session_active && !pollError) {
+    if (publicState.current_content_type === "photo" && publicState.current_content_ref_id) {
+      photos.push({ contentRefId: publicState.current_content_ref_id, slot: "current" });
+    }
+    if (
+      publicState.next_content_type === "photo" && publicState.next_content_ref_id &&
+      !photos.some((photo) => photo.contentRefId === publicState.next_content_ref_id)
+    ) {
+      photos.push({ contentRefId: publicState.next_content_ref_id, slot: "next" });
+    }
+  }
 
   // Display logging (record_photo_display) is deliberately not called.
   // Stage 1 found it untracked, PUBLIC-executable, unscoped, and
@@ -399,23 +403,10 @@ export default function SlideshowViewPage() {
     if (publicState.current_content_type === "blank") {
       return "";
     }
-    // The route re-derives eligibility (live session, matching slot,
-    // approved photo) itself; a photo that is not currently eligible and a
-    // photo that has merely not finished loading are deliberately
-    // indistinguishable here, the same non-enumerating tolerance this file
-    // already applies to a not-found vs. ended session above.
-    if (publicState.current_content_type === "photo" && !currentImageLoaded) {
-      return "Waiting for the next slide...";
-    }
     return "";
   }
 
   const message = statusMessage();
-  const showPhoto =
-    isLive &&
-    publicState?.current_content_type === "photo" &&
-    !!currentImageSrc &&
-    currentImageLoaded;
 
   return (
     <div
@@ -480,85 +471,20 @@ export default function SlideshowViewPage() {
             gap: 16,
           }}
         >
-          {currentImageSrc ? (
-            <div
-              style={{
-                position: "relative",
-                width: "100%",
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              {/* Always rendered once a slot has a photo, so onLoad/onError
-                  can actually fire; visibility is controlled separately so
-                  a not-yet-loaded (or currently ineligible) image never
-                  flashes a broken/partial frame. */}
-              <img
-                key={currentImageSrc}
-                src={currentImageSrc}
-                alt="Slideshow"
-                onLoad={() => setCurrentImageLoaded(true)}
-                onError={() => setCurrentImageLoaded(false)}
-                style={{
-                  maxWidth: "100vw",
-                  maxHeight: "98vh",
-                  objectFit: "contain",
-                  display: showPhoto ? "block" : "none",
-                }}
-              />
-
-              {currentCaption && showPhoto ? (
-                <div
-                  style={{
-                    position: "absolute",
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    background: "rgba(0,0,0,0.55)",
-                    color: "white",
-                    padding: "16px 24px",
-                    fontSize: 24,
-                    fontWeight: 500,
-                    textAlign: "center",
-                    textShadow: "0 1px 2px rgba(0,0,0,0.9)",
-                    pointerEvents: "none",
-                  }}
-                >
-                  <>
-                    <div>{currentCaption}</div>
-                    {photographerName ? (
-                      <div
-                        style={{
-                          marginTop: 8,
-                          fontSize: 18,
-                          opacity: 0.85,
-                        }}
-                      >
-                        Photo by {photographerName}
-                      </div>
-                    ) : null}
-                  </>
-                </div>
-              ) : null}
-
-              {!showPhoto && message ? (
-                <div style={{ fontSize: 24 }}>{message}</div>
-              ) : null}
-            </div>
-          ) : message ? (
-            <div style={{ fontSize: 24 }}>{message}</div>
-          ) : null}
+          {photos.map((photo) => (
+            <PresentationSlideImage
+              key={`${sessionId}:${photo.contentRefId}`}
+              sessionId={sessionId!}
+              contentRefId={photo.contentRefId}
+              slot={photo.slot}
+              caption={photo.slot === "current" && captionPhotoId === photo.contentRefId ? currentCaption : null}
+              photographerName={photo.slot === "current" && captionPhotoId === photo.contentRefId ? photographerName : null}
+            />
+          ))}
+          {message ? <div style={{ fontSize: 24 }}>{message}</div> : null}
         </div>
       </main>
 
-      {/* Preload only the next item, not the whole Event gallery. Fetched
-          through the same governed, session/slot-scoped route as the
-          current slide -- never a storage signed URL. */}
-      {nextImageSrc ? (
-        <img key={nextImageSrc} src={nextImageSrc} alt="" style={{ display: "none" }} />
-      ) : null}
     </div>
   );
 }
