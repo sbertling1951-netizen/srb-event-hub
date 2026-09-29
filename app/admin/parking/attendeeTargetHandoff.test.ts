@@ -44,15 +44,14 @@ test("a valid target selects the attendee through Parking's own existing selecti
   assert.match(fn, /selectAttendeeAndFocusSite\(resolution\.attendeeId\)/);
 });
 
-test("selectAttendeeAndFocusSite only ever focuses an already-canonical site -- it never assigns, reassigns, or clears one", () => {
+test("attendee selection prefers canonical placement and never assigns, reassigns, or clears one", () => {
   const start = SOURCE.indexOf("function selectAttendeeAndFocusSite");
   const end = SOURCE.indexOf("\n  }\n", start);
   const fn = SOURCE.slice(start, end);
   assert.equal(/record_site_placement/.test(fn), false);
   assert.equal(/materialize_event_parking_site/.test(fn), false);
   assert.equal(/setPlacementConfirmation/.test(fn), false);
-  // It only ever reads existing canonical occupancy (already-loaded
-  // siteLabelByAttendeeId) to decide whether to focus the map.
+  // Existing canonical occupancy takes precedence over reported evidence.
   assert.match(fn, /siteLabelByAttendeeId\.get\(attendeeId\)/);
 });
 

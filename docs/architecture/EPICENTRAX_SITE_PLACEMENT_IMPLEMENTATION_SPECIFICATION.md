@@ -96,6 +96,42 @@ Placement actions never modify Arrival fields.
 
 ## 4. Authorization
 
+### Combined physical-arrival confirmation (September 28, 2026)
+
+`confirm_attendee_arrived_and_parked` is the atomic composition authorized
+by the governance architecture's combined-confirmation amendment. It derives
+Event scope from the attendee, checks the expected Event and both canonical
+task authorities before any write, and checks lifecycle. It optionally
+materializes the selected map site through the existing governed operation,
+then invokes `record_site_placement` using its unchanged site-before-attendee
+lock order. It invokes `complete_admin_checkin` with the locked attendee's
+existing sharing value, requires a successful eligible-registration result,
+and records the explicit physical-parking status on that same locked row.
+Any exception, including ineligible registration or an audit failure after
+successful placement, rolls back all of these changes, including new inventory.
+A governed placement rejection is not an exception: its immutable section 8.1
+history and request receipt remain, along with any newly materialized vacant
+inventory referenced by that history. It changes no occupancy or Arrival.
+Failures before `record_site_placement` is invoked, including authority or
+Event-scope failures, failed inventory materialization, and a site/master-site
+mismatch, raise exceptions without creating placement-rejection history or a
+combined request receipt. Section 8.1 governs requests that reach the placement
+operation; these earlier failures do not represent placement decisions.
+
+A private, append-only `arrival_parking_confirmations` audit extension links
+the placement history to the combined request and, on success, previous
+Arrival state. Rejected requests have no recorded prior Arrival state.
+It is historical evidence, never a second source for current Arrival or
+placement. Every retry rechecks both permissions and Event lifecycle before
+looking up the receipt, then verifies request identity before returning the
+recorded result (including a rejection). An archived Event therefore raises
+`event_archived` rather than returning the stored result. An accepted replay
+performs no new Arrival or placement mutation. Clients cannot write or read
+this extension directly. The ordinary placement RPC and
+advance-assignment button retain their Arrival-independent contracts.
+
+### Task authority
+
 Authority is freshly derived from `auth.uid()`, active `admin_users`, deployed
 privilege-group permissions, and Event scope. UI access caches and page gates
 are not authority inputs.

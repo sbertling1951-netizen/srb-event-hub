@@ -1,6 +1,6 @@
 # EpicentraX Site Assignment Governance Architecture
 
-**Status:** Accepted v1.1
+**Status:** Accepted v1.2 (combined physical-arrival confirmation approved September 28, 2026)
 **Date:** August 8, 2026
 
 ## 1. Purpose
@@ -64,7 +64,7 @@ the attendee is placed. Neither establishes, implies, or clears the other.
 
 - An attendee may arrive before a site is known.
 - A site may be placed before an attendee arrives.
-- A later site change, correction, confirmation, or clearing does not change
+- An ordinary site change, correction, confirmation, or clearing does not change
   Arrival.
 - An Arrival change does not establish, change, clear, confirm, or correct a
   Site Placement.
@@ -96,6 +96,31 @@ Event-scoped roster. Arrival succeeds whether or not placement is known or the
 handoff is taken.
 
 ## 5. Single Governed Operation
+
+### Combined arrival and physical-parking confirmation
+
+Pap approved **Confirm arrived and parked** on September 28, 2026. This is
+an explicit staff determination of both physical presence and placement, not
+an inference from an advance site assignment or a member report.
+
+Parking may expose one combined action to an actor authorized for both
+`event.parking.manage` and `event.checkin.manage` in the same Event. The
+server must verify both authorities and current registration eligibility.
+The action must commit placement and Arrival atomically, or save neither.
+Rejected placement leaves both operational facts unchanged while retaining
+the governed history of the rejected attempt.
+It must preserve sharing preferences, retain occupied-site conflict review,
+and audit the actor's combined determination and prior Arrival state.
+An idempotent retry must not reassert Arrival after a later correction.
+
+`record_site_placement` remains the sole placement decision boundary. The
+combined action composes that operation with governed Arrival recording;
+it records `has_arrived = true` and `arrival_status = 'parked'`. Ordinary
+Assign, Move, Confirm placement and Unassign operations retain their existing
+Arrival-independent behavior. Assign site remains available for advance
+assignments. Member reporting alone never invokes the combined action.
+
+### Placement operation
 
 `record_site_placement` is the sole governed operation that may establish,
 change, clear, confirm, or correct the authoritative current Site Placement.

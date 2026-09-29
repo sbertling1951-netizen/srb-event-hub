@@ -36,7 +36,7 @@ test("no direct parking_sites INSERT or occupancy UPDATE remains in assignAttend
 
 test("an unmaterialized site (site.id falsy) is materialized via materialize_event_parking_site before record_site_placement is called", () => {
   const fn = extractAssignAttendeeToSite();
-  assert.match(fn, /let resolvedSiteId = site\.id;\s*\n\s*\n\s*if \(!resolvedSiteId\) \{[\s\S]*?supabase\.rpc\("materialize_event_parking_site", \{/);
+  assert.match(fn, /let resolvedSiteId = site\.id;\s*\n\s*\n\s*if \(!resolvedSiteId && !confirmArrival\) \{[\s\S]*?supabase\.rpc\("materialize_event_parking_site", \{/);
   const iMaterializeCall = fn.indexOf('supabase.rpc("materialize_event_parking_site"');
   const iPlacementCall = fn.indexOf('supabase.rpc(\n      "record_site_placement",');
   assert.ok(iMaterializeCall >= 0 && iPlacementCall > iMaterializeCall);
@@ -44,7 +44,7 @@ test("an unmaterialized site (site.id falsy) is materialized via materialize_eve
 
 test("materialize_event_parking_site's rejection is surfaced as an error and short-circuits before record_site_placement is ever called", () => {
   const fn = extractAssignAttendeeToSite();
-  const materializeBlock = fn.slice(fn.indexOf("if (!resolvedSiteId)"), fn.indexOf('supabase.rpc(\n      "record_site_placement",'));
+  const materializeBlock = fn.slice(fn.indexOf("if (!resolvedSiteId && !confirmArrival)"), fn.indexOf('supabase.rpc(\n      "record_site_placement",'));
   assert.match(materializeBlock, /materializeResult\.outcome === "rejected"/);
   assert.match(materializeBlock, /return false;/);
 });

@@ -231,6 +231,174 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Parking resumption and occupied-site repair — 2026-09-28 (Release authorized; migration/deployment in progress)
+
+- **Scope and product position:** Pap requested LEM resume Parking after
+  confirming photo uploads and slideshow looping work. Featured-photo level
+  controls and frequency weighting remain deferred until after Saint George.
+  Mel carried the eight deferred implementation/architecture/fixture files
+  onto the integrated photo baseline and reconciled this Brief. The canonical
+  checkout's original nine-file cohort remains byte-identical. The deployed
+  substantive baseline remains `13f05776c337e1d02593fdb4568a3393618a9db6`.
+- **Verified defect and correction:** LEM reproduced ordinary assign/reassign
+  and combined occupied-site overrides failing with
+  `23505 unique_attendee_site_per_event` on the full schema. New additive
+  migration `20261030100000_fix_site_placement_override_and_retry.sql`
+  clears the displaced attendee's compatibility projection before setting
+  the mover's projection, inside the existing locks and transaction. It also
+  makes the concurrent `unique_violation` receipt path enforce the same
+  attendee/action/site identity checks as ordinary replay. No applied
+  migration, uniqueness index, trigger, RLS policy, authority or lock order
+  changes. Mel inspected the function diff and supporting runtime evidence;
+  this implements the accepted displacement contract without an architecture
+  change. Five focused source regression tests accompany the migration.
+- **Fresh integrated validation:** disposable PostgreSQL 17.6
+  (`supabase/postgres:17.6.1.063`) passed incremental application and a clean
+  replay of all 272 migrations through `20261030100000`, including the photo
+  migrations. Full-schema override scenarios O1–O7b pass, covering ordinary
+  and combined overrides, preserved displaced Arrival and sharing, rejection
+  history/receipts, replay, authorization, and rollback after late failures.
+  O8 catalog checks pass after correcting a test-query cast: the unique index,
+  all four enabled attendee triggers, owner and grants remain intact. The
+  earlier combined-action real-authority suite passes 13/13; the obsolete
+  scenario expecting the repaired 23505 was removed. Controlled concurrent
+  requests demonstrably waited on locks: differing attendee/action/site key
+  reuse rejects with full rollback, exact retries retain one history record,
+  and identical combined requests serialize with one receipt. Earlier
+  combined/ordinary note-guard tests retain their expected results.
+- **Application checks:** `node --import tsx --test` for the focused Parking,
+  boundary and related suites passes 137/137 (including the prior 90).
+  `tsc --noEmit --incremental false` has 16 existing diagnostics in both clean
+  HEAD and changed copies, byte-identical after root-path normalization;
+  these copies exclude generated `.next/types`, unlike the historical
+  43-diagnostic comparison below. `npm run build` passes with 136 pages and
+  placeholder environment values. Diff checks pass; photo files are identical
+  to HEAD. PGlite was unavailable and was not installed; the unchanged
+  fixture's earlier 14/14 result remains historical, not a fresh rerun. Its
+  synthetic schema lacks the unique index and does not prove this repair.
+- **Evidence and limits:** LEM's full logs, SQL fixtures and concurrency
+  scripts are retained under
+  `/private/tmp/claude-502/-Users-sbertling-Developer-srb-event-hub/3530e362-5072-4120-8bda-88d5bfe3354c/scratchpad/v3/`.
+  LEM stopped and removed only its disposable stack; the original stopped
+  Docker container set is unchanged. Ordinary retry identity remains
+  attendee/action/site: an ordinary request with those same values and a
+  combined request's key can replay the combined result. An unrelated stale
+  attendee projection still fails closed with 23505; no data cleanup is in
+  scope. Native Safari and production workflow acceptance remain unverified.
+- **Release boundary:** Mel's read-only linked-production catalog check
+  confirmed the affected function and unique index, with the ledger still
+  ending at `20261029200000`; neither Parking migration is applied. This is
+  catalog evidence, not a production override attempt. The candidate contains
+  eleven files: the carried nine plus the repair migration and its test.
+  No unrelated files changed. No commit, push, production write or deployment
+  occurred at validation closeout. Pap subsequently explicitly authorized
+  commit, both production migrations and deployment. Fresh remote Git matches
+  the integrated starting point, and the linked production dry run lists only
+  `20261030000000` then `20261030100000`. Application deployment and live
+  Safari acceptance remain pending; final delivery evidence will follow.
+  Mel reconciled this checkpoint and regenerated the Librarian block.
+
+### Combined arrival and parking confirmation — 2026-09-28 (Local; migration not applied)
+
+- **Product decision:** Pap approved **Confirm arrived and parked**, preserving
+  ordinary Assign site for advance assignments. The accepted Site Assignment
+  Governance Architecture and Site Placement Implementation Specification now
+  document this explicit combined workflow. Placement alone still does not
+  imply Arrival.
+- **Change:** Parking offers the combined action alongside its existing
+  placement-only action. Occupied-site review retains the combined intent and
+  explains the Arrival confirmation. The new
+  `20261030000000_confirm_arrival_and_parking.sql` composes existing governed
+  placement/materialization and Check-In operations atomically, requires both
+  Event-scoped task authorities and current registration eligibility, records
+  arrived/parked, and preserves sharing. A private historical audit extension
+  captures prior Arrival and links the placement decision; authenticated callers
+  can execute the RPC but cannot access that table directly. Retries do not
+  reassert Arrival after later corrections. No applied migration was edited.
+- **Validation:** Parking tests pass 70/70; existing placement-authority and
+  Check-In eligibility migration tests pass 20/20. Fourteen isolated PostgreSQL
+  scenarios execute the actual placement, materialization, Check-In and new
+  combined SQL against synthetic tables, with explicit authentication,
+  task-authority and lifecycle doubles. They cover atomic assignment,
+  confirmation and movement, both permissions, Event mismatch, cancelled and
+  inactive registrations, archived Events, occupied-site overrides, sharing
+  preservation including NULL, inventory rollback, a late audit failure,
+  idempotent replay after later correction, conflicting keys and grants.
+  Rejected placement keeps its immutable history and exact request receipt,
+  changes no occupancy or Arrival, and replays the original rejection even
+  if the destination later becomes vacant. Newly materialized vacant
+  inventory referenced by a rejected history row is retained; exceptions
+  after a successful placement still roll back all changes.
+  This is not linked-production or full authority-resolver proof. Fixture:
+  `supabase/integration-tests/20261030000000_arrival_parking_confirmation.mjs`.
+  Focused lint: no errors, one existing Parking hook warning. Full TypeScript
+  diagnostics remain byte-identical to the starting checkout's 43 errors.
+- **LEM review:** Pap requested Claude/LEM. LEM independently verified the
+  exact nine-file cohort and reran the 70 Parking, 20 boundary and original
+  12 database scenarios. It found one medium issue: raising after a governed
+  placement rejection erased the required rejection audit. LEM supplied a
+  bounded correction; its restricted Edit tool denied the writes, so Codex
+  applied that correction and added the two rejection/replay scenarios above.
+  LEM's follow-up completed the mandatory authority reading skipped by its
+  initial review. Nonblocking observations remain: member reports take
+  selection precedence over a previously clicked destination; the combined
+  button is visible to callers who will be denied its extra Check-In
+  permission; a unique request token appears in the operational history note.
+  No scope expansion was made for those observations. This review and local
+  correction are not release approval.
+- **Follow-up review of the rejection correction:** the reviewer reported no
+  blocking correctness issue after inspecting the actual SQL, confirmed the
+  same HEAD and exact nine-file cohort, and reran 70 Parking tests, 20
+  migration-boundary tests and all 14 PGlite integration scenarios successfully.
+  `git diff --check` passed; full TypeScript diagnostics were not rerun in that
+  review. The reviewer confirmed preserved rejection history and receipts,
+  replay of the original rejection after a site becomes vacant, conflicting-key
+  rejection, fresh permission/lifecycle checks, sharing preservation under the
+  placement lock, and rollback on failures after successful placement.
+  The specification now explicitly records that failures before placement
+  begins create no placement-rejection history or combined receipt, and that
+  lifecycle is checked before replay, so an archived Event raises
+  `event_archived`. These are documentation clarifications of existing SQL.
+  The three nonblocking observations above remain unchanged. This source review
+  and its reported fixture results are not release authorization or production
+  runtime proof.
+- **Delivery and remaining gates:** the reported-site shortcut below and this
+  combined action remain local. The fresh integrated validation and additive
+  occupied-site/retry repair above supersede the original pending full-schema,
+  target-version and multi-connection gates. Both Parking migrations require
+  ordered production application after explicit release authorization. Native
+  Safari acceptance remains pending. The deployed substantive baseline remains
+  `13f05776c337e1d02593fdb4568a3393618a9db6`.
+
+### Parking reported-site selection shortcut — 2026-09-28 (Local; not committed or deployed)
+
+- **Intent:** after selecting an unassigned attendee who reported a site,
+  Pap wants the Assign action ready without separately finding and clicking
+  that site on the map.
+- **Change:** attendee selection now prepares the latest report's exact
+  `matched_master_site_id` when it belongs to the loaded Event map, focuses
+  that destination and brings the placement action into view. Existing
+  canonical placement takes precedence. Historical-map or unmatched reports
+  require manual destination selection; no label-based guess is made. With
+  no report, the existing site-first selection workflow remains available.
+  Row selection and the existing attendee-target handoff share this behavior.
+- **Authority:** selection makes no database write. Staff still explicitly
+  invoke the existing Assign/Confirm action; occupied destinations retain
+  conflict review and the governed `record_site_placement` boundary. Arrival,
+  report persistence and report-refresh behavior are unchanged.
+- **Validation:** `node --import tsx --test app/admin/parking/*.test.ts`
+  passes 67/67, including six new behavioral cases for report selection,
+  explicit assignment, occupied-site review, canonical precedence, unmatched
+  and historical-map reports, site-first selection and template inventory.
+  Focused ESLint has zero errors and the existing `handleSiteClick` hook
+  dependency warning. Full `tsc --noEmit --incremental false` output is
+  byte-identical to the clean starting checkout (43 existing errors).
+  Diff checks pass. Native Safari layout/scroll and live assignment acceptance
+  of this change remain unverified; no production records were changed.
+- **Scope and delivery:** Parking page, its two existing test files and this
+  Brief only. No migration, commit, push or deployment. The deployed
+  substantive baseline remains `13f05776c337e1d02593fdb4568a3393618a9db6`.
+
 ### Photo Details size and keyboard save — 2026-09-28 (Committed and deployed; Safari acceptance pending)
 
 - **Intent and observed defect:** Pap's Safari Photo Library screenshot shows
@@ -3077,16 +3245,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-28T20:39:24-06:00`
-**Branch:** `codex/photo-contributors-slideshow-loop`
-**Commit:** `13f0577 fix(photos): support original-size uploads and readable failures`
-**Commit date:** `2026-09-28T20:36:54-06:00`
-**origin/main:** `13f0577`
+**Generated at:** `2026-09-28T21:23:05-06:00`
+**Branch:** `codex/parking-arrival-confirmation`
+**Commit:** `add5163 docs: reconcile deployed photo upload size correction`
+**Commit date:** `2026-09-28T20:39:24-06:00`
+**origin/main:** `add5163`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `7`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `4`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
@@ -3165,14 +3333,14 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `270`
-- Latest migration: `20261029200000_loop_presentation_session.sql`
+- Total migration files: `272`
+- Latest migration: `20261030100000_fix_site_placement_override_and_retry.sql`
 - Latest five:
-  - `20261027000000_govern_attendee_cancellation_date.sql`
-  - `20261028000000_restore_saint_george_parking_inventory.sql`
   - `20261029000000_add_member_site_report_self_read.sql`
   - `20261029100000_govern_event_photo_person_contributors.sql`
   - `20261029200000_loop_presentation_session.sql`
+  - `20261030000000_confirm_arrival_and_parking.sql`
+  - `20261030100000_fix_site_placement_override_and_retry.sql`
 
 ### Identity-audit inventory
 - SQL files: `13`

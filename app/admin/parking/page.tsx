@@ -53,6 +53,8 @@ import {
 } from "./parkingReconciliation";
 
 const SITE_PLACEMENT_ERROR_MESSAGES: Record<string, string> = {
+  arrival_parking_authorization_denied: "Confirming arrival and parking requires both Check-In and Parking permission for this event.",
+  registration_not_current: "Only an active, non-cancelled registration can be marked arrived and parked.",
   unauthorized: "You do not have parking management authority for this event.",
   authorization_denied:
     "You do not have parking management authority for this event.",
@@ -164,6 +166,7 @@ type MemberSiteReport = {
   id: string;
   attendee_id: string;
   raw_reported_value: string;
+  matched_master_site_id: string | null;
   matched_site_label: string | null;
   reported_at: string;
 };
@@ -201,10 +204,12 @@ function ParkingAdminPageInner() {
     attendee: Attendee;
     site: ParkingSite;
     occupant: Attendee | null;
+    confirmArrival: boolean;
   } | null>(null);
   const [clearConfirmation, setClearConfirmation] = useState<ParkingSite | null>(null);
   const [lastAction, setLastAction] = useState<string | null>(null);
   const placementKeyboardRef = useRef<HTMLDivElement>(null);
+  const placementActionRef = useRef<HTMLDivElement>(null);
   const placementInFlightRef = useRef(false);
   const [placementSaving, setPlacementSaving] = useState(false);
 
@@ -907,13 +912,11 @@ function ParkingAdminPageInner() {
     );
   }, [searchedSite, focusSite]);
 
-  // Selects an attendee and, only if they already have a canonical
-  // placement, focuses the map on it for display -- this never assigns,
-  // reassigns, or clears a site; it merely looks at siteLabelByAttendeeId
-  // (already-loaded canonical occupancy) and pans/zooms to what is already
-  // there. Shared by the attendee-row click handler and the canonical
-  // attendee-target handoff below, so both mean exactly the same thing by
-  // "select an attendee" rather than drifting into two behaviors.
+  // Prefer the attendee's canonical placement. For an unassigned attendee,
+  // a report's exact match in the current map can prepare a destination for
+  // staff review. Selection never writes placement; the ordinary action
+  // button and occupied-site review remain the only path to that decision.
+  // Row clicks and attendee-target handoffs share this behavior.
   function selectAttendeeAndFocusSite(attendeeId: string) {
     setSelectionStale(null);
     setSelectedAttendeeId(attendeeId);
@@ -934,7 +937,28 @@ function ParkingAdminPageInner() {
       } else {
         showError(`Could not find canonical site ${canonicalSite} on the map.`);
       }
+    } else {
+      const report = latestMemberReportByAttendee[attendeeId];
+      if (report) {
+        const reportedSite = sites.find(
+          (site) => site.master_site_id === report.matched_master_site_id,
+        );
+        // A historical or unmatched report must not select a different site
+        // merely because its label happens to look the same.
+        setSelectedSiteId(reportedSite ? reportedSite.id || reportedSite.master_site_id : "");
+        if (reportedSite) {
+          focusSite(reportedSite);
+          showStatus(
+            `Selected member-reported site ${reportedSite.display_label || reportedSite.site_number}. Review the placement action to confirm.`,
+          );
+        } else {
+          showStatus("The member-reported site has no match on the current map. Select a destination site.");
+        }
+      }
     }
+    runAfterLayout(() => {
+      placementActionRef.current?.scrollIntoView({ block: "nearest" });
+    });
   }
 
   // Canonical attendee-target handoff (lib/adminAttendeeTarget): consumes
@@ -1085,10 +1109,12 @@ function ParkingAdminPageInner() {
     attendee,
     site,
     allowOverride = false,
+    confirmArrival = false,
   }: {
     attendee: Attendee;
     site: ParkingSite;
     allowOverride?: boolean;
+    confirmArrival?: boolean;
   }) {
     if (selectionStale) {
       showError(selectionStale);
@@ -1132,7 +1158,7 @@ function ParkingAdminPageInner() {
 
     let resolvedSiteId = site.id;
 
-    if (!resolvedSiteId) {
+    if (!resolvedSiteId && !confirmArrival) {
       // Site has no materialized parking_sites row yet -- governed
       // materialization creates a vacant inventory row from the
       // master-map template, then the same record_site_placement call
@@ -1179,7 +1205,17 @@ function ParkingAdminPageInner() {
         ? "confirm"
         : "reassign";
 
-    const { data, error: rpcError } = await supabase.rpc(
+    const { data, error: rpcError } = confirmArrival
+      ? await supabase.rpc("confirm_attendee_arrived_and_parked", {
+        p_attendee_id: attendee.id,
+        p_expected_event_id: event.id,
+        p_action: action,
+        p_idempotency_key: newSitePlacementIdempotencyKey(),
+        p_master_site_id: site.master_site_id,
+        p_site_id: site.id,
+        p_override_occupied_site: allowOverride,
+      })
+      : await supabase.rpc(
       "record_site_placement",
       {
         p_attendee_id: attendee.id,
@@ -1218,7 +1254,7 @@ function ParkingAdminPageInner() {
             : "The prior occupant"
         } is now unassigned.`
       : "";
-    const successMessage = `Assigned ${
+    const successMessage = `${confirmArrival ? "Confirmed arrived and parked:" : "Assigned"} ${
         `${attendee.pilot_first || ""} ${attendee.pilot_last || ""}`.trim() ||
         "attendee"
       } at site ${siteLabel}.${displacementMessage}`;
@@ -1245,7 +1281,7 @@ function ParkingAdminPageInner() {
     }
   }
 
-  async function assignSelectedToSite(site: ParkingSite, allowOverride = false) {
+  async function assignSelectedToSite(site: ParkingSite, allowOverride = false, confirmArrival = false) {
     if (!selectedAttendee) {
       showError("Select an attendee first.");
       return;
@@ -1254,10 +1290,11 @@ function ParkingAdminPageInner() {
       attendee: selectedAttendee,
       site,
       allowOverride,
+      confirmArrival,
     });
   }
 
-  function beginPlacement() {
+  function beginPlacement(confirmArrival = false) {
     if (loading || placementInFlightRef.current || placementConfirmation || clearConfirmation) {return;}
     if (!selectedAttendee || !selectedSite) {
       showError("Select an attendee and a destination site first.");
@@ -1271,10 +1308,10 @@ function ParkingAdminPageInner() {
       ? attendees.find((attendee) => attendee.id === selectedSite.assigned_attendee_id) || null
       : null;
     if (occupant && occupant.id !== selectedAttendee.id) {
-      setPlacementConfirmation({ attendee: selectedAttendee, site: selectedSite, occupant });
+      setPlacementConfirmation({ attendee: selectedAttendee, site: selectedSite, occupant, confirmArrival });
       return;
     }
-    void assignSelectedToSite(selectedSite);
+    void assignSelectedToSite(selectedSite, false, confirmArrival);
   }
 
   function handlePlacementKeyDown(e: KeyboardEvent<HTMLDivElement>) {
@@ -1354,7 +1391,7 @@ function ParkingAdminPageInner() {
   }
 
   const actionPanel = (
-    <div className="app-card-section" style={{ display: "grid", gap: "var(--space-2)" }}>
+    <div ref={placementActionRef} className="app-card-section" style={{ display: "grid", gap: "var(--space-2)" }}>
       <div
         className="app-subtle-text"
         style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "var(--font-size-small)" }}
@@ -1375,8 +1412,17 @@ function ParkingAdminPageInner() {
       )}
       {placementAction.enabled && (
         <AppButton
-          variant={placementAction.label === "Review conflict" ? "danger" : "primary"}
-          onClick={beginPlacement}
+          variant="primary"
+          onClick={() => beginPlacement(true)}
+          loading={placementSaving}
+        >
+          Confirm arrived and parked
+        </AppButton>
+      )}
+      {placementAction.enabled && (
+        <AppButton
+          variant={placementAction.label === "Review conflict" ? "danger" : "secondary"}
+          onClick={() => beginPlacement()}
           loading={placementSaving}
         >
           {placementAction.label === "Review conflict" ? "Review conflict" : placementAction.label}
@@ -1656,16 +1702,16 @@ function ParkingAdminPageInner() {
     >
       <ConfirmDialog
         open={!!placementConfirmation}
-        title="Review occupied-site move"
-        message={placementConfirmation ? `Move ${`${placementConfirmation.attendee.pilot_first || ""} ${placementConfirmation.attendee.pilot_last || ""}`.trim() || "the selected attendee"} to ${placementConfirmation.site.display_label || placementConfirmation.site.site_number}. ${`${placementConfirmation.occupant?.pilot_first || ""} ${placementConfirmation.occupant?.pilot_last || ""}`.trim() || "The current occupant"} will become unassigned and return to the Parking queue.` : ""}
+        title={placementConfirmation?.confirmArrival ? "Confirm arrival and occupied-site move" : "Review occupied-site move"}
+        message={placementConfirmation ? `Move ${`${placementConfirmation.attendee.pilot_first || ""} ${placementConfirmation.attendee.pilot_last || ""}`.trim() || "the selected attendee"} to ${placementConfirmation.site.display_label || placementConfirmation.site.site_number}.${placementConfirmation.confirmArrival ? " Also confirm this attendee is physically present and parked." : ""} ${`${placementConfirmation.occupant?.pilot_first || ""} ${placementConfirmation.occupant?.pilot_last || ""}`.trim() || "The current occupant"} will become unassigned and return to the Parking queue.` : ""}
         confirmLabel={placementConfirmation ? `Move and unassign ${`${placementConfirmation.occupant?.pilot_first || ""} ${placementConfirmation.occupant?.pilot_last || ""}`.trim() || "occupant"}` : "Confirm"}
         danger
         busy={placementSaving}
         onCancel={() => { setPlacementConfirmation(null); showStatus("Site move cancelled."); }}
         onConfirm={async () => {
           if (!placementConfirmation) {return;}
-          const { attendee, site } = placementConfirmation;
-          await savePlacement({ attendee, site, allowOverride: true });
+          const { attendee, site, confirmArrival } = placementConfirmation;
+          await savePlacement({ attendee, site, allowOverride: true, confirmArrival });
           setPlacementConfirmation(null);
         }}
       />
