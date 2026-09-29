@@ -231,15 +231,16 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Parking resumption and occupied-site repair — 2026-09-28 (Release authorized; migration/deployment in progress)
+### Parking resumption and occupied-site repair — 2026-09-28 (Committed and deployed; live Safari acceptance pending)
 
 - **Scope and product position:** Pap requested LEM resume Parking after
   confirming photo uploads and slideshow looping work. Featured-photo level
   controls and frequency weighting remain deferred until after Saint George.
   Mel carried the eight deferred implementation/architecture/fixture files
   onto the integrated photo baseline and reconciled this Brief. The canonical
-  checkout's original nine-file cohort remains byte-identical. The deployed
-  substantive baseline remains `13f05776c337e1d02593fdb4568a3393618a9db6`.
+  checkout's original nine-file cohort remains byte-identical as preserved
+  carryover, not a second unreleased candidate. The deployed substantive
+  baseline is now `6281d03cd6b3907891497e2fd75cec9afe26ad84`.
 - **Verified defect and correction:** LEM reproduced ordinary assign/reassign
   and combined occupied-site overrides failing with
   `23505 unique_attendee_site_per_event` on the full schema. New additive
@@ -285,20 +286,33 @@ state override this subsection whenever they disagree, per the
   combined request's key can replay the combined result. An unrelated stale
   attendee projection still fails closed with 23505; no data cleanup is in
   scope. Native Safari and production workflow acceptance remain unverified.
-- **Release boundary:** Mel's read-only linked-production catalog check
-  confirmed the affected function and unique index, with the ledger still
-  ending at `20261029200000`; neither Parking migration is applied. This is
-  catalog evidence, not a production override attempt. The candidate contains
-  eleven files: the carried nine plus the repair migration and its test.
-  No unrelated files changed. No commit, push, production write or deployment
-  occurred at validation closeout. Pap subsequently explicitly authorized
-  commit, both production migrations and deployment. Fresh remote Git matches
-  the integrated starting point, and the linked production dry run lists only
-  `20261030000000` then `20261030100000`. Application deployment and live
-  Safari acceptance remain pending; final delivery evidence will follow.
-  Mel reconciled this checkpoint and regenerated the Librarian block.
+- **Production delivery:** Pap explicitly authorized commit, both migrations
+  and deployment. Product commit
+  `6281d03cd6b3907891497e2fd75cec9afe26ad84` contains exactly eleven Parking
+  implementation/test/architecture/context files and was promoted to main.
+  Fresh linked-project verification identified `lastlzlewonsmwtolpvh`; dry run
+  listed only `20261030000000` and `20261030100000`, applied in that order.
+  The production ledger is 272 migrations through `20261030100000`. Both live
+  function bodies exactly match committed SQL. Authenticated-only execution,
+  owner-only audit access with RLS, the unique index and all four enabled
+  attendee triggers are intact. Before/after checks retained 974 parking rows,
+  167 attendees and 18 placement history rows, with identical occupancy and
+  Arrival/projection checksums and zero combined receipts. No attendee
+  operation was performed to test the release.
+- **Serving evidence:** the guarded webhook completed at
+  `2026-09-29T03:26:21Z`, activating
+  `20260929T032427Z-6281d03cd6b3`; rollback remains
+  `20260929T023657Z-13f05776c337`. The build and candidate/activation checks
+  passed. Both production domains pass HTML and all referenced assets for
+  `/`, `/admin/parking`, `/admin/checkin`, `/member/photos` and
+  `/slideshow/view` (five pages, 69 asset checks per domain); the protected
+  system-status endpoint still returns 401. Retention removed one expired
+  release, leaving 27. No unrelated code changed, and photos/looping retain
+  their previously accepted behavior. Mel reconciled this checkpoint and ran
+  `npm run context:update`; native Safari selection, combined confirmation
+  and occupied-site acceptance remain Pap's live check.
 
-### Combined arrival and parking confirmation — 2026-09-28 (Local; migration not applied)
+### Combined arrival and parking confirmation — 2026-09-28 (Deployed in 6281d03; live acceptance pending)
 
 - **Product decision:** Pap approved **Confirm arrived and parked**, preserving
   ordinary Assign site for advance assignments. The accepted Site Assignment
@@ -362,15 +376,14 @@ state override this subsection whenever they disagree, per the
   The three nonblocking observations above remain unchanged. This source review
   and its reported fixture results are not release authorization or production
   runtime proof.
-- **Delivery and remaining gates:** the reported-site shortcut below and this
-  combined action remain local. The fresh integrated validation and additive
-  occupied-site/retry repair above supersede the original pending full-schema,
-  target-version and multi-connection gates. Both Parking migrations require
-  ordered production application after explicit release authorization. Native
-  Safari acceptance remains pending. The deployed substantive baseline remains
-  `13f05776c337e1d02593fdb4568a3393618a9db6`.
+- **Delivery and remaining gates:** shipped with the reported-site shortcut
+  and occupied-site/retry repair in
+  `6281d03cd6b3907891497e2fd75cec9afe26ad84`. Both migrations are applied;
+  the current release and verification evidence are recorded above. Fresh
+  integrated validation supersedes the historical full-schema, target-version
+  and multi-connection gaps. Native Safari acceptance remains pending.
 
-### Parking reported-site selection shortcut — 2026-09-28 (Local; not committed or deployed)
+### Parking reported-site selection shortcut — 2026-09-28 (Deployed in 6281d03; live acceptance pending)
 
 - **Intent:** after selecting an unassigned attendee who reported a site,
   Pap wants the Assign action ready without separately finding and clicking
@@ -395,9 +408,11 @@ state override this subsection whenever they disagree, per the
   byte-identical to the clean starting checkout (43 existing errors).
   Diff checks pass. Native Safari layout/scroll and live assignment acceptance
   of this change remain unverified; no production records were changed.
-- **Scope and delivery:** Parking page, its two existing test files and this
-  Brief only. No migration, commit, push or deployment. The deployed
-  substantive baseline remains `13f05776c337e1d02593fdb4568a3393618a9db6`.
+- **Scope and delivery:** the original shortcut changed the Parking page,
+  its tests and this Brief. It shipped with the combined-action migration and
+  occupied-site/retry repair above in
+  `6281d03cd6b3907891497e2fd75cec9afe26ad84`. Live Safari selection and
+  assignment acceptance remain pending.
 
 ### Photo Details size and keyboard save — 2026-09-28 (Committed and deployed; Safari acceptance pending)
 
@@ -3245,16 +3260,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-28T21:23:05-06:00`
+**Generated at:** `2026-09-28T21:27:42-06:00`
 **Branch:** `codex/parking-arrival-confirmation`
-**Commit:** `add5163 docs: reconcile deployed photo upload size correction`
-**Commit date:** `2026-09-28T20:39:24-06:00`
-**origin/main:** `add5163`
+**Commit:** `6281d03 Add arrival and parking confirmation and repair occupied-site overrides`
+**Commit date:** `2026-09-28T21:23:05-06:00`
+**origin/main:** `6281d03`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `7`
+**Tracked modified:** `1`
 **Staged:** `0`
-**Untracked:** `4`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
