@@ -344,7 +344,7 @@ state override this subsection whenever they disagree, per the
 - **Evidence limits:** Native Safari and signed-in live acceptance remain
   pending. The clean presenter suite was 66/68 with two existing source-test
   failures (`all_approved` deck creation and Manual Selection authoring).
-- **Release state and substantive baseline:** Product commit
+- **Initial photo/loop release:** Product commit
   `fe6c8b75ea4bff0b41b5e7cf6af985620d5670fe` was fast-forwarded to `main`.
   The existing guarded webhook deployed exactly one new release,
   `20260929T022028Z-fe6c8b75ea4b`; rollback is
@@ -380,8 +380,23 @@ state override this subsection whenever they disagree, per the
   The member page now displays readable errors, gives explicit uncertain-save
   recovery guidance, stops a failed batch without falsely claiming success,
   and permits selecting the same file again. The focused member/upload suite
-  passes 32/32. Application correction deployment is pending; the host size
-  correction is already active. No migration or Parking work is included.
+  passes 32/32; the production build passes 136 routes, and lint has no
+  errors (two pre-existing page hook warnings). Two additional public HTTPS
+  probes prove full 4,565,610-byte bodies traverse both public domains and
+  reach the authenticated handler without storing a photo.
+- **Current substantive baseline:** Follow-up product commit
+  `13f05776c337e1d02593fdb4568a3393618a9db6` is promoted and deployed as
+  `20260929T023657Z-13f05776c337`; rollback is
+  `20260929T022028Z-fe6c8b75ea4b`. Both domains pass photo/presenter page and
+  asset verification (52 asset checks), with expected unauthenticated photo
+  denial and protected Admin API behavior. The host size correction is active;
+  no migration or Parking work is included. Nginx rollback is independent of
+  the app rollback and uses the retained pre-change config above. Signed-in
+  user upload acceptance remains pending. Evidence:
+  `/private/tmp/photo-upload-size-live-check.log`,
+  `/private/tmp/photo-upload-feedback-tests.log`,
+  `/private/tmp/photo-upload-feedback-build.log` and
+  `/private/tmp/photo-upload-feedback-live-verification.log`.
 - **Closeout:** The Development checkpoint was reconciled and
   `npm run context:update` run. Documentation promotion is separate from the
   serving product release. The canonical checkout's nine deferred Parking
@@ -3062,16 +3077,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-28T20:36:19-06:00`
+**Generated at:** `2026-09-28T20:39:24-06:00`
 **Branch:** `codex/photo-contributors-slideshow-loop`
-**Commit:** `0bbcefd docs: reconcile deployed photo access and continuous slideshow`
-**Commit date:** `2026-09-28T20:24:42-06:00`
-**origin/main:** `0bbcefd`
+**Commit:** `13f0577 fix(photos): support original-size uploads and readable failures`
+**Commit date:** `2026-09-28T20:36:54-06:00`
+**origin/main:** `13f0577`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `2`
+**Tracked modified:** `1`
 **Staged:** `0`
-**Untracked:** `2`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
