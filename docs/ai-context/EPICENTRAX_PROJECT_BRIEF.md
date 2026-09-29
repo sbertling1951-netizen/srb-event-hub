@@ -365,6 +365,23 @@ state override this subsection whenever they disagree, per the
   Jan Bertling's verified Saint George Co-Pilot registration now returns
   upload allowed, gallery allowed and the existing canonical Person. This
   checks the production database boundary, not a signed-in browser upload.
+- **Native Safari upload correction (same release follow-up):** Pap's retry
+  failed with HTTP 413. Nginx logged a 4,565,610-byte request rejected before
+  the authenticated upload handler. The earlier small-request checks missed
+  its inherited 1 MiB limit. Both HTTPS application server blocks now have
+  an exact `/api/photos/upload` location with a bounded 50 MiB request limit,
+  preserving the existing proxy headers and authentication path. Configuration
+  was backed up to `/root/eventhub-before-photo-upload-limit-20260928.conf`,
+  validated with `nginx -t`, and reloaded successfully. Six live checks across
+  both domains prove a 4,565,610-byte request reaches the protected handler,
+  requests above 50 MiB are rejected, and unrelated routes retain their prior
+  limit. These unauthenticated probes store no photo. The tracked installation
+  template is `scripts/deployment/nginx/photo-upload.conf.template`.
+  The member page now displays readable errors, gives explicit uncertain-save
+  recovery guidance, stops a failed batch without falsely claiming success,
+  and permits selecting the same file again. The focused member/upload suite
+  passes 32/32. Application correction deployment is pending; the host size
+  correction is already active. No migration or Parking work is included.
 - **Closeout:** The Development checkpoint was reconciled and
   `npm run context:update` run. Documentation promotion is separate from the
   serving product release. The canonical checkout's nine deferred Parking
@@ -3045,16 +3062,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-28T20:24:42-06:00`
+**Generated at:** `2026-09-28T20:36:19-06:00`
 **Branch:** `codex/photo-contributors-slideshow-loop`
-**Commit:** `fe6c8b7 fix(photos): enable participant uploads and loop slideshow playback`
-**Commit date:** `2026-09-28T20:19:48-06:00`
-**origin/main:** `fe6c8b7`
+**Commit:** `0bbcefd docs: reconcile deployed photo access and continuous slideshow`
+**Commit date:** `2026-09-28T20:24:42-06:00`
+**origin/main:** `0bbcefd`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `2`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `2`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records

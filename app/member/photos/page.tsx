@@ -398,16 +398,16 @@ function MemberPhotosPageInner() {
       setError(
         "Videos are not currently supported. Please upload photos only.",
       );
-      return;
+      return false;
     }
     if (!workspaceEvent?.id) {
       setError("No current event selected.");
-      return;
+      return false;
     }
 
     if (!attendeeId) {
       setError("No attendee found.");
-      return;
+      return false;
     }
 
     try {
@@ -433,21 +433,29 @@ function MemberPhotosPageInner() {
         body: formData,
       });
       if (!response.ok) {
-        throw new Error("Photo upload failed.");
+        if (response.status === 413) {
+          throw new Error("This photo is too large to upload. Please choose a smaller photo.");
+        }
+        if (response.status === 409) {
+          throw new Error("The upload could not be confirmed. Refresh My Uploads before trying again.");
+        }
+        throw new Error("Photo upload failed. Please try again.");
       }
 
       setUploadCompleted((prev) => prev + 1);
       await loadUploads(workspaceEvent.id, attendeeId);
+      return true;
     } catch (err) {
-      console.error("photo upload error:", JSON.stringify(err, null, 2));
+      console.error("photo upload error:", err);
 
       setError(
-        typeof err === "object" && err !== null
-          ? JSON.stringify(err, null, 2)
-          : String(err),
+        err instanceof Error && err.message
+          ? err.message
+          : "Photo upload failed. Check your connection and try again.",
       );
 
       setStatus("");
+      return false;
     }
   }
   // Confirmation now happens in the ConfirmDialog rendered from
@@ -736,8 +744,10 @@ function MemberPhotosPageInner() {
           type="file"
           accept="image/*"
           multiple
+          disabled={uploading}
           onChange={(e) => {
             const files = Array.from(e.target.files || []);
+            e.target.value = "";
 
             if (files.length === 0) {
               return;
@@ -754,7 +764,10 @@ function MemberPhotosPageInner() {
                   `Uploading ${i + 1} of ${files.length} photos. Please keep this page open...`,
                 );
 
-                await uploadPhoto(files[i]);
+                if (!(await uploadPhoto(files[i]))) {
+                  setUploading(false);
+                  return;
+                }
               }
 
               setStatus(`Successfully uploaded ${files.length} photo(s).`);
