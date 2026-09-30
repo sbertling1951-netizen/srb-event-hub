@@ -231,6 +231,40 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Audience-window reuse — 2026-09-29 (Reviewed; commit and push authorized)
+
+- **Outcome:** a presenter-opened audience window follows End → Start for the
+  same Event without creating another window. Repeated Open reuses that window;
+  a closed window is recreated on explicit Open, and blocked popups report an
+  error. An Event-scoped, per-tab link survives presenter refresh. Reconnection
+  accepts only same-origin messages from the viewer's opener with its matching
+  link; public session links do not discover future sessions by Event.
+- **Implementation:** presenter and viewer pages, their two focused test files,
+  and registered identifiers in `lib/storageKeys.ts`. The fullscreen shell stays
+  mounted while session content remounts, discarding old polls, photos and
+  captions. Server-owned playback and all photo-access rules are unchanged.
+- **Validation and Mel review:** all five files match LEM's isolated tested
+  production copy. Focused tests pass 112/114; Mel reproduced the same two
+  failures on clean HEAD. Touched-file lint and diff checks pass. The full
+  TypeScript comparison has identical 43 diagnostic keys; the normal isolated
+  production build passes all 136 pages. Existing storage-key check failure is
+  unchanged on baseline. Browser fixtures verify restart, reuse, closed-window
+  recovery, popup blocking, Event separation and late-response cleanup.
+  Corrected takeover checks pass 9/9 in both Chromium and WebKit, proving actual
+  delivery and rejection from non-opener popup/iframe senders and successful
+  switching from the real opener. Unreachable unrelated-tab probes are recorded
+  as observations, not rejection proof; cross-origin rejection is source-only.
+- **Limits:** native Safari/projector acceptance remains pending. Clicking Open
+  before the first audience status message after presenter refresh can reload
+  the viewer and lose fullscreen. New/refreshed viewers require a user click to
+  enter fullscreen. Browser tab visibility can also affect fullscreen.
+- **Delivery:** Pap authorized commit and push after review. This application-only
+  repair supersedes the `c4010f4` product baseline on promotion; no migration or
+  database/Storage write is required. Promotion and webhook completion must be
+  verified separately. Featured-frequency restoration remains post-Saint George.
+  Evidence: `/private/tmp/claude-502/-Users-sbertling-Developer-srb-event-hub/bab5a15d-1453-4dd3-aa29-ac293a2d7c4a/scratchpad/evidence/`,
+  including the corrected `takeover/` fixture and results.
+
 ### Vendor invitation activation repair — 2026-09-29 (Production migration applied; vendor acceptance pending)
 
 - **Incident and live read-only evidence:** Kleen Tank could authenticate after
@@ -267,10 +301,10 @@ state override this subsection whenever they disagree, per the
   catalog cache could not read a certificate; this did not undo the independently
   verified application, and the migration was not retried.
 - **Current delivery position:** the production database now includes the
-  activation repair; the application release remains
-  `6281d03cd6b3907891497e2fd75cec9afe26ad84`. The migration, regression test and
-  this reconciliation remain uncommitted locally; no Git commit/push or app
-  deployment was authorized or performed. KT's access was still pending at
+  activation repair; the application release subsequently advanced to
+  `c4010f4478dc493691f7bb49585f9a6bc5bab383` as recorded below. That commit includes
+  the migration and regression test; subsequent release verification is recorded
+  in the transition-repair entry. KT's access was still pending at
   15:18:53 UTC, with no post-repair sign-in recorded. The next safe step is KT's
   own Vendor Login attempt, then read-only activation/acceptance verification.
   No account was manually activated, invitation resent, or password changed.
@@ -280,7 +314,7 @@ state override this subsection whenever they disagree, per the
   `/private/tmp/epicentrax-vendor-access-check/` and
   `/private/tmp/epicentrax-slideshow-lem/vendor-activation-report.md`.
 
-### Audience slideshow transition repair — 2026-09-29 (Authorized for main promotion and webhook deployment)
+### Audience slideshow transition repair — 2026-09-29 (Deployed; Pap accepted live slideshow)
 
 - **Reported defect:** Pap's `IMG_2077.HEIC` shows "Waiting for the next
   slide..." between photos. The viewer preloaded the next-slot URL but
@@ -333,17 +367,40 @@ state override this subsection whenever they disagree, per the
 - **Known limits:** a failed poll clears photos immediately, preserving the
   fail-closed behavior but interrupting display during connection loss. Failed
   renditions retry each second while eligible. A pre-existing caption response
-  can race a server advance; no caption-route identity change was made. Native
-  projector acceptance and any production proxy restriction on blob images
-  remain unverified. No live presentation was ended during diagnosis.
-- **Authorized delivery:** Pap requested commit and push and explicitly
-  directed use of the GitHub push webhook to deploy. The release cohort is
-  eight slideshow implementation/test files, the already-applied vendor
-  activation migration/test, and this Brief, preserving the vendor-SMS
-  deferral. Main promotion and live deployment verification are pending this
-  commit. The serving baseline at preflight remains
-  `6281d03cd6b3907891497e2fd75cec9afe26ad84`; native Safari/projector acceptance
-  remains pending after release. No additional database write is required.
+  can race a server advance; no caption-route identity change was made. Pap's
+  live acceptance is recorded below. Both public slideshow responses were
+  checked and have no Content-Security-Policy header restricting blob images.
+  No live presentation was ended during diagnosis or deployment.
+- **Promoted baseline and webhook delivery:** Pap authorized commit/push and
+  explicitly directed deployment through the GitHub push webhook. Product
+  commit `c4010f4478dc493691f7bb49585f9a6bc5bab383` contains the exact eleven-file
+  cohort: eight slideshow implementation/test files, the already-applied vendor
+  activation migration/test, and this Brief (preserving the SMS deferral). One
+  fast-forward push promoted it to main. The webhook accepted that exact commit
+  at 15:26:20 UTC and completed at 15:28:13 UTC, serving
+  `20260929T152620Z-c4010f4478dc` with rollback
+  `20260929T032427Z-6281d03cd6b3`. No separate deployment invocation or further
+  database write occurred.
+- **Live verification:** release SHA, running application directory and current
+  marker agree. Through HTTPS on both `epicentrax.com` and
+  `app.eventsyncapp.com`, the release verifier passes the audience viewer,
+  Admin slideshow and Vendor Login pages plus 40 referenced assets per domain;
+  unauthenticated Vendor workspace summary remains 401. The initial port-80
+  check encountered the expected HTTPS redirects and was repeated through TLS.
+  Both application and webhook processes are online. The saved restart
+  configuration was reconciled to the running release with its prior copy
+  preserved in a private PM2 closeout backup.
+- **Live user acceptance:** after confirming Production Status showed
+  `c4010f4`, Pap reported "all working now on the slideshow" on September 29.
+  The reported slideshow issue is accepted as resolved in live use. This is
+  Pap's operational confirmation; no additional device/browser coverage is
+  inferred. Kleen Tank's separate vendor sign-in acceptance remains pending.
+- **Continuity closeout:** deployment verification was added to this local
+  checkpoint and `npm run context:update` rerun after release. The post-release
+  documentation delta remains local; all product fixes are committed and on
+  main. No unrelated implementation file changed. Local evidence includes
+  `/private/tmp/epicentrax-slideshow-transition/build-production-mode.log` and
+  the earlier browser/LEM reports.
 
 ### Vendor invitations by text — 2026-09-29 (Deferred until after Saint George)
 
@@ -360,8 +417,15 @@ state override this subsection whenever they disagree, per the
 ### Parking resumption and occupied-site repair — 2026-09-28 (Committed and deployed; live Safari acceptance pending)
 
 - **Scope and product position:** Pap requested LEM resume Parking after
-  confirming photo uploads and slideshow looping work. Featured-photo level
-  controls and frequency weighting remain deferred until after Saint George.
+  confirming photo uploads and slideshow looping work. Featured-photo control
+  improvements and restoration of frequency weighting remain deferred until
+  after Saint George, reconfirmed by Pap on September 29. Weighting is lost
+  functionality from the former viewer, not a new feature: its levels 0–3
+  used relative selection weights 1/2/4/8 with repeat-spacing rules. The
+  server-owned session replacement omitted that weighting; restoration must
+  preserve server-owned playback and photo eligibility. The existing Photos
+  moderation screen still offers levels 0–3; Photo Library offers only a
+  Featured checkbox. This deferral does not expand LEM's audience-window repair.
   Mel carried the eight deferred implementation/architecture/fixture files
   onto the integrated photo baseline and reconciled this Brief. The canonical
   checkout's original nine-file cohort remains byte-identical as preserved
@@ -3386,16 +3450,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-29T09:25:53-06:00`
+**Generated at:** `2026-09-29T18:22:58-06:00`
 **Branch:** `codex/slideshow-vendor-activation-fixes`
-**Commit:** `df86333 docs: reconcile deployed Parking confirmation and override repair`
-**Commit date:** `2026-09-28T21:28:11-06:00`
-**origin/main:** `df86333`
+**Commit:** `c4010f4 Fix slideshow transitions, End control, and vendor invitation activation`
+**Commit date:** `2026-09-29T09:26:04-06:00`
+**origin/main:** `c4010f4`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `7`
+**Tracked modified:** `6`
 **Staged:** `0`
-**Untracked:** `4`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records

@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import { SLIDESHOW_AUDIENCE_MESSAGES } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 import PresentationSlideImage from "./PresentationSlideImage";
@@ -35,46 +36,26 @@ type PublicSessionRow = {
   next_duration_ms: number | null;
 };
 
+type FullscreenCapableElement = HTMLDivElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
+
+type FullscreenCapableDocument = Document & {
+  webkitExitFullscreen?: () => Promise<void> | void;
+  webkitFullscreenElement?: Element | null;
+};
+
+// The fullscreen root stays mounted across a presenter-directed session
+// change. Only SlideshowSession remounts, which cancels the previous
+// session's polls, caption reads and image requests.
 export default function SlideshowViewPage() {
   const searchParams = useSearchParams();
   const sessionIdParam = searchParams.get("session");
-  return <SlideshowSession key={sessionIdParam ?? ""} sessionIdParam={sessionIdParam} />;
-}
-
-function SlideshowSession({ sessionIdParam }: { sessionIdParam: string | null }) {
-  type FullscreenCapableElement = HTMLDivElement & {
-    webkitRequestFullscreen?: () => Promise<void> | void;
-  };
-
-  type FullscreenCapableDocument = Document & {
-    webkitExitFullscreen?: () => Promise<void> | void;
-    webkitFullscreenElement?: Element | null;
-  };
-
-  const sessionId =
-    sessionIdParam && UUID_PATTERN.test(sessionIdParam) ? sessionIdParam : null;
-  const invalidSessionFormat = Boolean(sessionIdParam) && !sessionId;
-
-  // The public session response is the single authoritative source for
-  // everything about the show: whether it is live, playback state,
-  // current position, and which content item is current/next. There is
-  // deliberately no local currentIndex, no local selection logic, and
-  // no local advance timer -- the viewer never decides slide order.
-  const [publicState, setPublicState] = useState<PublicSessionRow | null>(
-    null,
-  );
-  const [pollError, setPollError] = useState<string | null>(null);
-
-  const [captionPhotoId, setCaptionPhotoId] = useState<string | null>(null);
-  const [currentCaption, setCurrentCaption] = useState<string | null>(null);
-  const [photographerName, setPhotographerName] = useState<string | null>(
-    null,
-  );
+  const link = searchParams.get("link");
 
   const [showCursor, setShowCursor] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const cursorTimerRef = useRef<number | null>(null);
-  const wakeLockRef = useRef<any>(null);
   const slideshowRootRef = useRef<FullscreenCapableElement | null>(null);
 
   useLayoutEffect(() => {
@@ -84,6 +65,61 @@ function SlideshowSession({ sessionIdParam }: { sessionIdParam: string | null })
       document.body.classList.remove("slideshow-view-mode");
     };
   }, []);
+
+  // Presenter-to-audience window protocol. A presenter-opened window carries a
+  // random `link` token in its URL and accepts a new session id only from its
+  // own opener, on this origin, naming that same link. It never looks up a
+  // session by Event, so an ordinary shared viewer link cannot follow later
+  // sessions; the session id remains the viewer's only authority input.
+  useEffect(() => {
+    const opener = window.opener as Window | null;
+    if (!link || !UUID_PATTERN.test(link) || !opener) {
+      return;
+    }
+
+    const currentSessionParam = () =>
+      new URLSearchParams(window.location.search).get("session");
+
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (
+        event.origin !== window.location.origin ||
+        event.source !== opener ||
+        data?.type !== SLIDESHOW_AUDIENCE_MESSAGES.session ||
+        data.link !== link ||
+        typeof data.sessionId !== "string" ||
+        !UUID_PATTERN.test(data.sessionId) ||
+        data.sessionId === currentSessionParam()
+      ) {
+        return;
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.set("session", data.sessionId);
+      window.history.replaceState(null, "", url);
+    };
+
+    // Lets the presenter tab that opened this window find it again after a
+    // presenter refresh, and answer with a newly started session.
+    const announce = () => {
+      try {
+        opener.postMessage(
+          { type: SLIDESHOW_AUDIENCE_MESSAGES.status, link, sessionId: currentSessionParam() },
+          window.location.origin,
+        );
+      } catch {
+        // The opener closed or left this origin; nothing to reconnect to.
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    announce();
+    const timer = window.setInterval(announce, POLL_INTERVAL_MS);
+
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      window.clearInterval(timer);
+    };
+  }, [link]);
 
   useEffect(() => {
     const resetCursorTimer = () => {
@@ -143,6 +179,110 @@ function SlideshowSession({ sessionIdParam }: { sessionIdParam: string | null })
       );
     };
   }, []);
+
+  const toggleFullscreen = async () => {
+    const slideshowRoot = slideshowRootRef.current;
+    const fullscreenDocument = document as FullscreenCapableDocument;
+
+    if (!slideshowRoot) {
+      return;
+    }
+
+    try {
+      if (
+        document.fullscreenElement === slideshowRoot ||
+        fullscreenDocument.webkitFullscreenElement === slideshowRoot
+      ) {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+          return;
+        }
+
+        if (fullscreenDocument.webkitFullscreenElement) {
+          await fullscreenDocument.webkitExitFullscreen?.();
+        }
+
+        return;
+      }
+
+      if (slideshowRoot.requestFullscreen) {
+        await slideshowRoot.requestFullscreen();
+        return;
+      }
+
+      await slideshowRoot.webkitRequestFullscreen?.();
+    } catch (error) {
+      console.error("Fullscreen toggle failed", error);
+    }
+  };
+
+  return (
+    <div
+      ref={slideshowRootRef}
+      style={{
+        minHeight: "100vh",
+        width: "100%",
+        background: "black",
+        color: "white",
+        display: "flex",
+        flexDirection: "column",
+        position: "relative",
+        cursor: showCursor ? "default" : "none",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => {
+          void toggleFullscreen();
+        }}
+        aria-pressed={isFullscreen}
+        style={{
+          position: "fixed",
+          top: "calc(16px + env(safe-area-inset-top, 0px))",
+          right: "calc(16px + env(safe-area-inset-right, 0px))",
+          zIndex: 10,
+          padding: "10px 14px",
+          borderRadius: 999,
+          border: "1px solid rgba(255,255,255,0.35)",
+          background: "rgba(0,0,0,0.65)",
+          color: "white",
+          fontSize: 14,
+          fontWeight: 600,
+          lineHeight: 1.2,
+          opacity: showCursor ? 1 : 0,
+          pointerEvents: showCursor ? "auto" : "none",
+          transition: "opacity 180ms ease",
+        }}
+      >
+        {isFullscreen ? "Exit Full Screen" : "Enter Full Screen"}
+      </button>
+      <SlideshowSession key={sessionIdParam ?? ""} sessionIdParam={sessionIdParam} />
+    </div>
+  );
+}
+
+function SlideshowSession({ sessionIdParam }: { sessionIdParam: string | null }) {
+  const sessionId =
+    sessionIdParam && UUID_PATTERN.test(sessionIdParam) ? sessionIdParam : null;
+  const invalidSessionFormat = Boolean(sessionIdParam) && !sessionId;
+
+  // The public session response is the single authoritative source for
+  // everything about the show: whether it is live, playback state,
+  // current position, and which content item is current/next. There is
+  // deliberately no local currentIndex, no local selection logic, and
+  // no local advance timer -- the viewer never decides slide order.
+  const [publicState, setPublicState] = useState<PublicSessionRow | null>(
+    null,
+  );
+  const [pollError, setPollError] = useState<string | null>(null);
+
+  const [captionPhotoId, setCaptionPhotoId] = useState<string | null>(null);
+  const [currentCaption, setCurrentCaption] = useState<string | null>(null);
+  const [photographerName, setPhotographerName] = useState<string | null>(
+    null,
+  );
+
+  const wakeLockRef = useRef<any>(null);
 
   // Authoritative state: poll the public, anon-safe read contract by
   // session id from the URL. No Admin Event context is ever read here
@@ -345,42 +485,6 @@ function SlideshowSession({ sessionIdParam }: { sessionIdParam: string | null })
     };
   }, [isLive]);
 
-  const toggleFullscreen = async () => {
-    const slideshowRoot = slideshowRootRef.current;
-    const fullscreenDocument = document as FullscreenCapableDocument;
-
-    if (!slideshowRoot) {
-      return;
-    }
-
-    try {
-      if (
-        document.fullscreenElement === slideshowRoot ||
-        fullscreenDocument.webkitFullscreenElement === slideshowRoot
-      ) {
-        if (document.fullscreenElement) {
-          await document.exitFullscreen();
-          return;
-        }
-
-        if (fullscreenDocument.webkitFullscreenElement) {
-          await fullscreenDocument.webkitExitFullscreen?.();
-        }
-
-        return;
-      }
-
-      if (slideshowRoot.requestFullscreen) {
-        await slideshowRoot.requestFullscreen();
-        return;
-      }
-
-      await slideshowRoot.webkitRequestFullscreen?.();
-    } catch (error) {
-      console.error("Fullscreen toggle failed", error);
-    }
-  };
-
   // Audience-safe status text. Never exposes internal IDs, raw
   // Postgres errors, or Task Authority/deck-configuration internals --
   // only these fixed, generic messages (Stage 6 Part 18).
@@ -409,82 +513,41 @@ function SlideshowSession({ sessionIdParam }: { sessionIdParam: string | null })
   const message = statusMessage();
 
   return (
-    <div
-      ref={slideshowRootRef}
+    <main
       style={{
-        minHeight: "100vh",
-        width: "100%",
-        background: "black",
-        color: "white",
+        flex: 1,
         display: "flex",
-        flexDirection: "column",
-        position: "relative",
-        cursor: showCursor ? "default" : "none",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
       }}
     >
-      <button
-        type="button"
-        onClick={() => {
-          void toggleFullscreen();
-        }}
-        aria-pressed={isFullscreen}
+      <div
         style={{
-          position: "fixed",
-          top: "calc(16px + env(safe-area-inset-top, 0px))",
-          right: "calc(16px + env(safe-area-inset-right, 0px))",
-          zIndex: 10,
-          padding: "10px 14px",
-          borderRadius: 999,
-          border: "1px solid rgba(255,255,255,0.35)",
-          background: "rgba(0,0,0,0.65)",
-          color: "white",
-          fontSize: 14,
-          fontWeight: 600,
-          lineHeight: 1.2,
-          opacity: showCursor ? 1 : 0,
-          pointerEvents: showCursor ? "auto" : "none",
-          transition: "opacity 180ms ease",
-        }}
-      >
-        {isFullscreen ? "Exit Full Screen" : "Enter Full Screen"}
-      </button>
-      <main
-        style={{
-          flex: 1,
+          width: "100%",
+          height: "100%",
+          border: "none",
           display: "flex",
+          flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          padding: 0,
+          fontSize: 42,
+          opacity: 0.8,
+          gap: 16,
         }}
       >
-        <div
-          style={{
-            width: "100%",
-            height: "100%",
-            border: "none",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 42,
-            opacity: 0.8,
-            gap: 16,
-          }}
-        >
-          {photos.map((photo) => (
-            <PresentationSlideImage
-              key={`${sessionId}:${photo.contentRefId}`}
-              sessionId={sessionId!}
-              contentRefId={photo.contentRefId}
-              slot={photo.slot}
-              caption={photo.slot === "current" && captionPhotoId === photo.contentRefId ? currentCaption : null}
-              photographerName={photo.slot === "current" && captionPhotoId === photo.contentRefId ? photographerName : null}
-            />
-          ))}
-          {message ? <div style={{ fontSize: 24 }}>{message}</div> : null}
-        </div>
-      </main>
-
-    </div>
+        {photos.map((photo) => (
+          <PresentationSlideImage
+            key={`${sessionId}:${photo.contentRefId}`}
+            sessionId={sessionId!}
+            contentRefId={photo.contentRefId}
+            slot={photo.slot}
+            caption={photo.slot === "current" && captionPhotoId === photo.contentRefId ? currentCaption : null}
+            photographerName={photo.slot === "current" && captionPhotoId === photo.contentRefId ? photographerName : null}
+          />
+        ))}
+        {message ? <div style={{ fontSize: 24 }}>{message}</div> : null}
+      </div>
+    </main>
   );
 }

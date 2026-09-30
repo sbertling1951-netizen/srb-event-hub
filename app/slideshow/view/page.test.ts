@@ -236,3 +236,33 @@ test("presenter console does not call the anon-facing public read RPC", () => {
   const presenterNoComments = PRESENTER_SOURCE.replace(/\/\/.*$/gm, "");
   assert.equal(/read_public_presentation_session/.test(presenterNoComments), false);
 });
+
+test("a presenter-opened window accepts a new session only from its opener, on this origin, for its own link", () => {
+  assert.match(VIEWER_SOURCE, /searchParams\.get\(\s*["']link["']\s*\)/);
+  assert.match(VIEWER_SOURCE, /event\.origin !== window\.location\.origin/);
+  assert.match(VIEWER_SOURCE, /event\.source !== opener/);
+  assert.match(VIEWER_SOURCE, /data\.link !== link/);
+  assert.match(VIEWER_SOURCE, /!UUID_PATTERN\.test\(data\.sessionId\)/);
+  assert.match(VIEWER_SOURCE, /window\.history\.replaceState\(/);
+  assert.match(VIEWER_SOURCE, /opener\.postMessage\([\s\S]{0,200}window\.location\.origin/);
+  assert.equal(/postMessage\([^)]*["']\*["']/.test(VIEWER_SOURCE_NO_COMMENTS), false);
+});
+
+test("the viewer never discovers a later session by Event", () => {
+  assert.equal(/p_event_id/.test(VIEWER_SOURCE_NO_COMMENTS), false);
+  assert.equal(/searchParams\.get\(\s*["']event/i.test(VIEWER_SOURCE_NO_COMMENTS), false);
+  assert.equal(/data\.event/i.test(VIEWER_SOURCE_NO_COMMENTS), false);
+  assert.equal(/\.eq\(\s*["']event_id["']/.test(VIEWER_SOURCE_NO_COMMENTS), false);
+});
+
+test("the fullscreen root stays mounted while only the session content is keyed by session id", () => {
+  const pageFn = VIEWER_SOURCE.slice(
+    VIEWER_SOURCE.indexOf("export default function SlideshowViewPage"),
+    VIEWER_SOURCE.indexOf("function SlideshowSession("),
+  );
+  assert.match(pageFn, /ref=\{slideshowRootRef\}/);
+  assert.match(pageFn, /toggleFullscreen/);
+  assert.match(pageFn, /<SlideshowSession key=\{sessionIdParam \?\? ""\}/);
+  const sessionFn = VIEWER_SOURCE.slice(VIEWER_SOURCE.indexOf("function SlideshowSession("));
+  assert.equal(/slideshowRootRef|requestFullscreen/.test(sessionFn), false);
+});

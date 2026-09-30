@@ -95,6 +95,10 @@ export const EVENT_SCOPED_STORAGE_KEYS = {
     `epicentrax-attendee-import-run::${eventId}`,
   vendorImportRun: (eventId: string) =>
     `epicentrax-vendor-import-run::${eventId}`,
+  // Per-tab (sessionStorage) random token pairing a presenter with the
+  // audience window it opened for this Event. Correlation only, no authority.
+  slideshowAudienceLink: (eventId: string) =>
+    `epicentrax-slideshow-audience-link::${eventId}`,
 } as const;
 
 // Narrow migration sources for governed import-run locators only. The IDs
@@ -123,6 +127,13 @@ export const LEGACY_COOKIE_NAMES = {
 // listeners accept both names during the compatibility window.
 export const APP_EVENT_NAMES = {
   adminEventUpdated: "epicentrax-admin-event-updated",
+} as const;
+
+// Presenter/audience window postMessage types (app/admin/slideshow and
+// app/slideshow/view). No legacy names exist.
+export const SLIDESHOW_AUDIENCE_MESSAGES = {
+  status: "epicentrax-slideshow-audience-status",
+  session: "epicentrax-slideshow-audience-session",
 } as const;
 
 export const LEGACY_APP_EVENT_NAMES = {

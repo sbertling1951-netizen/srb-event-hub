@@ -774,3 +774,30 @@ test("the specialized dark presenter-console background and status-color vocabul
   assert.match(PAGE_SOURCE, /color: "#4ade80"/);
   assert.match(PAGE_SOURCE, /color: "#f87171"/);
 });
+
+test("Open Audience Screen reuses this Event's open audience window and opens one only when it is missing or closed", () => {
+  const fnBody = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("function openAudienceScreen()"),
+    PAGE_SOURCE.indexOf("// Reconcile after a stale state_version conflict"),
+  );
+  assert.match(fnBody, /audienceWindows\.get\(link\)/);
+  assert.match(fnBody, /existing && !existing\.closed/);
+  assert.match(fnBody, /if \(!presenting\) \{\s*existing\.focus\(\);/);
+  assert.match(fnBody, /fullscreenElement/);
+  // Handles outlive a presenter component remount.
+  assert.match(PAGE_SOURCE, /^const audienceWindows = new Map<string, Window>\(\);$/m);
+  assert.match(fnBody, /window\.open\(\s*`\/slideshow\/view\?session=\$\{liveSessionId\}&link=\$\{link\}`/);
+  assert.match(fnBody, /if \(!opened\)[\s\S]{0,80}showError\(/);
+  assert.equal(/["']_blank["']/.test(PAGE_SOURCE_NO_COMMENTS), false);
+  assert.match(PAGE_SOURCE, /onClick=\{openAudienceScreen\}/);
+});
+
+test("the presenter answers only its own audience window, on this origin, for this Event's link and live session", () => {
+  assert.match(PAGE_SOURCE, /EVENT_SCOPED_STORAGE_KEYS\.slideshowAudienceLink\(eventId\)/);
+  assert.match(PAGE_SOURCE, /crypto\.randomUUID\(\)/);
+  assert.match(PAGE_SOURCE, /event\.origin !== window\.location\.origin/);
+  assert.match(PAGE_SOURCE, /source\.opener !== window/);
+  assert.match(PAGE_SOURCE, /data\.link !== link/);
+  assert.match(PAGE_SOURCE, /session\?\.status === "live" \? session\.id : null/);
+  assert.equal(/postMessage\([^)]*["']\*["']/.test(PAGE_SOURCE_NO_COMMENTS), false);
+});

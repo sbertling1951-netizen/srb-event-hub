@@ -11,6 +11,10 @@ import {
   getCurrentAdminEvent,
   useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
+import {
+  EVENT_SCOPED_STORAGE_KEYS,
+  SLIDESHOW_AUDIENCE_MESSAGES,
+} from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
 // Presenter concurrency-awareness refresh interval. This is not the
@@ -111,6 +115,31 @@ export function mapPresentationRpcError(
 
 export function isStalePresentationVersionError(err: unknown): boolean {
   return err instanceof Error && err.message === "stale_version";
+}
+
+// The random token pairing this presenter tab with the audience window it
+// opened for an Event. sessionStorage keeps it across a presenter refresh in
+// the same tab only; the in-memory copy covers storage being unavailable.
+// Window handles live here too, keyed by link, because the presenter
+// component can remount (for example on an Admin auth refresh) while its
+// audience window stays open.
+const audienceLinks = new Map<string, string>();
+const audienceWindows = new Map<string, Window>();
+
+function audienceLinkFor(eventId: string): string {
+  const key = EVENT_SCOPED_STORAGE_KEYS.slideshowAudienceLink(eventId);
+  let link = audienceLinks.get(eventId) ?? null;
+  try {
+    link = link ?? window.sessionStorage.getItem(key);
+  } catch {}
+  if (!link) {
+    link = crypto.randomUUID();
+  }
+  audienceLinks.set(eventId, link);
+  try {
+    window.sessionStorage.setItem(key, link);
+  } catch {}
+  return link;
 }
 
 export default function AdminSlideshowPage() {
@@ -908,6 +937,86 @@ function AdminSlideshowPageInner() {
     }, SESSION_REFRESH_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [eventId, session?.status, session?.id, loadLiveSession]);
+
+  // A presenter-opened audience window reports the session it shows once a
+  // second. Answer only our own window for this Event's link, on this origin,
+  // with this Event's live session, so End followed by Start reconnects it.
+  const liveSessionId = session?.status === "live" ? session.id : null;
+  useEffect(() => {
+    if (!eventId) {
+      return;
+    }
+    const link = audienceLinkFor(eventId);
+
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data;
+      const source = event.source as Window | null;
+      if (
+        event.origin !== window.location.origin ||
+        !source ||
+        source.opener !== window ||
+        data?.type !== SLIDESHOW_AUDIENCE_MESSAGES.status ||
+        data.link !== link
+      ) {
+        return;
+      }
+      audienceWindows.set(link, source);
+      if (liveSessionId && data.sessionId !== liveSessionId) {
+        source.postMessage(
+          { type: SLIDESHOW_AUDIENCE_MESSAGES.session, link, sessionId: liveSessionId },
+          window.location.origin,
+        );
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [eventId, liveSessionId]);
+
+  // Reuse this Event's audience window while it is open; otherwise open one.
+  // Must run from the click itself so the browser permits the popup.
+  function openAudienceScreen() {
+    if (!eventId || !liveSessionId) {
+      return;
+    }
+    const link = audienceLinkFor(eventId);
+    const existing = audienceWindows.get(link);
+    if (existing && !existing.closed) {
+      existing.postMessage(
+        { type: SLIDESHOW_AUDIENCE_MESSAGES.session, link, sessionId: liveSessionId },
+        window.location.origin,
+      );
+      // Chromium leaves fullscreen when focus() reaches a fullscreen window,
+      // so bring the window forward only while it is not presenting.
+      let presenting = false;
+      try {
+        const audienceDocument = existing.document as Document & {
+          webkitFullscreenElement?: Element | null;
+        };
+        presenting = Boolean(
+          audienceDocument.fullscreenElement ??
+            audienceDocument.webkitFullscreenElement,
+        );
+      } catch {}
+      if (!presenting) {
+        existing.focus();
+      }
+      return;
+    }
+    const opened = window.open(
+      `/slideshow/view?session=${liveSessionId}&link=${link}`,
+      // Naming the window by its link lets a click right after a presenter
+      // refresh reuse it rather than open a second one.
+      link,
+    );
+    if (!opened) {
+      showError(
+        "The browser blocked the audience screen. Allow pop-ups for this site, then try again.",
+      );
+      return;
+    }
+    audienceWindows.set(link, opened);
+  }
 
   // Reconcile after a stale state_version conflict (a second presenter,
   // or this console's own prior command, already moved the session):
@@ -1721,11 +1830,7 @@ function AdminSlideshowPageInner() {
                 ? "Opens the legacy audience display. Full live-session sync arrives in Stage 6."
                 : "Start a presentation before opening the audience screen."
             }
-            onClick={() => {
-              if (audienceUrl) {
-                window.open(audienceUrl, "_blank");
-              }
-            }}
+            onClick={openAudienceScreen}
           >
             Open Audience Screen
           </AppButton>
