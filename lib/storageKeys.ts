@@ -133,6 +133,7 @@ export const APP_EVENT_NAMES = {
 // app/slideshow/view). No legacy names exist.
 export const SLIDESHOW_AUDIENCE_MESSAGES = {
   status: "epicentrax-slideshow-audience-status",
+  frame: "epicentrax-slideshow-audience-frame",
   session: "epicentrax-slideshow-audience-session",
 } as const;
 

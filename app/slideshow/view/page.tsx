@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import { type PresentationFrame,presentationFrame } from "@/lib/presentationPlayback";
 import { SLIDESHOW_AUDIENCE_MESSAGES } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
@@ -18,23 +19,6 @@ const POLL_INTERVAL_MS = 1000;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-type PublicSessionRow = {
-  session_active: boolean;
-  event_id: string | null;
-  playback_state: "playing" | "paused" | null;
-  state_version: number | null;
-  item_count: number | null;
-  sequence_number: number | null;
-  current_content_type: "photo" | "blank" | null;
-  current_content_ref_id: string | null;
-  current_storage_path: string | null;
-  current_duration_ms: number | null;
-  next_content_type: "photo" | "blank" | null;
-  next_content_ref_id: string | null;
-  next_storage_path: string | null;
-  next_duration_ms: number | null;
-};
 
 type FullscreenCapableElement = HTMLDivElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -256,12 +240,12 @@ export default function SlideshowViewPage() {
       >
         {isFullscreen ? "Exit Full Screen" : "Enter Full Screen"}
       </button>
-      <SlideshowSession key={sessionIdParam ?? ""} sessionIdParam={sessionIdParam} />
+      <SlideshowSession key={sessionIdParam ?? ""} sessionIdParam={sessionIdParam} link={link} />
     </div>
   );
 }
 
-function SlideshowSession({ sessionIdParam }: { sessionIdParam: string | null }) {
+function SlideshowSession({ sessionIdParam, link }: { sessionIdParam: string | null; link: string | null }) {
   const sessionId =
     sessionIdParam && UUID_PATTERN.test(sessionIdParam) ? sessionIdParam : null;
   const invalidSessionFormat = Boolean(sessionIdParam) && !sessionId;
@@ -271,7 +255,7 @@ function SlideshowSession({ sessionIdParam }: { sessionIdParam: string | null })
   // current position, and which content item is current/next. There is
   // deliberately no local currentIndex, no local selection logic, and
   // no local advance timer -- the viewer never decides slide order.
-  const [publicState, setPublicState] = useState<PublicSessionRow | null>(
+  const [publicState, setPublicState] = useState<PresentationFrame | null>(
     null,
   );
   const [pollError, setPollError] = useState<string | null>(null);
@@ -301,42 +285,71 @@ function SlideshowSession({ sessionIdParam }: { sessionIdParam: string | null })
 
     let cancelled = false;
     let polling = false;
+    let generation = 0;
+    let pairedUntil = 0;
+    let version = -1;
+    let ended = false;
+    const opener = window.opener as Window | null;
 
-    async function poll() {
-      if (polling) { return; }
-      polling = true;
-      try {
-        const { data, error } = await supabase.rpc(
-          "read_public_presentation_session",
-          { p_session_id: sessionId },
-        );
-
-        if (cancelled) { return; }
-        if (error) { throw error; }
-
-        const row = (Array.isArray(data) ? data[0] : null) as
-          | PublicSessionRow
-          | null;
-        setPollError(null);
-        setPublicState(row ?? null);
-      } catch (error) {
-        if (!cancelled) {
-          console.error("Failed to read presentation session", error);
-          setPollError("Unable to reach the presentation right now.");
-        }
-      } finally {
-        polling = false;
-      }
+    function acceptFrame(frame: PresentationFrame | null) {
+      if (frame?.session_active && (ended || frame.state_version! < version)) { return; }
+      if (frame?.session_active) { version = frame.state_version!; }
+      if (frame && !frame.session_active) { ended = true; }
+      setPollError(frame ? null : "Unable to reach the presentation right now.");
+      setPublicState(frame);
     }
 
-    void poll();
-    const timer = window.setInterval(poll, POLL_INTERVAL_MS);
+    // Pairing changes delivery, never authority or image access. Only our
+    // opener, matching this origin/link/session, may relay its server frame.
+    // The image routes still independently authorize every current/next asset.
+    const handleFrame = (event: MessageEvent) => {
+      const data = event.data;
+      if (!link || !UUID_PATTERN.test(link) || !opener ||
+          event.origin !== window.location.origin || event.source !== opener ||
+          data?.type !== SLIDESHOW_AUDIENCE_MESSAGES.frame || data.link !== link ||
+          data.sessionId !== sessionId) { return; }
+      const frame = data.frame === null ? null : presentationFrame(data.frame);
+      if (data.frame !== null && !frame) { return; }
+      pairedUntil = Date.now() + 3000;
+      ++generation; // an independent read started before pairing cannot overwrite it
+      acceptFrame(frame);
+    };
 
+    async function poll() {
+      if (polling || Date.now() < pairedUntil) { return; }
+      polling = true;
+      const request = ++generation;
+      try {
+        const { data, error } = await supabase.rpc(
+          "read_public_presentation_session", { p_session_id: sessionId },
+        );
+        if (cancelled || request !== generation) { return; }
+        if (error) { throw error; }
+        const frame = presentationFrame(Array.isArray(data) ? data[0] : null);
+        if (!frame) { throw new Error("Invalid presentation response"); }
+        acceptFrame(frame);
+      } catch (error) {
+        if (!cancelled && request === generation) {
+          console.error("Failed to read presentation session", error);
+          acceptFrame(null);
+        }
+      } finally { polling = false; }
+    }
+
+    window.addEventListener("message", handleFrame);
+    // Give an existing opener the first chance to supply its exact frame.
+    // A shared link, lost opener, or presenter refresh resumes the governed
+    // public read; no browser-local slide selection or timing is introduced.
+    if (link && opener) {
+      opener.postMessage({ type: SLIDESHOW_AUDIENCE_MESSAGES.status, link, sessionId }, window.location.origin);
+    } else { void poll(); }
+    const timer = window.setInterval(poll, POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
+      window.removeEventListener("message", handleFrame);
       window.clearInterval(timer);
     };
-  }, [sessionId]);
+  }, [sessionId, link]);
 
   // Caption/photographer supplement. read_public_presentation_session no
   // longer carries these fields (or a storage path -- see below); this

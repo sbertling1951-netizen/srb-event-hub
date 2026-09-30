@@ -231,7 +231,66 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Audience-window reuse — 2026-09-29 (Reviewed; commit and push authorized)
+### Coordinated Current/Next preloading — 2026-09-29 (Validated; commit and deployment authorized)
+
+- **Pap's approved behavior:** the server supplies one Current/Next pair;
+  both the presenter and its paired audience preload Next during Current's
+  duration, then promote that already-decoded image on the same server change.
+  The configured slide duration remains authoritative; eight seconds is the
+  existing default, not a new browser timer.
+- **Implementation:** the presenter now reads the existing governed
+  `read_public_presentation_session` contract and relays that exact sanitized
+  frame to its paired audience. Its separate raw signed-photo preview path
+  and redundant advance heartbeat are removed. Both pages use the existing
+  session/photo-keyed `PresentationSlideImage` decoder; promotion retains the
+  decoded image instead of downloading it again. Only Current/Next assets are
+  buffered, with unchanged governed image/caption delivery and eligibility.
+  Messages require the matching origin, opener, link and session. Request and
+  server-version guards discard stale responses, including delayed commands
+  after an Admin Event switch. No schema, grant, RLS or dependency change.
+- **Continuity:** while paired, the audience does not independently poll for
+  playback. After three seconds without presenter frames, its existing
+  governed public polling resumes. Cached handshake responses are bounded to
+  2.5 seconds. End clears the display; Start reuses the audience window. An
+  Admin Event switch leaves the old Event's audience running independently.
+  Shared audience links remain supported without a presenter. No new Event
+  discovery, durable state or photo-access authority is introduced.
+- **Validation:** final isolated production build passes all 136 pages;
+  implementation files are byte-identical to the tested copy. Focused tests
+  pass 126/128, with only the same two pre-existing presenter deck failures;
+  all 12 behavioral checks pass. Touched-file ESLint and `git diff --check`
+  pass. Standalone TypeScript retains the baseline's 43 file/error-code
+  diagnostic keys, with no new keys. Chromium and WebKit each pass 20/20
+  actual-page checks using placeholder credentials, mocked server responses
+  and synthetic photos. With 1.5-second image delivery and eight-second
+  slides, consecutive automatic promotions reuse the decoded DOM images,
+  show no loading frame, and have measured inter-window paint differences of
+  0–1 ms. Checks also cover manual Previous/Next, delivered non-opener message
+  rejection, End/Start window reuse, Event separation and opener loss. No
+  unexpected page errors or unmocked Supabase calls occurred.
+- **Limits and release state:** these are local automated measurements, not a
+  universal zero-delay guarantee or native Safari/projector acceptance.
+  A photo that has not decoded before promotion still waits/retries; initial
+  opening and manual Previous can require a load. Background throttling and
+  lost presenter connectivity can restore independent polling. Captions load
+  separately. Production remains at the previously accepted `f4b6176` release;
+  no commit, push, deployment or database write was performed for this change.
+  The previous uncommitted presenter polling repair is superseded by this
+  coordinated implementation; its stale-response protections are retained.
+  Prior Brief release/acceptance notes are preserved. This checkpoint records
+  the local work only; the deployed substantive baseline has not moved.
+- **Evidence:** `/private/tmp/coordinated-browser.mjs`,
+  `/private/tmp/coordinated-browser-evidence-final/results.json`,
+  `/private/tmp/coordinated-browser-final.log`,
+  `/private/tmp/coordinated-tests-final.log`,
+  `/private/tmp/coordinated-build-final.log` and
+  `/private/tmp/coordinated-tsc-final.log`. `npm run context:update` was run
+  after this local checkpoint reconciliation. Pap subsequently authorized
+  "commit and deploy". The reviewed eight application/test files and this
+  Brief are the exact release cohort; deployment verification is pending.
+  Native Safari and live audience acceptance follow deployment.
+
+### Audience-window reuse — 2026-09-29 (Committed, promoted and deployed; Pap accepted live restart)
 
 - **Outcome:** a presenter-opened audience window follows End → Start for the
   same Event without creating another window. Repeated Open reuses that window;
@@ -254,14 +313,31 @@ state override this subsection whenever they disagree, per the
   delivery and rejection from non-opener popup/iframe senders and successful
   switching from the real opener. Unreachable unrelated-tab probes are recorded
   as observations, not rejection proof; cross-origin rejection is source-only.
-- **Limits:** native Safari/projector acceptance remains pending. Clicking Open
+- **Limits:** live user acceptance is recorded below; no broader device or
+  projector coverage is inferred. Clicking Open
   before the first audience status message after presenter refresh can reload
   the viewer and lose fullscreen. New/refreshed viewers require a user click to
   enter fullscreen. Browser tab visibility can also affect fullscreen.
-- **Delivery:** Pap authorized commit and push after review. This application-only
-  repair supersedes the `c4010f4` product baseline on promotion; no migration or
-  database/Storage write is required. Promotion and webhook completion must be
-  verified separately. Featured-frequency restoration remains post-Saint George.
+- **Delivery:** Pap authorized commit and push after review. Product commit
+  `f4b617683b3b0e200abf48b6ad2af5006d6b0075` was pushed once, fast-forward, to
+  main; GitHub main and local `origin/main` were independently verified at that
+  SHA. This is the new substantive development baseline, superseding `c4010f4`.
+  The existing webhook accepted it at 2026-09-30 00:23:30 UTC and completed at
+  00:25:32 UTC. The running app serves `20260930T002331Z-f4b617683b3b`, with
+  rollback `20260929T152620Z-c4010f4478dc`; the running release SHA matches the
+  pushed commit, and app/webhook processes are online. HTTPS verification passes
+  `/slideshow/view` and `/admin/slideshow` plus 26 referenced assets per domain
+  on both `epicentrax.com` and `app.eventsyncapp.com`; unauthenticated system
+  status remains 401. No manual deployment, migration or database/Storage write
+  occurred. After confirming Production Status showed `f4b6176`, Pap was asked
+  to refresh the presenter, open a fresh audience window and verify End → Start;
+  he replied "yes it works" on September 29. The reported audience-window
+  restart defect is accepted as resolved in live use. This is Pap's operational
+  confirmation, not a claim that every documented edge case was retested.
+  Featured-frequency restoration remains post-Saint George. Post-push delivery
+  evidence is reconciled here locally, with `npm run context:update` rerun;
+  that documentation-only delta remains uncommitted to avoid a second webhook
+  release solely for closeout.
   Evidence: `/private/tmp/claude-502/-Users-sbertling-Developer-srb-event-hub/bab5a15d-1453-4dd3-aa29-ac293a2d7c4a/scratchpad/evidence/`,
   including the corrected `takeover/` fixture and results.
 
@@ -3450,16 +3526,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-29T18:22:58-06:00`
+**Generated at:** `2026-09-29T20:09:39-06:00`
 **Branch:** `codex/slideshow-vendor-activation-fixes`
-**Commit:** `c4010f4 Fix slideshow transitions, End control, and vendor invitation activation`
-**Commit date:** `2026-09-29T09:26:04-06:00`
-**origin/main:** `c4010f4`
+**Commit:** `f4b6176 Fix audience window reuse across slideshow restarts`
+**Commit date:** `2026-09-29T18:23:07-06:00`
+**origin/main:** `f4b6176`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `6`
+**Tracked modified:** `7`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `2`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records

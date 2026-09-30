@@ -138,17 +138,14 @@ test("End routes through end_presentation_session", () => {
   assert.match(PAGE_SOURCE, /"end_presentation_session"/);
 });
 
-test("presenter's periodic refresh also triggers the governed timed-advance heartbeat (Stage 6A, supplementary, not required)", () => {
-  assert.match(PAGE_SOURCE, /"advance_presentation_session_if_due"/);
-  assert.match(PAGE_SOURCE, /p_session_id:\s*sessionId/);
+test("presenter refresh uses the governed public read for both displays", () => {
+  assert.match(PAGE_SOURCE, /"read_public_presentation_session"/);
+  assert.match(PAGE_SOURCE, /publishPreview\(sessionId, frame\)/);
+  assert.equal(/createSignedUrl/.test(PAGE_SOURCE), false);
 });
 
-test("presenter reports a failed timed-advance heartbeat", () => {
-  assert.match(
-    PAGE_SOURCE,
-    /Failed to advance presentation session heartbeat/,
-  );
-  assert.match(PAGE_SOURCE, /error:\s*heartbeatError/);
+test("presenter clears the shared preview when its authority read fails", () => {
+  assert.match(PAGE_SOURCE, /publishPreview\(sessionId, null\)/);
 });
 
 test("every control RPC call supplies the current state_version as p_expected_version", () => {
@@ -408,7 +405,7 @@ test("loadLiveSession, handleStart, and runControl all route their session row t
   const handleStartBody = PAGE_SOURCE.slice(handleStartIdx, runControlIdx);
   assert.match(handleStartBody, /const generation = \+\+stateGenerationRef\.current/);
   assert.match(handleStartBody, /acceptSessionRow\(row\)/);
-  assert.match(handleStartBody, /loadSessionItems\(row\.id, row\.current_index, generation\)/);
+  assert.match(handleStartBody, /loadSessionItems\(row, generation\)/);
 
   const runControlBody = PAGE_SOURCE.slice(
     runControlIdx,
@@ -418,7 +415,7 @@ test("loadLiveSession, handleStart, and runControl all route their session row t
   assert.ok(bumpCount >= 2, `expected runControl to bump the generation in both its branches, found ${bumpCount}`);
   assert.match(runControlBody, /acceptSessionRow\(null\)/, "the end-session branch must sync acceptedSessionRef too");
   assert.match(runControlBody, /acceptSessionRow\(row\)/);
-  assert.match(runControlBody, /loadSessionItems\(row\.id, row\.current_index, generation\)/);
+  assert.match(runControlBody, /loadSessionItems\(row, generation\)/);
 });
 
 test("loadSessionItems is only called once its row has been accepted (guarded by acceptSessionRow's return value)", () => {
@@ -427,7 +424,7 @@ test("loadSessionItems is only called once its row has been accepted (guarded by
   // an unconditional call right after acceptSessionRow would mean a
   // rejected (stale) row's index could still be used to fetch/display
   // photos.
-  const guardedCallPattern = /if \(acceptSessionRow\(row\)\) \{\s*\n\s*await loadSessionItems\(row\.id, row\.current_index, generation\);/g;
+  const guardedCallPattern = /if \(acceptSessionRow\(row\)\) \{\s*\n\s*await loadSessionItems\(row, generation\);/g;
   const guardedCallCount = (PAGE_SOURCE.match(guardedCallPattern) || []).length;
   assert.ok(
     guardedCallCount >= 2,
@@ -435,22 +432,27 @@ test("loadSessionItems is only called once its row has been accepted (guarded by
   );
 });
 
-test("loadSessionItems retains its own generation checkpoints for photo/caption resolution cancellation", () => {
-  assert.match(
-    PAGE_SOURCE,
-    /const loadSessionItems = useCallback\(\s*\n?\s*async \(sessionId: string, currentIndex: number, generation: number\)/,
-  );
-  const guardPattern = /generation !== stateGenerationRef\.current/g;
-  const guardCount = (PAGE_SOURCE.match(guardPattern) || []).length;
-  // loadSessionItems needs three checkpoints of its own (after the
-  // items select, after resolving the current photo, after resolving
-  // the next photo); loadLiveSession needs one more (after its own
-  // session select) -- four total is the minimum for both mechanisms
-  // to be intact.
-  assert.ok(
-    guardCount >= 4,
-    `expected at least 4 generation-guard checks across the file, found ${guardCount}`,
-  );
+test("the server frame supplies the complete pair behind generation and version guards", () => {
+  const fn = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("const loadSessionItems ="), PAGE_SOURCE.indexOf("const loadLiveSession ="));
+  assert.equal((fn.match(/generation !== stateGenerationRef\.current/g) || []).length, 2);
+  assert.match(fn, /frame.state_version! < accepted.version/);
+  assert.match(fn, /publishPreview\(sessionId, frame\)/);
+  assert.equal(/setCurrentPhoto|setNextPhoto/.test(PAGE_SOURCE), false);
+});
+
+test("presenter refresh is serialized and its cleanup invalidates in-flight responses", () => {
+  assert.match(PAGE_SOURCE, /const SESSION_REFRESH_INTERVAL_MS = 1000;/);
+  const effect = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("let refreshing = false;"), PAGE_SOURCE.indexOf("// A presenter-opened audience window"));
+  assert.match(effect, /if \(refreshing\) \{\s*return;\s*\}/);
+  assert.match(effect, /await loadLiveSession\(eventId\)/);
+  assert.match(effect, /finally \{\s*refreshing = false;/);
+  assert.match(effect, /cancelled = true;\s*\+\+stateGenerationRef.current/);
+});
+
+test("immutable session items are reused but live photo eligibility is always refreshed", () => {
+  assert.match(PAGE_SOURCE, /loadedItemsSessionRef.current !== sessionId/);
+  assert.equal(/previewPositionRef/.test(PAGE_SOURCE), false);
+  assert.match(PAGE_SOURCE, /PresentationSlideImage/);
 });
 
 // Event Context Invariant (docs/architecture/ADR-006 Event Context
@@ -491,7 +493,7 @@ test("no call site invokes loadSessionItems without a generation argument", () =
   assert.ok(calls.length >= 3, `expected at least 3 loadSessionItems call sites, found ${calls.length}`);
   for (const call of calls) {
     const args = call[1].split(",").map((a) => a.trim()).filter(Boolean);
-    assert.equal(args.length, 3, `expected loadSessionItems(sessionId, currentIndex, generation), got: loadSessionItems(${call[1]})`);
+    assert.equal(args.length, 2, `expected loadSessionItems(row, generation), got: loadSessionItems(${call[1]})`);
   }
 });
 

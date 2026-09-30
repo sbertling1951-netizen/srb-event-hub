@@ -8,6 +8,7 @@ type Props = {
   slot: "current" | "next";
   caption: string | null;
   photographerName: string | null;
+  previewColumn?: number;
 };
 
 // One mounted image per authorized photo, keyed by session and photo in the
@@ -19,9 +20,11 @@ export default function PresentationSlideImage({
   slot,
   caption,
   photographerName,
+  previewColumn,
 }: Props) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const slotRef = useRef(slot);
+  const [previewCaption, setPreviewCaption] = useState<string | null>(null);
 
   useEffect(() => {
     slotRef.current = slot;
@@ -77,13 +80,35 @@ export default function PresentationSlideImage({
     };
   }, [sessionId, contentRefId]);
 
+  // Presenter captions use the same governed route as the audience. This is
+  // independent of image decoding, so captions cannot delay the transition.
+  useEffect(() => {
+    if (!previewColumn) { return; }
+    let cancelled = false;
+    setPreviewCaption(null);
+    void fetch(`/api/slideshow/presentation-caption?session=${sessionId}&slot=${slot}`)
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((body) => {
+        if (cancelled) { return; }
+        const value = body?.caption;
+        setPreviewCaption(value?.showCaption
+          ? value.adminCaption?.trim() || value.memberCaption?.trim() || null : null);
+      }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [sessionId, contentRefId, slot, previewColumn]);
+  const visibleCaption = previewColumn ? previewCaption : caption;
+
   return (
     <div
       style={{
+        gridColumn: previewColumn,
+        gridRow: previewColumn ? 2 : undefined,
+        minHeight: previewColumn ? 320 : undefined,
+        background: previewColumn ? "#000" : undefined,
         position: "relative",
         width: "100%",
         height: "100%",
-        display: slot === "current" ? "flex" : "none",
+        display: previewColumn || slot === "current" ? "flex" : "none",
         alignItems: "center",
         justifyContent: "center",
       }}
@@ -92,10 +117,10 @@ export default function PresentationSlideImage({
         <>
           <img
             src={imageSrc}
-            alt={slot === "current" ? "Slideshow" : ""}
-            style={{ maxWidth: "100vw", maxHeight: "98vh", objectFit: "contain" }}
+            alt={previewColumn ? (slot === "current" ? "Current" : "Next") : slot === "current" ? "Slideshow" : ""}
+            style={{ maxWidth: "100%", maxHeight: previewColumn ? 340 : "98vh", objectFit: "contain" }}
           />
-          {caption && slot === "current" ? (
+          {visibleCaption && (previewColumn || slot === "current") ? (
             <div
               style={{
                 position: "absolute",
@@ -105,14 +130,14 @@ export default function PresentationSlideImage({
                 background: "rgba(0,0,0,0.55)",
                 color: "white",
                 padding: "16px 24px",
-                fontSize: 24,
+                fontSize: previewColumn ? 12 : 24,
                 fontWeight: 500,
                 textAlign: "center",
                 textShadow: "0 1px 2px rgba(0,0,0,0.9)",
                 pointerEvents: "none",
               }}
             >
-              <div>{caption}</div>
+              <div>{visibleCaption}</div>
               {photographerName ? (
                 <div style={{ marginTop: 8, fontSize: 18, opacity: 0.85 }}>
                   Photo by {photographerName}
@@ -121,7 +146,7 @@ export default function PresentationSlideImage({
             </div>
           ) : null}
         </>
-      ) : slot === "current" ? (
+      ) : previewColumn || slot === "current" ? (
         <div style={{ fontSize: 24 }}>Waiting for the next slide...</div>
       ) : null}
     </div>

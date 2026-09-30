@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import PresentationSlideImage from "@/app/slideshow/view/PresentationSlideImage";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { AppButton } from "@/components/ui/AppButton";
@@ -11,22 +12,15 @@ import {
   getCurrentAdminEvent,
   useAdminWorkingEventScope,
 } from "@/lib/adminWorkspaceContext";
+import { type PresentationFrame,presentationFrame } from "@/lib/presentationPlayback";
 import {
   EVENT_SCOPED_STORAGE_KEYS,
   SLIDESHOW_AUDIENCE_MESSAGES,
 } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
-// Presenter concurrency-awareness refresh interval. This is not the
-// presenter's authoritative state transport (each command applies the
-// RPC's own directly-returned row -- see runControl below) -- it exists
-// only so a second open presenter console, or a future external actor,
-// is noticed at a coarse interval appropriate for a slow-moving
-// presentation control surface. It replaces the retired 500ms/1000ms
-// localStorage poll with something far less aggressive because it is no
-// longer the source of truth, merely a staleness check.
-const SESSION_REFRESH_INTERVAL_MS = 5000;
-const PHOTO_SIGNED_URL_TTL_SECONDS = 60 * 60;
+// One server-confirmed frame drives both previews and the paired audience.
+const SESSION_REFRESH_INTERVAL_MS = 1000;
 
 type PresentationDeck = {
   id: string;
@@ -55,11 +49,6 @@ type PresentationSessionItem = {
   content_ref_id: string | null;
   sequence_number: number;
   duration_ms: number;
-};
-
-type ResolvedPhoto = {
-  url: string | null;
-  caption: string | null;
 };
 
 type ManualDeckItem = {
@@ -226,47 +215,16 @@ function AdminSlideshowPageInner() {
   const [editDeckDurationSeconds, setEditDeckDurationSeconds] = useState(8);
   const [session, setSession] = useState<PresentationSession | null>(null);
   const [items, setItems] = useState<PresentationSessionItem[]>([]);
-  const [currentPhoto, setCurrentPhoto] = useState<ResolvedPhoto | null>(
-    null,
-  );
-  const [nextPhoto, setNextPhoto] = useState<ResolvedPhoto | null>(null);
+  const [preview, setPreview] = useState<PresentationFrame | null>(null);
+  const previewRef = useRef<{ sessionId: string; frame: PresentationFrame | null; readAt: number } | null>(null);
+  const loadedItemsSessionRef = useRef<string | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Presentation-diagnostic fix, revised after a semantic-ordering review.
-  // session/items/currentPhoto/nextPhoto are populated by independent
-  // async calls from four call sites (loadLiveSession's 5s interval +
-  // initial load, handleStart, and runControl's five RPCs), and
-  // loadSessionItems itself performs two SEQUENTIAL awaited network
-  // round-trips -- by far the slowest path of the four.
-  //
-  // Two distinct problems, two distinct mechanisms:
-  //
-  // 1. A REQUEST can be superseded by a newer one before it resolves
-  //    (e.g. a slow poll's photo-resolution completing after a manual
-  //    Next already moved on). `stateGenerationRef` is a monotonic
-  //    request-liveness stamp for this: claimed before async work,
-  //    checked before applying a result, discarded if stale. This is
-  //    the same discipline app/slideshow/view/page.tsx already uses
-  //    (its `cancelled` closure flags per effect), generalized to a
-  //    single ref because the guard spans multiple call sites, not one
-  //    effect's own cleanup. It is a REQUEST-ordering tool only.
-  //
-  // 2. Request order is NOT the same thing as server-state order.
-  //    Concretely: runControl claims its generation AFTER its mutation
-  //    RPC already resolved, so a slower poll that both claimed an
-  //    EARLIER generation and started its read earlier can still have
-  //    its (correctly-not-yet-stale-by-generation) response describe
-  //    OLDER server state than a mutation that resolves later. Freshness
-  //    must be decided by the durable, already-authoritative
-  //    `presentation_sessions.state_version` (strictly monotonic for a
-  //    session's lifetime; every governed mutation and the Stage 6A
-  //    timed-advance increment it by exactly one; a boundary no-op
-  //    correctly leaves it unchanged) -- never by which request merely
-  //    started or finished more recently. `acceptedSessionRef` is the
-  //    high-water mark for this: every candidate row, regardless of
-  //    origin, is checked against it before being applied.
+  // Request generation rejects work superseded by a command, Event switch,
+  // or effect cleanup. Server state_version independently rejects older rows
+  // even when their requests happened to finish last.
   const stateGenerationRef = useRef(0);
   const acceptedSessionRef = useRef<{ id: string; version: number } | null>(
     null,
@@ -281,6 +239,27 @@ function AdminSlideshowPageInner() {
   // not which request started/finished when" discipline acceptSessionRow
   // already uses for session rows.
   const eventIdRef = useRef<string | null>(null);
+
+  const publishPreview = useCallback((sessionId: string, frame: PresentationFrame | null) => {
+    previewRef.current = { sessionId, frame, readAt: Date.now() };
+    setPreview(frame);
+    const currentEventId = eventIdRef.current;
+    if (!currentEventId) { return; }
+    const link = audienceLinkFor(currentEventId);
+    const audience = audienceWindows.get(link);
+    if (audience && !audience.closed) {
+      audience.postMessage({ type: SLIDESHOW_AUDIENCE_MESSAGES.frame, link, sessionId, frame }, window.location.origin);
+    }
+  }, []);
+
+  const clearPreview = useCallback((notifyEnded = true) => {
+    if (notifyEnded && previewRef.current) {
+      publishPreview(previewRef.current.sessionId, presentationFrame({ session_active: false }));
+    }
+    previewRef.current = null;
+    loadedItemsSessionRef.current = null;
+    setPreview(null);
+  }, [publishPreview]);
 
   // The single gate every session row -- from a poll, Start, or any
   // control RPC -- must pass through before it is allowed to update
@@ -552,89 +531,46 @@ function AdminSlideshowPageInner() {
     setDeckActionBusy(false);
   }
 
-  // Resolves a photo slide's presentation-safe URL/caption the same way
-  // app/slideshow/view/page.tsx already does (signed storage URL +
-  // show_caption-gated admin/member caption fallback) -- reused here,
-  // not reinvented, and Presentation never copies this into its own
-  // durable state; it is looked up fresh every time.
-  const resolvePhoto = useCallback(
-    async (photoId: string | null): Promise<ResolvedPhoto | null> => {
-      if (!photoId) {
-        return null;
-      }
-
-      const { data, error: photoError } = await supabase
-        .from("event_photos")
-        .select("storage_path, member_caption, admin_caption, show_caption")
-        .eq("id", photoId)
-        .maybeSingle();
-
-      if (photoError || !data) {
-        return null;
-      }
-
-      const { data: signed } = await supabase.storage
-        .from("event-photos")
-        .createSignedUrl(data.storage_path, PHOTO_SIGNED_URL_TTL_SECONDS);
-
-      const caption = data.show_caption
-        ? data.admin_caption?.trim() || data.member_caption?.trim() || null
-        : null;
-
-      return { url: signed?.signedUrl ?? null, caption: caption || null };
-    },
-    [],
-  );
-
   const loadSessionItems = useCallback(
-    async (sessionId: string, currentIndex: number, generation: number) => {
-      const { data, error: itemsError } = await supabase
-        .from("presentation_session_items")
-        .select("id, content_type, content_ref_id, sequence_number, duration_ms")
-        .eq("session_id", sessionId)
-        .order("sequence_number", { ascending: true });
-
-      if (generation !== stateGenerationRef.current) {
-        return;
+    async (row: PresentationSession, generation: number) => {
+      const sessionId = row.id;
+      // Immutable session items serve the presenter's jump controls only.
+      // Display eligibility, Current and Next come exclusively from the public
+      // resolver, just as they do for an independently opened audience link.
+      if (loadedItemsSessionRef.current !== sessionId) {
+        const { data, error: itemsError } = await supabase
+          .from("presentation_session_items")
+          .select("id, content_type, content_ref_id, sequence_number, duration_ms")
+          .eq("session_id", sessionId)
+          .order("sequence_number", { ascending: true });
+        if (generation !== stateGenerationRef.current) { return; }
+        if (itemsError) { setItems([]); }
+        else { setItems(data || []); loadedItemsSessionRef.current = sessionId; }
       }
+      try {
+        const { data, error } = await supabase.rpc("read_public_presentation_session", { p_session_id: sessionId });
+        if (generation !== stateGenerationRef.current) { return; }
+        if (error) { throw error; }
+        const frame = presentationFrame(Array.isArray(data) ? data[0] : null);
+        if (!frame) { throw new Error("Invalid presentation response"); }
+        const accepted = acceptedSessionRef.current;
+        if (!accepted || accepted.id !== sessionId ||
+            (frame.session_active && frame.state_version! < accepted.version)) { return; }
+        if (frame.session_active) {
+          acceptSessionRow({ ...row, current_index: frame.sequence_number!,
+            state_version: frame.state_version!, playback_state: frame.playback_state! });
+        } else { acceptSessionRow(null); }
 
-      if (itemsError) {
-        console.error("Failed to load session items", itemsError);
-        setItems([]);
-        setCurrentPhoto(null);
-        setNextPhoto(null);
-        return;
+        publishPreview(sessionId, frame);
+      } catch {
+        if (generation === stateGenerationRef.current) {
+          // Both displays clear on a failed authority read; never keep a
+          // previously authorized photo indefinitely through a disconnection.
+          publishPreview(sessionId, null);
+        }
       }
-
-      const rows: PresentationSessionItem[] = data || [];
-      setItems(rows);
-
-      const current = rows.find((i) => i.sequence_number === currentIndex);
-      const nextIndex = rows.length > 0 ? (currentIndex + 1) % rows.length : null;
-      const next =
-        nextIndex === null
-          ? undefined
-          : rows.find((i) => i.sequence_number === nextIndex);
-
-      const resolvedCurrent =
-        current?.content_type === "photo"
-          ? await resolvePhoto(current.content_ref_id)
-          : null;
-      if (generation !== stateGenerationRef.current) {
-        return;
-      }
-      setCurrentPhoto(resolvedCurrent);
-
-      const resolvedNext =
-        next?.content_type === "photo"
-          ? await resolvePhoto(next.content_ref_id)
-          : null;
-      if (generation !== stateGenerationRef.current) {
-        return;
-      }
-      setNextPhoto(resolvedNext);
     },
-    [resolvePhoto],
+    [publishPreview],
   );
 
   // Session discovery/reconnect (Stage 5 Part 6): on load or refresh,
@@ -663,6 +599,7 @@ function AdminSlideshowPageInner() {
 
       if (sessionError) {
         console.error("Failed to load presentation session", sessionError);
+        if (previewRef.current) { publishPreview(previewRef.current.sessionId, null); }
         return;
       }
 
@@ -679,15 +616,14 @@ function AdminSlideshowPageInner() {
         return;
       }
 
-      if (row) {
-        await loadSessionItems(row.id, row.current_index, generation);
-      } else {
+      if (!row) {
         setItems([]);
-        setCurrentPhoto(null);
-        setNextPhoto(null);
+        clearPreview();
+      } else {
+        await loadSessionItems(row, generation);
       }
     },
-    [loadSessionItems],
+    [loadSessionItems, clearPreview, publishPreview],
   );
 
   // Presenter Restart State Repair (LEM CMD): on load/reload, ask whether
@@ -771,6 +707,7 @@ function AdminSlideshowPageInner() {
     setDecks(null);
     setSelectedDeckId("");
     setItems([]);
+    clearPreview(false);
     // session is only ever cleared/set through acceptSessionRow (its
     // documented single write path); a null row resets acceptedSessionRef.
     acceptSessionRow(null);
@@ -903,39 +840,31 @@ function AdminSlideshowPageInner() {
     if (!eventId || session?.status !== "live") {
       return;
     }
-    const sessionId = session.id;
+    let refreshing = false;
+    // Clearing the interval cannot stop a tick already awaiting advancement;
+    // this flag stops that tick from reading once its Event or session has
+    // been replaced, ended or unmounted.
+    let cancelled = false;
     const timer = setInterval(() => {
-      // Stage 6A: governed timed advance is driven primarily by the
-      // audience viewer's own required poll of
-      // read_public_presentation_session (that RPC performs the atomic
-      // advance-if-due check as an internal side effect -- see the
-      // 20260811430000 migration). This presenter-side call is a
-      // supplementary trigger, not a requirement: it only matters when
-      // no audience viewer is currently connected (e.g. rehearsal),
-      // and this presenter closing does NOT stop auto-advance as long
-      // as an audience screen remains open elsewhere.
+      // read_public_presentation_session performs the governed advance-if-due
+      // check. Paired audiences consume this very response, not a second poll.
+      if (refreshing) { return; }
+      refreshing = true;
       void (async () => {
         try {
-          const { error: heartbeatError } = await supabase.rpc(
-            "advance_presentation_session_if_due",
-            { p_session_id: sessionId },
-          );
-          if (heartbeatError) {
-            console.error(
-              "Failed to advance presentation session heartbeat",
-              heartbeatError,
-            );
+          if (!cancelled && eventIdRef.current === eventId) {
+            await loadLiveSession(eventId);
           }
-        } catch (heartbeatError) {
-          console.error(
-            "Failed to advance presentation session heartbeat",
-            heartbeatError,
-          );
+        } finally {
+          refreshing = false;
         }
       })();
-      void loadLiveSession(eventId);
     }, SESSION_REFRESH_INTERVAL_MS);
-    return () => clearInterval(timer);
+    return () => {
+      cancelled = true;
+      ++stateGenerationRef.current;
+      clearInterval(timer);
+    };
   }, [eventId, session?.status, session?.id, loadLiveSession]);
 
   // A presenter-opened audience window reports the session it shows once a
@@ -967,6 +896,11 @@ function AdminSlideshowPageInner() {
           window.location.origin,
         );
       }
+      const snapshot = previewRef.current;
+      if (snapshot && data.sessionId === snapshot.sessionId && Date.now() - snapshot.readAt < 2500) {
+        source.postMessage({ type: SLIDESHOW_AUDIENCE_MESSAGES.frame, link, ...snapshot }, window.location.origin);
+      }
+
     };
 
     window.addEventListener("message", handleMessage);
@@ -1044,6 +978,8 @@ function AdminSlideshowPageInner() {
       { p_deck_id: selectedDeckId },
     );
 
+    if (eventIdRef.current !== eventId) { setBusy(false); return; }
+
     if (startError) {
       showError(
         mapPresentationRpcError(
@@ -1062,7 +998,7 @@ function AdminSlideshowPageInner() {
     // applies it -- the version check only ever rejects an older row
     // for the SAME session id.
     if (acceptSessionRow(row)) {
-      await loadSessionItems(row.id, row.current_index, generation);
+      await loadSessionItems(row, generation);
     }
     showStatus("Presentation started.");
     setBusy(false);
@@ -1097,8 +1033,10 @@ function AdminSlideshowPageInner() {
       p_expected_version: session.state_version,
     });
 
+    if (eventIdRef.current !== eventId) { setBusy(false); return; }
+
     // End targets this session, not a slide position. A looping session's
-    // timed advance moves state_version between this console's 5s refreshes,
+    // timed advance moves state_version between this console's refreshes,
     // so a confirmed End retries once with the authoritative version when
     // the same session is still live. The RPC still enforces that version.
     if (
@@ -1112,6 +1050,7 @@ function AdminSlideshowPageInner() {
         .eq("id", session.id)
         .eq("status", "live")
         .maybeSingle();
+      if (eventIdRef.current !== eventId) { setBusy(false); return; }
       if (liveRow) {
         ({ data, error: controlError } = await supabase.rpc(rpcName, {
           p_session_id: session.id,
@@ -1119,6 +1058,8 @@ function AdminSlideshowPageInner() {
         }));
       }
     }
+
+    if (eventIdRef.current !== eventId) { setBusy(false); return; }
 
     if (controlError) {
       if (isStalePresentationVersionError(new Error(controlError.message))) {
@@ -1139,7 +1080,7 @@ function AdminSlideshowPageInner() {
     if (rpcName === "end_presentation_session") {
       // Bump the generation even though nothing here awaits further --
       // this is what invalidates any still-in-flight loadLiveSession
-      // (e.g. from the 5s interval) so a late-arriving stale response
+      // (e.g. from the periodic refresh) so a late-arriving stale response
       // cannot resurrect session/items/photo state after End.
       ++stateGenerationRef.current;
       // Presenter Restart State Repair: the ended session's own deck
@@ -1151,8 +1092,7 @@ function AdminSlideshowPageInner() {
       setRestartCandidateDeckId(session.deck_id);
       acceptSessionRow(null);
       setItems([]);
-      setCurrentPhoto(null);
-      setNextPhoto(null);
+      clearPreview();
       showStatus("Presentation ended.");
       setBusy(false);
       if (eventId) {
@@ -1170,7 +1110,7 @@ function AdminSlideshowPageInner() {
     // second presenter) already advanced further before this response
     // arrived -- correctly keeping the newer state on screen instead.
     if (acceptSessionRow(row)) {
-      await loadSessionItems(row.id, row.current_index, generation);
+      await loadSessionItems(row, generation);
     }
     if (successMessage) {
       showStatus(successMessage);
@@ -1203,15 +1143,9 @@ function AdminSlideshowPageInner() {
   const totalSlides = items.length;
   const isFirstSlide = session ? session.current_index <= 0 : true;
   const isLastSlide = session ? session.current_index >= totalSlides - 1 : true;
-  const isWrappedNextSlide =
-    Boolean(session && totalSlides > 0 && session.current_index === totalSlides - 1);
 
-  // Audience-launch transitional decision (Stage 5 Part 12, option B):
-  // the session id is appended as ?session=<id> so the URL shape is
-  // already correct for Stage 6, but app/slideshow/view/page.tsx does
-  // not read that param yet -- it is inert today, not functional live
-  // sync. The button is disabled entirely (not merely mislabeled) when
-  // there is no live session, since "launch the audience screen" would
+  // Audience links carry a session capability. Pairing is scoped to the
+  // opener's Event link and never discovers a session from an Event ID.
   // otherwise imply a live show that does not exist.
   const audienceUrl = session
     ? `/slideshow/view?session=${session.id}`
@@ -1707,75 +1641,26 @@ function AdminSlideshowPageInner() {
         </section>
       ) : null}
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-          gap: 16,
-          marginTop: 24,
-        }}
-      >
-        <div
-          style={{
-            border: "1px solid #444",
-            borderRadius: 8,
-            padding: 16,
-            minHeight: 320,
-          }}
-        >
-          <h3>Current Slide</h3>
-          {currentPhoto?.url ? (
-            <>
-              <img
-                src={currentPhoto.url}
-                alt="Current"
-                style={{ width: "100%", maxHeight: 340, objectFit: "contain" }}
-              />
-              {currentPhoto.caption ? (
-                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
-                  {currentPhoto.caption}
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <div style={{ opacity: 0.6, marginTop: 12 }}>
-              {isLive ? "No renderable content for this slide." : "No live presentation."}
-            </div>
-          )}
-        </div>
-
-        <div
-          style={{
-            border: "1px solid #444",
-            borderRadius: 8,
-            padding: 16,
-            minHeight: 320,
-          }}
-        >
-          <h3>Next Slide</h3>
-          {nextPhoto?.url ? (
-            <>
-              <img
-                src={nextPhoto.url}
-                alt="Next"
-                style={{ width: "100%", maxHeight: 340, objectFit: "contain" }}
-              />
-              {nextPhoto.caption ? (
-                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
-                  {nextPhoto.caption}
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <div style={{ opacity: 0.6, marginTop: 12 }}>
-              {isLive
-                ? isWrappedNextSlide
-                  ? "Next slide is the first slide."
-                  : "No renderable content for the next slide."
-                : "No live presentation."}
-            </div>
-          )}
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 16, marginTop: 24 }}>
+        {/* Stable photo keys retain the decoded Next image when it moves into
+            Current. CSS placement changes; the mounted image does not. */}
+        {(["current", "next"] as const).map((slot, index) => (
+          <h3 key={slot} style={{ gridColumn: index + 1, gridRow: 1 }}>{slot === "current" ? "Current Slide" : "Next Slide"}</h3>
+        ))}
+        {preview?.session_active && liveSessionId ? (
+          (["current", "next"] as const).map((slot, index) => {
+            const photoId = slot === "current" ? preview.current_content_ref_id : preview.next_content_ref_id;
+            const type = slot === "current" ? preview.current_content_type : preview.next_content_type;
+            // A one-photo loop has the same content in both panes. The second
+            // instance is distinct only in that special case.
+            const duplicate = slot === "next" && photoId === preview.current_content_ref_id;
+            return type === "photo" && photoId ? (
+              <PresentationSlideImage key={`${liveSessionId}:${photoId}${duplicate ? ":duplicate" : ""}`}
+                sessionId={liveSessionId} contentRefId={photoId} slot={slot}
+                caption={null} photographerName={null} previewColumn={index + 1} />
+            ) : <div key={`blank:${slot}`} style={{ gridColumn: index + 1, gridRow: 2, minHeight: 320, background: "#000" }} />;
+          })
+        ) : <div style={{ gridColumn: "1 / -1", minHeight: 320, opacity: 0.6 }}>{isLive ? "Loading presentation..." : "No live presentation."}</div>}
       </div>
 
       {isLive && items.length > 1 ? (

@@ -228,13 +228,12 @@ test("route remains shell-free (slideshow-view-mode class, no AdminRouteGuard/Ap
   assert.equal(/AppShell/.test(VIEWER_SOURCE), false);
 });
 
-test("presenter console does not call the anon-facing public read RPC", () => {
-  // Stage 6A legitimately references read_public_presentation_session
-  // BY NAME in an explanatory comment (relating it to the presenter's
-  // own advance_presentation_session_if_due heartbeat) -- strip
-  // comments so only a real call site would trip this.
-  const presenterNoComments = PRESENTER_SOURCE.replace(/\/\/.*$/gm, "");
-  assert.equal(/read_public_presentation_session/.test(presenterNoComments), false);
+test("the presenter relays the same governed server frame used by the audience", () => {
+  assert.match(PRESENTER_SOURCE, /"read_public_presentation_session"/);
+  assert.match(PRESENTER_SOURCE, /SLIDESHOW_AUDIENCE_MESSAGES.frame/);
+  assert.match(VIEWER_SOURCE, /data.sessionId !== sessionId/);
+  assert.match(VIEWER_SOURCE, /event.source !== opener/);
+  assert.match(VIEWER_SOURCE, /request !== generation/);
 });
 
 test("a presenter-opened window accepts a new session only from its opener, on this origin, for its own link", () => {
