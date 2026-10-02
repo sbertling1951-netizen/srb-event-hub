@@ -6,7 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 
 import { presentationFrame } from "../../../lib/presentationPlayback";
-import { SLIDESHOW_AUDIENCE_MESSAGES } from "../../../lib/storageKeys";
+import { SLIDESHOW_AUDIENCE_MESSAGES, STORAGE_KEYS } from "../../../lib/storageKeys";
 
 // Execute actual page functions/effects, with only the network, React state,
 // clock and windows replaced. Browser coverage separately checks reconciliation
@@ -142,6 +142,48 @@ test("delayed Start and control responses cannot publish into a newly selected E
   }
 });
 
+// The presenter's status-answer effect, run against an opened audience window.
+function pairingHarness(liveSessionId: string | null) {
+  const win: Record<string, unknown> = {};
+  const audience = { opener: win, sent: [] as unknown[], postMessage(message: unknown) { this.sent.push(message); } };
+  let handler!: (event: unknown) => void;
+  const lookups: Array<() => void> = [];
+  Object.assign(win, { location: { origin: "https://fixture.invalid" },
+    addEventListener: (_: string, fn: typeof handler) => { handler = fn; }, removeEventListener() {} });
+  const context = vm.createContext({
+    eventId: "event-A", liveSessionId, window: win, audienceWindows: new Map(), audienceLinkFor: () => LINK,
+    SLIDESHOW_AUDIENCE_MESSAGES, previewRef: { current: null }, Date,
+    loadLiveSession: () => new Promise<void>((resolve) => lookups.push(resolve)),
+    useEffect: (fn: () => void) => { fn(); },
+  });
+  const start = presenter.indexOf("  useEffect(() => {\n    if (!eventId) {\n      return;\n    }\n    const link = audienceLinkFor(eventId);");
+  const end = presenter.indexOf("  // Reuse this Event's audience window", start);
+  vm.runInContext(transpile(presenter.slice(start, end)), context);
+  const report = (sessionId: string, source: object = audience) => handler({ origin: "https://fixture.invalid", source,
+    data: { type: SLIDESHOW_AUDIENCE_MESSAGES.status, link: LINK, sessionId } });
+  return { audience, lookups, report };
+}
+
+test("an audience left on an ended show resumes when the show is restarted from another presenter tab", async () => {
+  const RESTARTED = "33333333-3333-4333-8333-333333333333";
+  // This tab ended the show; its audience still reports the ended session.
+  const ended = pairingHarness(null);
+  ended.report(SID); ended.report(SID);
+  assert.equal(ended.lookups.length, 1); // one governed lookup at a time
+  ended.lookups[0](); await settle();
+  ended.report(SID);
+  assert.equal(ended.lookups.length, 2);
+  // A window this tab did not open cannot drive lookups.
+  ended.report(SID, { opener: {}, postMessage() {} });
+  assert.equal(ended.lookups.length, 2);
+  // The lookup found the restarted session: the same window is handed it.
+  const restarted = pairingHarness(RESTARTED);
+  restarted.report(SID);
+  assert.equal(restarted.lookups.length, 0);
+  assert.equal(JSON.stringify(restarted.audience.sent),
+    JSON.stringify([{ type: SLIDESHOW_AUDIENCE_MESSAGES.session, link: LINK, sessionId: RESTARTED }]));
+});
+
 function audienceHarness() {
   let now = 0;
   let reads = 0;
@@ -218,4 +260,54 @@ test("relayed frames cannot contain image URLs, storage paths or credential fiel
   assert.equal(JSON.stringify(value).includes("secret"), false);
   assert.equal(JSON.stringify(value).includes("arbitrary"), false);
   assert.equal(presentationFrame({ ...frame(), current_content_ref_id: "not-an-id" }), null);
+});
+
+
+test("audience opening requests the selected window mode, preserves its opener, and reuses an open screen", () => {
+  const start = presenter.indexOf("  function openAudienceScreen()");
+  const end = presenter.indexOf("  // Reconcile after a stale state_version conflict", start);
+  for (const mode of ["tab", "window"]) {
+    const calls: unknown[][] = [];
+    const messages: unknown[] = [];
+    const audience = { closed: false, document: {}, focus() {}, postMessage(message: unknown) { messages.push(message); } };
+    const context = vm.createContext({ eventId: "event-A", liveSessionId: SID, audienceDisplayMode: mode,
+      audienceLinkFor: () => LINK, audienceWindows: new Map(), SLIDESHOW_AUDIENCE_MESSAGES,
+      window: { location: { origin: "https://fixture.invalid" }, open: (...args: unknown[]) => { calls.push(args); return audience; } },
+      showError: (message: string) => { throw new Error(message); } });
+    vm.runInContext(transpile(presenter.slice(start, end)), context);
+    vm.runInContext("openAudienceScreen(); openAudienceScreen();", context);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], `/slideshow/view?session=${SID}&link=${LINK}`);
+    assert.equal(calls[0][1], LINK);
+    assert.equal(calls[0][2], mode === "window" ? "popup=yes,width=1280,height=800" : undefined);
+    assert.equal(messages.length, 1);
+    audience.closed = true;
+    vm.runInContext("openAudienceScreen();", context);
+    assert.equal(calls.length, 2);
+  }
+});
+
+test("the audience display preference survives a presenter remount and unavailable storage still permits selection", () => {
+  const start = presenter.indexOf('  const [audienceDisplayMode, setAudienceDisplayMode]');
+  const end = presenter.indexOf('  const [decks, setDecks]', start);
+  const stored = new Map<string, string>();
+  for (const unavailable of [false, true]) {
+    const values: unknown[] = [];
+    const context = vm.createContext({ STORAGE_KEYS,
+      window: { localStorage: {
+        getItem: (key: string) => { if (unavailable) { throw new Error("blocked"); } return stored.get(key); },
+        setItem: (key: string, value: string) => { if (unavailable) { throw new Error("blocked"); } stored.set(key, value); },
+      } },
+      useState: (initial: unknown) => [initial, (value: unknown) => values.push(value)],
+      useEffect: (effect: () => void) => effect(),
+    });
+    vm.runInContext(transpile(presenter.slice(start, end)), context);
+    vm.runInContext('changeAudienceDisplayMode("window")', context);
+    assert.equal(values.at(-1), "window");
+    if (!unavailable) {
+      values.length = 0;
+      vm.runInContext(transpile(`(function(){${presenter.slice(start, end)}})()`), context);
+      assert.equal(values.at(-1), "window");
+    }
+  }
 });

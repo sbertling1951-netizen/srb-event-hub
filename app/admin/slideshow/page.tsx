@@ -16,6 +16,7 @@ import { type PresentationFrame,presentationFrame } from "@/lib/presentationPlay
 import {
   EVENT_SCOPED_STORAGE_KEYS,
   SLIDESHOW_AUDIENCE_MESSAGES,
+  STORAGE_KEYS,
 } from "@/lib/storageKeys";
 import { supabase } from "@/lib/supabase";
 
@@ -166,6 +167,21 @@ function AdminSlideshowPageInner() {
   useEffect(() => {
     syncCurrentAdminEvent();
   }, [syncCurrentAdminEvent]);
+
+  const [audienceDisplayMode, setAudienceDisplayMode] = useState<"tab" | "window">("tab");
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(STORAGE_KEYS.slideshowAudienceDisplayMode);
+      if (saved === "tab" || saved === "window") { setAudienceDisplayMode(saved); }
+    } catch {}
+  }, []);
+
+  function changeAudienceDisplayMode(mode: "tab" | "window") {
+    setAudienceDisplayMode(mode);
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.slideshowAudienceDisplayMode, mode);
+    } catch {}
+  }
 
   const [decks, setDecks] = useState<PresentationDeck[] | null>(null);
   const [selectedDeckId, setSelectedDeckId] = useState<string>("");
@@ -876,6 +892,10 @@ function AdminSlideshowPageInner() {
       return;
     }
     const link = audienceLinkFor(eventId);
+    // After End this tab stops refreshing, so a show restarted from another
+    // presenter tab or device would never reach the audience it opened. While
+    // that audience keeps reporting, look up this Event's live session.
+    let discovering = false;
 
     const handleMessage = (event: MessageEvent) => {
       const data = event.data;
@@ -890,6 +910,10 @@ function AdminSlideshowPageInner() {
         return;
       }
       audienceWindows.set(link, source);
+      if (!liveSessionId && !discovering) {
+        discovering = true;
+        void loadLiveSession(eventId).finally(() => { discovering = false; });
+      }
       if (liveSessionId && data.sessionId !== liveSessionId) {
         source.postMessage(
           { type: SLIDESHOW_AUDIENCE_MESSAGES.session, link, sessionId: liveSessionId },
@@ -905,7 +929,7 @@ function AdminSlideshowPageInner() {
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [eventId, liveSessionId]);
+  }, [eventId, liveSessionId, loadLiveSession]);
 
   // Reuse this Event's audience window while it is open; otherwise open one.
   // Must run from the click itself so the browser permits the popup.
@@ -942,6 +966,7 @@ function AdminSlideshowPageInner() {
       // Naming the window by its link lets a click right after a presenter
       // refresh reuse it rather than open a second one.
       link,
+      audienceDisplayMode === "window" ? "popup=yes,width=1280,height=800" : undefined,
     );
     if (!opened) {
       showError(
@@ -1707,12 +1732,24 @@ function AdminSlideshowPageInner() {
         }}
       >
         <div>
+          <label htmlFor="audience-display-mode" style={{ display: "block", marginBottom: 8 }}>
+            Open audience in
+          </label>
+          <select
+            id="audience-display-mode"
+            value={audienceDisplayMode}
+            onChange={(event) => changeAudienceDisplayMode(event.target.value as "tab" | "window")}
+            style={{ marginRight: 12, marginBottom: 8, padding: "10px 12px", background: "#111", color: "white", border: "1px solid #666", borderRadius: 6 }}
+          >
+            <option value="tab">Tab</option>
+            <option value="window">Separate window</option>
+          </select>
           <AppButton
             variant="success"
             disabled={!audienceUrl}
             title={
               audienceUrl
-                ? "Opens the legacy audience display. Full live-session sync arrives in Stage 6."
+                ? "Opens or reuses the audience screen for this presentation."
                 : "Start a presentation before opening the audience screen."
             }
             onClick={openAudienceScreen}
@@ -1721,8 +1758,8 @@ function AdminSlideshowPageInner() {
           </AppButton>
           {audienceUrl ? (
             <div style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>
-              Opens the current legacy audience display. Full live-session
-              sync arrives in Stage 6.
+              An open audience screen is reused. Close it to change where it opens.
+              Browser settings may affect whether a tab or window opens.
             </div>
           ) : null}
         </div>

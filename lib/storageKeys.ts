@@ -28,6 +28,7 @@ export const STORAGE_KEYS = {
   adminAccessCacheTime: "epicentrax-admin-access-cache-time",
 
   // --- Tier 5: canonical device-local preferences / handoffs (Cohort N2) ---
+  slideshowAudienceDisplayMode: "epicentrax-slideshow-audience-display-mode",
   adminEventsFilter: "epicentrax-admin-events-filter",
   adminReportPresets: "epicentrax-admin-report-presets",
   agendaItemDraftPrefix: "epicentrax-agenda-item-draft",

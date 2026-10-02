@@ -107,10 +107,12 @@ test("no Presentation localStorage command/state transport remains in the presen
       `found retired localStorage Presentation transport pattern: ${pattern}`,
     );
   }
-  // The interval that remains is a coarse durable-session refetch, not a
-  // localStorage poll -- assert no localStorage.getItem/setItem call
-  // survives anywhere in the presenter at all.
-  assert.equal(/localStorage\.(get|set)Item/.test(PAGE_SOURCE_NO_COMMENTS), false);
+  // Storage may remember the display preference, never playback or commands.
+  const storageCalls = PAGE_SOURCE_NO_COMMENTS.match(/localStorage\.(?:get|set)Item\([^)]*\)/g) ?? [];
+  assert.equal(storageCalls.length, 2);
+  for (const call of storageCalls) {
+    assert.match(call, /STORAGE_KEYS\.slideshowAudienceDisplayMode/);
+  }
 });
 
 test("Start routes through start_presentation_session", () => {

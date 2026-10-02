@@ -231,6 +231,36 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Audience restart discovery and display choice — 2026-10-01 (Validated; release authorized)
+
+- **Approved behavior:** an audience opened by a presenter can follow a show
+  restarted from another presenter tab while its original presenter remains
+  open on the Slideshow page. Its authenticated, origin/opener/link-checked
+  status message triggers the existing governed Event live-session read when
+  this presenter knows of no live session; only one lookup runs at a time.
+  The next status response supplies the new session ID. Audience session
+  discovery and image/caption authorization boundaries are unchanged.
+- **Display choice:** Open Audience Screen offers Tab or Separate window and
+  remembers the device-local preference using a registered storage key.
+  Existing screens are reused; close one before changing its opening mode.
+  Separate window requests popup sizing; browser preferences retain control.
+  This introduces no new playback state or database/schema changes.
+- **Evidence:** Mel verified 129/131 focused tests (the same two existing
+  presenter deck-authoring failures), changed-file ESLint and diff checks.
+  An isolated production build of the four-file product cohort passed with
+  placeholder Supabase credentials and a scratch-only dependency root setting.
+  The reported earlier Chromium/WebKit reconnect runs used mocked services;
+  they were not rerun for the selector. New behavioral tests verify both
+  opening modes, reuse/closed recovery, remembered choice and blocked storage.
+- **Limits:** Pap's exact reported failure is not conclusively attributed to
+  cross-tab restart. Native Safari/projector acceptance and newly added-photo
+  restart acceptance remain pending. A stopped paired viewer causes one
+  live-session lookup per second while its original presenter stays open.
+- **Delivery:** Pap authorized commit, push and deployment. GitHub main and
+  production release were checked at `1273885` before release; no migration
+  file changes are included. Deployment verification is pending. Existing
+  Sidebar changes and prior uncommitted Brief reconciliation remain excluded.
+
 ### Coordinated Current/Next preloading — 2026-09-29 (Validated; commit and deployment authorized)
 
 - **Pap's approved behavior:** the server supplies one Current/Next pair;
@@ -3526,16 +3556,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-09-29T20:09:39-06:00`
+**Generated at:** `2026-10-01T18:04:42-06:00`
 **Branch:** `codex/slideshow-vendor-activation-fixes`
-**Commit:** `f4b6176 Fix audience window reuse across slideshow restarts`
-**Commit date:** `2026-09-29T18:23:07-06:00`
-**origin/main:** `f4b6176`
+**Commit:** `1273885 Coordinate slideshow previews and audience preloading`
+**Commit date:** `2026-09-29T20:09:48-06:00`
+**origin/main:** `1273885`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
 **Tracked modified:** `7`
 **Staged:** `0`
-**Untracked:** `2`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
