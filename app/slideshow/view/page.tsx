@@ -266,7 +266,7 @@ function SlideshowSession({ sessionIdParam, link }: { sessionIdParam: string | n
     null,
   );
 
-  const wakeLockRef = useRef<any>(null);
+  const [wakeLockUnavailable, setWakeLockUnavailable] = useState(false);
 
   // Authoritative state: poll the public, anon-safe read contract by
   // session id from the URL. No Admin Event context is ever read here
@@ -453,48 +453,60 @@ function SlideshowSession({ sessionIdParam, link }: { sessionIdParam: string | n
   const isLive = publicState?.session_active === true;
 
   useEffect(() => {
-    let isMounted = true;
+    let cancelled = false;
+    let requesting = false;
+    let lock: WakeLockSentinel | null = null;
+    setWakeLockUnavailable(false);
+    if (!isLive) { return; }
+    if (!("wakeLock" in navigator)) {
+      setWakeLockUnavailable(true);
+      return;
+    }
 
     async function requestWakeLock() {
+      if (cancelled || requesting || document.visibilityState !== "visible" ||
+          (lock && !lock.released)) { return; }
+      requesting = true;
       try {
-        if (isLive && "wakeLock" in navigator) {
-          wakeLockRef.current = await (navigator as any).wakeLock.request(
-            "screen",
-          );
-
-          wakeLockRef.current?.addEventListener?.("release", () => {
-            console.warn("Wake Lock released");
-          });
-
-          console.warn("Wake Lock active");
+        const acquired = await navigator.wakeLock.request("screen");
+        // End, a session change or hiding the viewer may precede resolution.
+        // Never leave that late lock held by an abandoned effect.
+        if (cancelled || document.visibilityState !== "visible") {
+          await acquired.release();
+          return;
         }
-      } catch (error: any) {
-        if (error?.name === "NotAllowedError") {
-          console.warn("Wake Lock unavailable in this browser");
-        } else {
-          console.error("Wake Lock failed:", error);
+        lock = acquired;
+        setWakeLockUnavailable(false);
+        acquired.addEventListener("release", () => {
+          if (!cancelled && lock === acquired) {
+            lock = null;
+            setWakeLockUnavailable(true);
+          }
+        });
+        if (acquired.released) {
+          lock = null;
+          setWakeLockUnavailable(true);
         }
+      } catch {
+        if (!cancelled) { setWakeLockUnavailable(true); }
+      } finally {
+        requesting = false;
       }
     }
 
+    const handleVisibilityChange = () => { void requestWakeLock(); };
     void requestWakeLock();
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && isMounted && isLive) {
-        void requestWakeLock();
-      }
-    };
-
     document.addEventListener("visibilitychange", handleVisibilityChange);
-
+    // Retry released or denied locks while the live viewer is visible. A
+    // bounded interval avoids a tight loop when the OS refuses protection.
+    const timer = window.setInterval(() => { void requestWakeLock(); }, 5000);
     return () => {
-      isMounted = false;
+      cancelled = true;
+      window.clearInterval(timer);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-
-      if (wakeLockRef.current) {
-        void wakeLockRef.current.release();
-        wakeLockRef.current = null;
-      }
+      const held = lock;
+      lock = null;
+      if (held && !held.released) { void held.release().catch(() => {}); }
     };
   }, [isLive]);
 
@@ -535,6 +547,11 @@ function SlideshowSession({ sessionIdParam, link }: { sessionIdParam: string | n
         padding: 0,
       }}
     >
+      {isLive && wakeLockUnavailable ? (
+        <div role="status" style={{ position: "fixed", bottom: 16, left: 16, right: 16, zIndex: 10, padding: "8px 12px", background: "rgba(0,0,0,0.85)", color: "#fde68a", fontSize: 14, textAlign: "center" }}>
+          Keep-awake protection is unavailable. This device may sleep during the slideshow.
+        </div>
+      ) : null}
       <div
         style={{
           width: "100%",

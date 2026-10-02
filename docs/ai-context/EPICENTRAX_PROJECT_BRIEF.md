@@ -231,6 +231,27 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Browser keep-awake recovery — 2026-10-02 (Validated; commit and push authorized)
+
+- **Approved repair:** the live, visible slideshow audience requests a screen
+  wake lock and retries released or denied protection at a five-second
+  interval. Concurrent requests and duplicate held locks are prevented.
+  End, session replacement and unmount release held locks; late acquisitions
+  after cleanup or while hidden are released rather than leaked. An on-screen
+  warning reports unavailable protection. No additional application is needed.
+- **Validation:** 53/53 focused viewer/image/presenter behavioral tests pass,
+  including recovery, refusal, visibility, unsupported browsers and late
+  cleanup. Changed-file ESLint, diff checks and the isolated production build
+  pass with placeholder credentials and a scratch-only dependency root.
+- **Limits:** this repairs an established lifecycle gap, not a confirmed cause
+  of Pap's sleep incident. Native Safari/projector and Windows device acceptance
+  remain pending. Browser/OS policy can still deny protection. No schema,
+  database, tenant authority, photo eligibility or playback timing change.
+- **Delivery:** Pap authorized commit and push. Starting GitHub main was
+  `a3130b40a6669272af1701d4807429fd0728dd54`; the established push-to-main
+  webhook will deploy the product commit. Deployment verification is pending.
+  Existing Sidebar edits and earlier local Brief closeouts are excluded.
+
 ### Audience restart discovery and display choice — 2026-10-01 (Validated; release authorized)
 
 - **Approved behavior:** an audience opened by a presenter can follow a show
@@ -3556,16 +3577,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-10-01T18:04:42-06:00`
+**Generated at:** `2026-10-02T15:49:10-06:00`
 **Branch:** `codex/slideshow-vendor-activation-fixes`
-**Commit:** `1273885 Coordinate slideshow previews and audience preloading`
-**Commit date:** `2026-09-29T20:09:48-06:00`
-**origin/main:** `1273885`
+**Commit:** `a3130b4 Reconnect restarted slideshows and choose audience window mode`
+**Commit date:** `2026-10-01T18:04:49-06:00`
+**origin/main:** `a3130b4`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `7`
+**Tracked modified:** `5`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `1`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records

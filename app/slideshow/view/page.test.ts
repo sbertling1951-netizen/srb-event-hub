@@ -195,7 +195,7 @@ test("fullscreen support is preserved", () => {
 
 test("wake lock support is preserved and gated on live session, not a prerequisite for load", () => {
   assert.match(VIEWER_SOURCE, /wakeLock/);
-  assert.match(VIEWER_SOURCE, /NotAllowedError/);
+  assert.match(VIEWER_SOURCE, /Keep-awake protection is unavailable/);
 });
 
 test("cursor-hide/reveal audience behavior is preserved", () => {
