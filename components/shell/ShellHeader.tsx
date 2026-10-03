@@ -2,6 +2,7 @@ import type { RefObject } from "react";
 
 import { SHELL_NAV_DRAWER_ID } from "@/components/shell/ShellNav";
 import type { ShellConfig } from "@/components/shell/types";
+import { AppLinkButton } from "@/components/ui/AppButton";
 
 export type ShellHeaderProps = {
   config: ShellConfig;
@@ -100,15 +101,15 @@ export function ShellHeader({ config, isCompact, navOpen, onToggleNav, navTrigge
           ) : null}
 
           {backTarget ? (
-            <a href={backTarget.href} className="shell-back-action">
+            <AppLinkButton href={backTarget.href} variant="secondary" className="shell-back-action">
               ← {backTarget.label}
-            </a>
+            </AppLinkButton>
           ) : null}
 
           {homeAction ? (
-            <a href={homeAction.href} className="shell-back-action shell-home-action">
+            <AppLinkButton href={homeAction.href} variant="secondary" className="shell-back-action shell-home-action">
               {homeAction.label}
-            </a>
+            </AppLinkButton>
           ) : null}
 
           {brand.logoUrl ? (

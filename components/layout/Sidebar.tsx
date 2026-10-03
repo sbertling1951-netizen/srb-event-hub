@@ -706,8 +706,8 @@ export default function Sidebar() {
               : "translateX(0)",
           height: "100dvh",
           maxHeight: "100dvh",
-          background: "#1f2937",
-          color: "white",
+          background: "var(--color-bg-panel)",
+          color: "var(--color-text-primary)",
           transition: isMobile ? "transform 0.25s ease" : "none",
           zIndex: 1100,
           boxSizing: "border-box",
@@ -747,8 +747,8 @@ export default function Sidebar() {
                 marginBottom: isShortScreen ? 10 : 14,
                 padding: isShortScreen ? 8 : 10,
                 borderRadius: 10,
-                background: "rgba(255,255,255,0.08)",
-                border: "1px solid rgba(255,255,255,0.08)",
+                background: "var(--color-bg-muted)",
+                border: "1px solid var(--color-border-default)",
               }}
             >
               <div
@@ -775,13 +775,13 @@ export default function Sidebar() {
               </div>
 
               {currentEventLocation && (
-                <div style={{ fontSize: 12, color: "#d1d5db", marginTop: 4 }}>
+                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 4 }}>
                   {currentEventLocation}
                 </div>
               )}
 
               {currentEventDates && (
-                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
+                <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
                   {currentEventDates}
                 </div>
               )}
@@ -908,11 +908,11 @@ export default function Sidebar() {
                       marginBottom: 4,
                       borderRadius: 6,
                       textDecoration: "none",
-                      color: active ? "#fff" : "#d1d5db",
-                      background: active ? "#0b5cff" : "transparent",
+                      color: active ? "var(--color-nav-active-text)" : "var(--color-nav-text)",
+                      background: active ? "var(--color-nav-active-bg)" : "transparent",
                       fontSize: isShortScreen ? 13 : 14,
                       boxShadow: active
-                        ? "0 0 0 1px rgba(11,92,255,0.6), 0 4px 10px rgba(11,92,255,0.35)"
+                        ? "inset 0 0 0 1px var(--color-border-strong)"
                         : "none",
                       transform: active ? "translateX(2px)" : "none",
                       transition: "all 0.15s ease",
@@ -984,10 +984,10 @@ export default function Sidebar() {
               width: "100%",
               padding: "10px 12px",
               borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "#0f172a",
-              color: "#ffffff",
-              WebkitTextFillColor: "#ffffff",
+              border: "1px solid var(--color-border-default)",
+              background: "var(--color-action-secondary)",
+              color: "var(--color-text-primary)",
+              WebkitTextFillColor: "var(--color-text-primary)",
               fontWeight: 700,
               cursor: "pointer",
             }}

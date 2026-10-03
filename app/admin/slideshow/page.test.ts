@@ -263,7 +263,8 @@ test("deck archive routes through archive_presentation_deck", () => {
 });
 
 test("creating an all_approved deck never creates deck items or calls add_presentation_deck_photo", () => {
-  assert.equal(/add_presentation_deck_photo/.test(PAGE_SOURCE), false);
+  const creation = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("async function handleCreateDeck"), PAGE_SOURCE.indexOf("function startEditDeck"));
+  assert.equal(/add_presentation_deck_photo/.test(creation), false);
   assert.equal(
     /\.from\(\s*["']presentation_deck_items["']\s*\)\s*\.\s*insert/.test(PAGE_SOURCE),
     false,
@@ -506,10 +507,10 @@ test("no call site invokes loadSessionItems without a generation argument", () =
 test("Manual Selection exposes a touch-safe authoring surface while All Approved remains item-free", () => {
   assert.match(PAGE_SOURCE, /selectedDeck\?\.selection_mode === "manual"/);
   assert.match(PAGE_SOURCE, /aria-label="Manual deck authoring"/);
-  assert.match(PAGE_SOURCE, />Move Up</);
-  assert.match(PAGE_SOURCE, />Move Down</);
-  assert.match(PAGE_SOURCE, />Remove</);
-  assert.match(PAGE_SOURCE, />Add</);
+  assert.match(PAGE_SOURCE, />\s*Move Up\s*</);
+  assert.match(PAGE_SOURCE, />\s*Move Down\s*</);
+  assert.match(PAGE_SOURCE, />\s*Remove\s*</);
+  assert.match(PAGE_SOURCE, />\s*Add\s*</);
   assert.match(PAGE_SOURCE, /All Approved Photos/);
   assert.equal(
     /selectedDeck\?\.selection_mode === "all_approved"[\s\S]{0,300}Manual deck authoring/.test(PAGE_SOURCE),
@@ -558,9 +559,9 @@ test("empty Manual decks explain the required authoring step and disable their d
   );
 });
 
-test("presenter visibly identifies the canonical current Admin Event", () => {
-  assert.match(PAGE_SOURCE, /setEventName\(adminEvent\?\.name \?\? adminEvent\?\.eventName \?\? null\)/);
-  assert.match(PAGE_SOURCE, /Controlling event:/);
+test("presenter delegates Event identity to the canonical Admin shell", () => {
+  assert.match(PAGE_SOURCE, /<AdminShellAdapter/);
+  assert.equal(/Controlling event:|setEventName/.test(PAGE_SOURCE), false);
   assert.equal(/setCurrentAdminEvent/.test(PAGE_SOURCE), false);
 });
 
@@ -773,10 +774,18 @@ test("repeated button-row divs adopt the canonical FormActions primitive instead
   assert.ok((PAGE_SOURCE.match(/<FormActions>/g) || []).length >= 4);
 });
 
-test("the specialized dark presenter-console background and status-color vocabulary are preserved -- the Central UI Standard's light-surface Alert/Field label tokens are not force-adopted where they would render illegibly (dark-on-dark) against this page's own black background", () => {
-  assert.match(PAGE_SOURCE, /background: "#111"/);
-  assert.match(PAGE_SOURCE, /color: "#4ade80"/);
-  assert.match(PAGE_SOURCE, /color: "#f87171"/);
+test("presenter uses shared surfaces, labeled fields and announced feedback", () => {
+  assert.match(PAGE_SOURCE, /<Alert tone="info">\{status\}/);
+  assert.match(PAGE_SOURCE, /<Alert tone="danger">\{error\}/);
+  assert.match(PAGE_SOURCE, /<StatusBadge/);
+  assert.equal(/variant="(?:muted|success|start|stop)"/.test(PAGE_SOURCE), false);
+  assert.equal(/Governed by the durable|background: "#111"|background: "#161616"/.test(PAGE_SOURCE), false);
+  assert.equal((PAGE_SOURCE.match(/<Field label=/g) || []).length, 9);
+  assert.equal(/<select|<input(?![\s\S]{0,40}type="radio")/.test(PAGE_SOURCE), false);
+  const previews = PAGE_SOURCE.indexOf('<PageSection title="Presentation Preview">');
+  const controls = PAGE_SOURCE.indexOf('<PageSection title="Show Control">');
+  const preparation = PAGE_SOURCE.indexOf('<PageSection title="Prepare a Presentation">');
+  assert.ok(previews < controls && controls < preparation);
 });
 
 test("Open Audience Screen reuses this Event's open audience window and opens one only when it is missing or closed", () => {

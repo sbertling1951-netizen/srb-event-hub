@@ -5,9 +5,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import PresentationSlideImage from "@/app/slideshow/view/PresentationSlideImage";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { Field, Input, Select } from "@/components/ui/Field";
 import { FormActions } from "@/components/ui/FormActions";
+import { PageSection } from "@/components/ui/PageSection";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import {
   getCurrentAdminEvent,
   useAdminWorkingEventScope,
@@ -151,17 +155,15 @@ function AdminSlideshowPageInner() {
   // requiredTask -- this component never mounts without it already
   // being granted. What remains here is Event-context tracking for
   // this page's OWN data loading (deck list, live session, restart
-  // candidate) and its "Controlling event" label -- a separate concern
+  // candidate) -- a separate concern
   // from access, re-read on every Admin working-Event change via the
   // same canonical subscription so this page's own data reloads for
   // the newly selected Event, not to recheck authority.
   const [eventId, setEventId] = useState<string | null>(null);
-  const [eventName, setEventName] = useState<string | null>(null);
 
   const syncCurrentAdminEvent = useCallback(() => {
     const adminEvent = getCurrentAdminEvent();
     setEventId(adminEvent?.id ?? null);
-    setEventName(adminEvent?.name ?? adminEvent?.eventName ?? null);
   }, []);
 
   useEffect(() => {
@@ -1177,37 +1179,171 @@ function AdminSlideshowPageInner() {
     : null;
 
   return (
-    <div
-      style={{
-        background: "#111",
-        color: "white",
-      }}
-    >
-      <p style={{ opacity: 0.8 }}>
-        Governed by the durable Presentation deck/session foundation.
-      </p>
-      <p style={{ marginTop: -8, opacity: 0.7 }}>
-        Controlling event: <strong>{eventName || "Unnamed event"}</strong>
-      </p>
+    <div style={{ display: "grid", gap: 20 }}>
+      {status ? <Alert tone="info">{status}</Alert> : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
 
-      {status ? (
-        <div style={{ marginTop: 12, color: "#4ade80" }}>{status}</div>
-      ) : null}
-      {error ? (
-        <div style={{ marginTop: 12, color: "#f87171" }}>{error}</div>
-      ) : null}
+      <PageSection title="Presentation Preview">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 16 }}>
+          {/* Stable photo keys retain the decoded Next image when it moves into
+              Current. CSS placement changes; the mounted image does not. */}
+          {(["current", "next"] as const).map((slot, index) => (
+            <h3 key={slot} style={{ gridColumn: index + 1, gridRow: 1 }}>{slot === "current" ? "Current Slide" : "Next Slide"}</h3>
+          ))}
+          {preview?.session_active && liveSessionId ? (
+            (["current", "next"] as const).map((slot, index) => {
+              const photoId = slot === "current" ? preview.current_content_ref_id : preview.next_content_ref_id;
+              const type = slot === "current" ? preview.current_content_type : preview.next_content_type;
+              // A one-photo loop has the same content in both panes. The second
+              // instance is distinct only in that special case.
+              const duplicate = slot === "next" && photoId === preview.current_content_ref_id;
+              return type === "photo" && photoId ? (
+                <PresentationSlideImage key={`${liveSessionId}:${photoId}${duplicate ? ":duplicate" : ""}`}
+                  sessionId={liveSessionId} contentRefId={photoId} slot={slot}
+                  caption={null} photographerName={null} previewColumn={index + 1} />
+              ) : <div key={`blank:${slot}`} style={{ gridColumn: index + 1, gridRow: 2, minHeight: 320, background: "#000" }} />;
+            })
+          ) : <div style={{ gridColumn: "1 / -1", minHeight: isLive ? 320 : 80, color: "var(--color-text-muted)" }}>{isLive ? "Loading presentation..." : "No live presentation."}</div>}
+        </div>
 
-      {!isLive ? (
+        {isLive && items.length > 1 ? (
+          <div
+            style={{
+              marginTop: 16,
+              overflowX: "auto",
+              display: "flex",
+              gap: 6,
+              paddingBottom: 4,
+            }}
+          >
+            {items.map((item) => (
+              <div
+                key={item.id}
+                title={`Slide ${item.sequence_number + 1}`}
+                style={{
+                  flex: "0 0 auto",
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  background:
+                    item.sequence_number === session?.current_index
+                      ? "var(--color-selected)"
+                      : "var(--color-border-strong)",
+                }}
+              />
+            ))}
+          </div>
+        ) : null}
+
+      </PageSection>
+
+      <PageSection title="Show Control">
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+          <Field label="Open audience in">
+            {(controlProps) => (
+              <Select
+                {...controlProps}
+                value={audienceDisplayMode}
+                onChange={(event) => changeAudienceDisplayMode(event.target.value as "tab" | "window")}
+              >
+                <option value="tab">Tab</option>
+                <option value="window">Separate window</option>
+              </Select>
+            )}
+          </Field>
+          <AppButton
+            variant="primary"
+            disabled={!audienceUrl}
+            title={
+              audienceUrl
+                ? "Opens or reuses the audience screen for this presentation."
+                : "Start a presentation before opening the audience screen."
+            }
+            onClick={openAudienceScreen}
+          >
+            Open Audience Screen
+          </AppButton>
+          {audienceUrl ? (
+            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>
+              An open audience screen is reused. Close it to change where it opens.
+              Browser settings may affect whether a tab or window opens.
+            </div>
+          ) : null}
+        </div>
         <div
           style={{
-            marginTop: 24,
-            border: "1px solid #444",
-            borderRadius: 8,
-            padding: 20,
-            background: "#161616",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 12,
+            flexWrap: "wrap",
           }}
         >
-          <h3 style={{ marginTop: 0 }}>Start a Presentation</h3>
+          <StatusBadge tone={isLive ? (isPlaying ? "success" : "warning") : "neutral"}>
+            {isLive ? (isPlaying ? "Live" : "Paused") : "Not live"}
+          </StatusBadge>
+          {isLive ? (
+            <div style={{ opacity: 0.7, fontSize: 13 }}>
+              Slide {currentPosition} of {totalSlides}
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+            gap: 12,
+          }}
+        >
+          {isPlaying ? (
+            // Pause is an ordinary, reversible control action -- not a
+            // destructive/termination step -- so it takes the same
+            // secondary treatment as Previous, per AppButton's own
+            // "stop" scoping (reserved for a Dialog/ConfirmDialog
+            // Confirm step only, never a general "stop/end this" button).
+            <AppButton
+              variant="secondary"
+              onClick={handlePause}
+              disabled={!isLive || busy}
+            >
+              Pause
+            </AppButton>
+          ) : (
+            <AppButton
+              variant="primary"
+              onClick={handleResume}
+              disabled={!isLive || busy}
+            >
+              Resume
+            </AppButton>
+          )}
+          <AppButton
+            variant="secondary"
+            onClick={handlePrevious}
+            disabled={!isLive || busy || isFirstSlide}
+          >
+            ⬅ Previous
+          </AppButton>
+          <AppButton
+            variant="primary"
+            onClick={handleNext}
+            disabled={!isLive || busy || isLastSlide}
+          >
+            Next ➡
+          </AppButton>
+          <AppButton
+            variant="danger"
+            onClick={handleEnd}
+            disabled={!isLive || busy}
+          >
+            End Presentation
+          </AppButton>
+        </div>
+      </PageSection>
+
+      {!isLive ? (
+        <PageSection title="Prepare a Presentation">
 
           {decks === null ? (
             <div style={{ opacity: 0.7 }}>Loading presentation decks...</div>
@@ -1232,7 +1368,7 @@ function AdminSlideshowPageInner() {
                       <div
                         key={deck.id}
                         style={{
-                          border: "1px solid #4ade80",
+                          border: "1px solid var(--color-selected)",
                           borderRadius: 8,
                           padding: 12,
                         }}
@@ -1244,20 +1380,24 @@ function AdminSlideshowPageInner() {
                             gap: 8,
                           }}
                         >
-                          <input
-                            value={editDeckName}
-                            onChange={(e) => setEditDeckName(e.target.value)}
-                            placeholder="Deck name"
-                            style={{ padding: 8 }}
-                          />
-                          <input
-                            value={editDeckDescription}
-                            onChange={(e) =>
-                              setEditDeckDescription(e.target.value)
-                            }
-                            placeholder="Description (optional)"
-                            style={{ padding: 8 }}
-                          />
+                          <Field label="Deck name">
+                            {(controlProps) => (
+                              <Input
+                                {...controlProps}
+                                value={editDeckName}
+                                onChange={(e) => setEditDeckName(e.target.value)}
+                              />
+                            )}
+                          </Field>
+                          <Field label="Description (optional)">
+                            {(controlProps) => (
+                              <Input
+                                {...controlProps}
+                                value={editDeckDescription}
+                                onChange={(e) => setEditDeckDescription(e.target.value)}
+                              />
+                            )}
+                          </Field>
                           <div
                             style={{
                               display: "flex",
@@ -1266,41 +1406,29 @@ function AdminSlideshowPageInner() {
                               alignItems: "center",
                             }}
                           >
-                            <select
-                              value={editDeckSelectionMode}
-                              onChange={(e) =>
-                                setEditDeckSelectionMode(
-                                  e.target.value as "all_approved" | "manual",
-                                )
-                              }
-                              style={{ padding: 8 }}
-                            >
-                              <option value="all_approved">
-                                All Approved Photos
-                              </option>
-                              <option value="manual">Manual Selection</option>
-                            </select>
-                            <label
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 6,
-                              }}
-                            >
-                              Duration:
-                              <input
-                                type="number"
-                                min={1}
-                                value={editDeckDurationSeconds}
-                                onChange={(e) =>
-                                  setEditDeckDurationSeconds(
-                                    Number(e.target.value) || 1,
-                                  )
-                                }
-                                style={{ width: 70, padding: 8 }}
-                              />
-                              sec/slide
-                            </label>
+                            <Field label="Selection">
+                              {(controlProps) => (
+                                <Select
+                                  {...controlProps}
+                                  value={editDeckSelectionMode}
+                                  onChange={(e) => setEditDeckSelectionMode(e.target.value as "all_approved" | "manual")}
+                                >
+                                  <option value="all_approved">All Approved Photos</option>
+                                  <option value="manual">Manual Selection</option>
+                                </Select>
+                              )}
+                            </Field>
+                            <Field label="Duration (seconds/slide)">
+                              {(controlProps) => (
+                                <Input
+                                  {...controlProps}
+                                  type="number"
+                                  min={1}
+                                  value={editDeckDurationSeconds}
+                                  onChange={(e) => setEditDeckDurationSeconds(Number(e.target.value) || 1)}
+                                />
+                              )}
+                            </Field>
                           </div>
                           <FormActions>
                             <AppButton
@@ -1311,7 +1439,7 @@ function AdminSlideshowPageInner() {
                               Save
                             </AppButton>
                             <AppButton
-                              variant="muted"
+                              variant="secondary"
                               onClick={cancelEditDeck}
                               disabled={deckActionBusy}
                             >
@@ -1331,8 +1459,8 @@ function AdminSlideshowPageInner() {
                           flexWrap: "wrap",
                           border:
                             selectedDeckId === deck.id
-                              ? "1px solid #4ade80"
-                              : "1px solid #333",
+                              ? "1px solid var(--color-selected)"
+                              : "1px solid var(--color-border-default)",
                           borderRadius: 8,
                           padding: 12,
                         }}
@@ -1366,7 +1494,7 @@ function AdminSlideshowPageInner() {
                         </label>
                         <FormActions>
                           <AppButton
-                            variant="muted"
+                            variant="secondary"
                             onClick={() => startEditDeck(deck)}
                             disabled={deckActionBusy}
                           >
@@ -1400,7 +1528,7 @@ function AdminSlideshowPageInner() {
                   {isRestartCandidate ? "Start Again" : "Start Presentation"}
                 </AppButton>
                 <AppButton
-                  variant="muted"
+                  variant="secondary"
                   onClick={() => setShowCreateDeckForm((v) => !v)}
                   disabled={deckActionBusy}
                 >
@@ -1412,28 +1540,34 @@ function AdminSlideshowPageInner() {
                 <div
                   style={{
                     marginTop: 16,
-                    border: "1px solid #444",
+                    border: "1px solid var(--color-border-default)",
                     borderRadius: 8,
                     padding: 16,
-                    background: "#111",
+                    background: "var(--color-bg-muted)",
                   }}
                 >
                   <h4 style={{ marginTop: 0 }}>Create Deck</h4>
                   <div
                     style={{ display: "flex", flexDirection: "column", gap: 10 }}
                   >
-                    <input
-                      value={newDeckName}
-                      onChange={(e) => setNewDeckName(e.target.value)}
-                      placeholder="Deck name (e.g. Amana26 Slideshow)"
-                      style={{ padding: 8 }}
-                    />
-                    <input
-                      value={newDeckDescription}
-                      onChange={(e) => setNewDeckDescription(e.target.value)}
-                      placeholder="Description (optional)"
-                      style={{ padding: 8 }}
-                    />
+                    <Field label="Deck name">
+                      {(controlProps) => (
+                        <Input
+                          {...controlProps}
+                          value={newDeckName}
+                          onChange={(e) => setNewDeckName(e.target.value)}
+                        />
+                      )}
+                    </Field>
+                    <Field label="Description (optional)">
+                      {(controlProps) => (
+                        <Input
+                          {...controlProps}
+                          value={newDeckDescription}
+                          onChange={(e) => setNewDeckDescription(e.target.value)}
+                        />
+                      )}
+                    </Field>
                     <div
                       style={{
                         display: "flex",
@@ -1442,41 +1576,29 @@ function AdminSlideshowPageInner() {
                         alignItems: "flex-end",
                       }}
                     >
-                      <label
-                        style={{ display: "flex", flexDirection: "column", gap: 4 }}
-                      >
-                        Selection
-                        <select
-                          value={newDeckSelectionMode}
-                          onChange={(e) =>
-                            setNewDeckSelectionMode(
-                              e.target.value as "all_approved" | "manual",
-                            )
-                          }
-                          style={{ padding: 8 }}
-                        >
-                          <option value="all_approved">
-                            All Approved Photos
-                          </option>
-                          <option value="manual">Manual Selection</option>
-                        </select>
-                      </label>
-                      <label
-                        style={{ display: "flex", flexDirection: "column", gap: 4 }}
-                      >
-                        Duration (seconds/slide)
-                        <input
-                          type="number"
-                          min={1}
-                          value={newDeckDurationSeconds}
-                          onChange={(e) =>
-                            setNewDeckDurationSeconds(
-                              Number(e.target.value) || 1,
-                            )
-                          }
-                          style={{ width: 100, padding: 8 }}
-                        />
-                      </label>
+                      <Field label="Selection">
+                        {(controlProps) => (
+                          <Select
+                            {...controlProps}
+                            value={newDeckSelectionMode}
+                            onChange={(e) => setNewDeckSelectionMode(e.target.value as "all_approved" | "manual")}
+                          >
+                            <option value="all_approved">All Approved Photos</option>
+                            <option value="manual">Manual Selection</option>
+                          </Select>
+                        )}
+                      </Field>
+                      <Field label="Duration (seconds/slide)">
+                        {(controlProps) => (
+                          <Input
+                            {...controlProps}
+                            type="number"
+                            min={1}
+                            value={newDeckDurationSeconds}
+                            onChange={(e) => setNewDeckDurationSeconds(Number(e.target.value) || 1)}
+                          />
+                        )}
+                      </Field>
                     </div>
                     <div style={{ fontSize: 12, opacity: 0.7 }}>
                       {newDeckSelectionMode === "all_approved"
@@ -1497,21 +1619,14 @@ function AdminSlideshowPageInner() {
               ) : null}
             </>
           )}
-        </div>
+        </PageSection>
       ) : null}
 
       {!isLive && selectedDeck?.selection_mode === "manual" ? (
         <section
           aria-label="Manual deck authoring"
-          style={{
-            marginTop: 24,
-            border: "1px solid #444",
-            borderRadius: 8,
-            padding: 20,
-            background: "#161616",
-          }}
         >
-          <h3 style={{ marginTop: 0 }}>Manual Deck: {selectedDeck.name}</h3>
+          <PageSection title={`Manual Deck: ${selectedDeck.name}`}>
           <p style={{ marginTop: 0, opacity: 0.75 }}>
             Arrange the photos exactly as this presentation should play.
             Changes are saved to this event&apos;s deck before starting.
@@ -1551,7 +1666,7 @@ function AdminSlideshowPageInner() {
                         <div
                           key={item.id}
                           style={{
-                            border: "1px solid #333",
+                            border: "1px solid var(--color-border-default)",
                             borderRadius: 6,
                             padding: 10,
                             display: "flex",
@@ -1574,14 +1689,14 @@ function AdminSlideshowPageInner() {
                           </div>
                           <FormActions>
                             <AppButton
-                              variant="muted"
+                              variant="secondary"
                               onClick={() => void moveManualDeckItem(item.id, -1)}
                               disabled={manualDeckActionBusy || index === 0}
                             >
                               Move Up
                             </AppButton>
                             <AppButton
-                              variant="muted"
+                              variant="secondary"
                               onClick={() => void moveManualDeckItem(item.id, 1)}
                               disabled={
                                 manualDeckActionBusy ||
@@ -1629,7 +1744,7 @@ function AdminSlideshowPageInner() {
                         <div
                           key={photo.id}
                           style={{
-                            border: "1px solid #333",
+                            border: "1px solid var(--color-border-default)",
                             borderRadius: 6,
                             padding: 10,
                             display: "flex",
@@ -1663,202 +1778,9 @@ function AdminSlideshowPageInner() {
               </div>
             </div>
           )}
+          </PageSection>
         </section>
       ) : null}
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 16, marginTop: 24 }}>
-        {/* Stable photo keys retain the decoded Next image when it moves into
-            Current. CSS placement changes; the mounted image does not. */}
-        {(["current", "next"] as const).map((slot, index) => (
-          <h3 key={slot} style={{ gridColumn: index + 1, gridRow: 1 }}>{slot === "current" ? "Current Slide" : "Next Slide"}</h3>
-        ))}
-        {preview?.session_active && liveSessionId ? (
-          (["current", "next"] as const).map((slot, index) => {
-            const photoId = slot === "current" ? preview.current_content_ref_id : preview.next_content_ref_id;
-            const type = slot === "current" ? preview.current_content_type : preview.next_content_type;
-            // A one-photo loop has the same content in both panes. The second
-            // instance is distinct only in that special case.
-            const duplicate = slot === "next" && photoId === preview.current_content_ref_id;
-            return type === "photo" && photoId ? (
-              <PresentationSlideImage key={`${liveSessionId}:${photoId}${duplicate ? ":duplicate" : ""}`}
-                sessionId={liveSessionId} contentRefId={photoId} slot={slot}
-                caption={null} photographerName={null} previewColumn={index + 1} />
-            ) : <div key={`blank:${slot}`} style={{ gridColumn: index + 1, gridRow: 2, minHeight: 320, background: "#000" }} />;
-          })
-        ) : <div style={{ gridColumn: "1 / -1", minHeight: 320, opacity: 0.6 }}>{isLive ? "Loading presentation..." : "No live presentation."}</div>}
-      </div>
-
-      {isLive && items.length > 1 ? (
-        <div
-          style={{
-            marginTop: 16,
-            overflowX: "auto",
-            display: "flex",
-            gap: 6,
-            paddingBottom: 4,
-          }}
-        >
-          {items.map((item) => (
-            <div
-              key={item.id}
-              title={`Slide ${item.sequence_number + 1}`}
-              style={{
-                flex: "0 0 auto",
-                width: 10,
-                height: 10,
-                borderRadius: "50%",
-                background:
-                  item.sequence_number === session?.current_index
-                    ? "#4ade80"
-                    : "#444",
-              }}
-            />
-          ))}
-        </div>
-      ) : null}
-
-      <div
-        style={{
-          marginTop: 24,
-          border: "1px solid #444",
-          borderRadius: 8,
-          padding: 20,
-          background: "#161616",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 16,
-          flexWrap: "wrap",
-        }}
-      >
-        <div>
-          <label htmlFor="audience-display-mode" style={{ display: "block", marginBottom: 8 }}>
-            Open audience in
-          </label>
-          <select
-            id="audience-display-mode"
-            value={audienceDisplayMode}
-            onChange={(event) => changeAudienceDisplayMode(event.target.value as "tab" | "window")}
-            style={{ marginRight: 12, marginBottom: 8, padding: "10px 12px", background: "#111", color: "white", border: "1px solid #666", borderRadius: 6 }}
-          >
-            <option value="tab">Tab</option>
-            <option value="window">Separate window</option>
-          </select>
-          <AppButton
-            variant="success"
-            disabled={!audienceUrl}
-            title={
-              audienceUrl
-                ? "Opens or reuses the audience screen for this presentation."
-                : "Start a presentation before opening the audience screen."
-            }
-            onClick={openAudienceScreen}
-          >
-            Open Audience Screen
-          </AppButton>
-          {audienceUrl ? (
-            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>
-              An open audience screen is reused. Close it to change where it opens.
-              Browser settings may affect whether a tab or window opens.
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      <div
-        style={{
-          marginTop: 24,
-          border: "1px solid #444",
-          borderRadius: 8,
-          padding: 20,
-          background: "#161616",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            marginBottom: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <h3 style={{ margin: 0 }}>Show Control</h3>
-          <div
-            style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              background: isLive
-                ? isPlaying
-                  ? "#14532d"
-                  : "#78350f"
-                : "#3f3f46",
-              color: isLive ? (isPlaying ? "#4ade80" : "#fbbf24") : "#a1a1aa",
-              fontWeight: "bold",
-              fontSize: 12,
-            }}
-          >
-            {isLive ? (isPlaying ? "● LIVE" : "❙❙ PAUSED") : "○ NOT LIVE"}
-          </div>
-          {isLive ? (
-            <div style={{ opacity: 0.7, fontSize: 13 }}>
-              Slide {currentPosition} of {totalSlides}
-            </div>
-          ) : null}
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-            gap: 12,
-          }}
-        >
-          {isPlaying ? (
-            // Pause is an ordinary, reversible control action -- not a
-            // destructive/termination step -- so it takes the same
-            // secondary treatment as Previous, per AppButton's own
-            // "stop" scoping (reserved for a Dialog/ConfirmDialog
-            // Confirm step only, never a general "stop/end this" button).
-            <AppButton
-              variant="secondary"
-              onClick={handlePause}
-              disabled={!isLive || busy}
-            >
-              Pause
-            </AppButton>
-          ) : (
-            <AppButton
-              variant="primary"
-              onClick={handleResume}
-              disabled={!isLive || busy}
-            >
-              Resume
-            </AppButton>
-          )}
-          <AppButton
-            variant="muted"
-            onClick={handlePrevious}
-            disabled={!isLive || busy || isFirstSlide}
-          >
-            ⬅ Previous
-          </AppButton>
-          <AppButton
-            variant="primary"
-            onClick={handleNext}
-            disabled={!isLive || busy || isLastSlide}
-          >
-            Next ➡
-          </AppButton>
-          <AppButton
-            variant="danger"
-            onClick={handleEnd}
-            disabled={!isLive || busy}
-          >
-            End Presentation
-          </AppButton>
-        </div>
-      </div>
 
       <ConfirmDialog
         open={archiveConfirmDeck !== null}

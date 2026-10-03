@@ -41,7 +41,7 @@ function renderHeader(config: ShellConfig, isCompact: boolean): string {
 test("homeAction renders as a real link when present", () => {
   const config = baseConfig({ homeAction: { href: "/admin/dashboard", label: "Dashboard" } });
   const html = renderHeader(config, false);
-  assert.match(html, /<a href="\/admin\/dashboard" class="shell-back-action shell-home-action">Dashboard<\/a>/);
+  assert.match(html, /<a class="app-button app-button-secondary shell-back-action shell-home-action" href="\/admin\/dashboard">Dashboard<\/a>/);
 });
 
 test("homeAction renders nothing when null or absent -- no dead/empty markup", () => {
@@ -57,8 +57,8 @@ test("an explicit page backTarget and the role's homeAction render TOGETHER -- D
     homeAction: { href: "/admin/dashboard", label: "Dashboard" },
   });
   const html = renderHeader(config, false);
-  assert.match(html, /<a href="\/admin\/vendors" class="shell-back-action">← Vendor Management<\/a>/);
-  assert.match(html, /<a href="\/admin\/dashboard" class="shell-back-action shell-home-action">Dashboard<\/a>/);
+  assert.match(html, /<a class="app-button app-button-secondary shell-back-action" href="\/admin\/vendors">← Vendor Management<\/a>/);
+  assert.match(html, /<a class="app-button app-button-secondary shell-back-action shell-home-action" href="\/admin\/dashboard">Dashboard<\/a>/);
   // The back link must still appear before the home action, preserving
   // existing slot order rather than reordering around the new field.
   assert.ok(html.indexOf("Vendor Management") < html.indexOf(">Dashboard<"));
@@ -68,7 +68,7 @@ test("homeAction is present and identical in both desktop and compact/mobile pre
   const config = baseConfig({ homeAction: { href: "/admin/dashboard", label: "Dashboard" } });
   const desktop = renderHeader(config, false);
   const compact = renderHeader(config, true);
-  const homeLinkPattern = /<a href="\/admin\/dashboard" class="shell-back-action shell-home-action">Dashboard<\/a>/;
+  const homeLinkPattern = /<a class="app-button app-button-secondary shell-back-action shell-home-action" href="\/admin\/dashboard">Dashboard<\/a>/;
   assert.match(desktop, homeLinkPattern);
   assert.match(compact, homeLinkPattern);
 });

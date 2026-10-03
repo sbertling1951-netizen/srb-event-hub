@@ -4312,12 +4312,8 @@ body.slideshow-view-mode .app-header-card {
 }
 
 .shell-back-action {
-  font-size: var(--font-size-small);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-secondary);
-  text-decoration: none;
   flex-shrink: 0;
-  white-space: nowrap;
+  max-width: 100%;
 }
 
 .shell-brand-logo {
