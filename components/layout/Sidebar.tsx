@@ -399,16 +399,17 @@ export default function Sidebar() {
   }, [mounted, isAdminRoute, adminAccessLoading, sharedAdminAccess]);
 
   function clearKnownAppStorageKeys() {
-    // A global logout must remove BOTH the canonical key names and every
-    // legacy/retired key name (including the retired write-only orphans) so
-    // stale legacy identity/context state cannot resurrect.
+    // Clear canonical and legacy identity/context state. The remembered
+    // trust-device choice is a non-identity preference that survives logout.
     const keys = [
       ...Object.values(STORAGE_KEYS),
       ...Object.values(LEGACY_STORAGE_KEYS),
       ...RETIRED_LEGACY_STORAGE_KEYS,
     ];
     keys.forEach((key) => {
-      localStorage.removeItem(key);
+      if (key !== STORAGE_KEYS.memberTrustDevicePreference) {
+        localStorage.removeItem(key);
+      }
       sessionStorage.removeItem(key);
     });
   }

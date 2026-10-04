@@ -3960,7 +3960,7 @@ body.slideshow-view-mode .app-header-card {
 .shell-nav-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2);
 }
 
 .shell-nav {
@@ -4005,10 +4005,16 @@ body.slideshow-view-mode .app-header-card {
 
 .shell-nav-item {
   display: flex;
+  min-height: var(--touch-target-min);
+  width: 100%;
+  min-width: 0;
+  border: var(--border-width-default) solid var(--color-border-strong);
+  background: var(--color-action-secondary);
+  overflow-wrap: anywhere;
   align-items: center;
   gap: 10px;
   padding: var(--space-4) var(--space-5);
-  border-radius: 8px;
+  border-radius: var(--radius-medium);
   color: var(--color-text-primary);
   text-decoration: none;
   font-weight: var(--font-weight-semibold);
@@ -4020,6 +4026,7 @@ body.slideshow-view-mode .app-header-card {
 }
 
 .shell-nav-item-active {
+  border-color: var(--color-selected);
   background: var(--color-nav-active-bg);
   color: var(--color-nav-active-text);
 }
@@ -4031,7 +4038,7 @@ body.slideshow-view-mode .app-header-card {
 .shell-nav-item-row {
   display: flex;
   align-items: stretch;
-  gap: 2px;
+  gap: var(--space-1);
 }
 
 .shell-nav-item-row-parent .shell-nav-item {
@@ -4043,11 +4050,12 @@ body.slideshow-view-mode .app-header-card {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
+  width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
   flex-shrink: 0;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
+  border: var(--border-width-default) solid var(--color-border-strong);
+  border-radius: var(--radius-medium);
+  background: var(--color-action-secondary);
   color: var(--color-text-muted);
   cursor: pointer;
 }
@@ -4072,15 +4080,20 @@ body.slideshow-view-mode .app-header-card {
 .shell-nav-submenu {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 2px 0 4px var(--space-5);
+  gap: var(--space-2);
+  padding: var(--space-2) 0 var(--space-2) var(--space-5);
 }
 
 .shell-nav-subitem {
   display: flex;
+  min-height: var(--touch-target-min);
+  min-width: 0;
+  border: var(--border-width-default) solid var(--color-border-strong);
+  background: var(--color-action-secondary);
+  overflow-wrap: anywhere;
   align-items: center;
   padding: var(--space-3) var(--space-4);
-  border-radius: 8px;
+  border-radius: var(--radius-medium);
   color: var(--color-text-secondary, var(--color-text-primary));
   text-decoration: none;
   font-weight: var(--font-weight-medium, 500);
@@ -4092,6 +4105,7 @@ body.slideshow-view-mode .app-header-card {
 }
 
 .shell-nav-subitem-active {
+  border-color: var(--color-selected);
   background: var(--color-nav-active-bg);
   color: var(--color-nav-active-text);
 }

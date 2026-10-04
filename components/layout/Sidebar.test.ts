@@ -2,8 +2,36 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
+
+import { LEGACY_STORAGE_KEYS, RETIRED_LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "../../lib/storageKeys";
 
 const SOURCE = readFileSync(fileURLToPath(new URL("./Sidebar.tsx", import.meta.url)), "utf8");
+
+test("legacy sidebar logout preserves either trust-device choice while clearing all session and context keys", () => {
+  const cleanup = SOURCE.slice(
+    SOURCE.indexOf("  function clearKnownAppStorageKeys() {"),
+    SOURCE.indexOf("\n  function clearAllAppState()"),
+  );
+  const keys = [...Object.values(STORAGE_KEYS), ...Object.values(LEGACY_STORAGE_KEYS), ...RETIRED_LEGACY_STORAGE_KEYS];
+  for (const choice of ["true", "false", null]) {
+    const local = new Map<string, string>(keys.map((key) => [key, "old-state"]));
+    const session = new Map<string, string>(keys.map((key) => [key, "old-state"]));
+    if (choice === null) {
+      local.delete(STORAGE_KEYS.memberTrustDevicePreference);
+    } else {
+      local.set(STORAGE_KEYS.memberTrustDevicePreference, choice);
+    }
+    runInNewContext(`${cleanup}\nclearKnownAppStorageKeys();`, {
+      STORAGE_KEYS, LEGACY_STORAGE_KEYS, RETIRED_LEGACY_STORAGE_KEYS,
+      localStorage: { removeItem: (key: string) => local.delete(key) },
+      sessionStorage: { removeItem: (key: string) => session.delete(key) },
+    });
+    assert.equal(local.get(STORAGE_KEYS.memberTrustDevicePreference) ?? null, choice);
+    assert.equal(local.size, choice === null ? 0 : 1);
+    assert.equal(session.size, 0);
+  }
+});
 
 test("the legacy Sidebar mirrors canonical Tenant Administration discovery for Super Admin only", () => {
   assert.match(
