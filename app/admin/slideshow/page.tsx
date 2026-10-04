@@ -84,6 +84,7 @@ const PRESENTATION_ERROR_MESSAGES: Record<string, string> = {
     "A presentation is already live for this event. End it before starting another.",
   session_not_found: "That presentation session no longer exists.",
   session_not_live: "This presentation has already ended.",
+  invalid_slide: "That slide is not part of this presentation.",
   invalid_name: "Please enter a deck name.",
   invalid_default_duration_ms: "Slide duration must be between 1 and 300 seconds.",
   invalid_selection_mode: "Please choose a valid selection mode.",
@@ -1036,6 +1037,7 @@ function AdminSlideshowPageInner() {
     | "resume_presentation_session"
     | "next_presentation_slide"
     | "previous_presentation_slide"
+    | "jump_presentation_slide"
     | "end_presentation_session";
 
   // Shared control path for every session mutation after start. Always
@@ -1048,6 +1050,7 @@ function AdminSlideshowPageInner() {
     rpcName: ControlRpc,
     pendingMessage: string,
     successMessage: string,
+    args: Record<string, number> = {},
   ) {
     if (!session || busy) {
       return;
@@ -1058,6 +1061,7 @@ function AdminSlideshowPageInner() {
     let { data, error: controlError } = await supabase.rpc(rpcName, {
       p_session_id: session.id,
       p_expected_version: session.state_version,
+      ...args,
     });
 
     if (eventIdRef.current !== eventId) { setBusy(false); return; }
@@ -1156,6 +1160,12 @@ function AdminSlideshowPageInner() {
     runControl("next_presentation_slide", "Advancing...", "");
   const handlePrevious = () =>
     runControl("previous_presentation_slide", "Going back...", "");
+  // One atomic server move to an existing session position; the order fixed
+  // at Start and the playing/paused state are unchanged.
+  const handleJump = (sequenceNumber: number) =>
+    runControl("jump_presentation_slide", "Changing slide...", "", {
+      p_sequence_number: sequenceNumber,
+    });
 
   function handleEnd() {
     if (!session || busy) {
@@ -1208,30 +1218,62 @@ function AdminSlideshowPageInner() {
 
         {isLive && items.length > 1 ? (
           <div
+            role="group"
+            aria-label="Choose slide"
             style={{
               marginTop: 16,
-              overflowX: "auto",
               display: "flex",
-              gap: 6,
-              paddingBottom: 4,
+              flexWrap: "wrap",
             }}
           >
-            {items.map((item) => (
-              <div
-                key={item.id}
-                title={`Slide ${item.sequence_number + 1}`}
-                style={{
-                  flex: "0 0 auto",
-                  width: 10,
-                  height: 10,
-                  borderRadius: "50%",
-                  background:
-                    item.sequence_number === session?.current_index
-                      ? "var(--color-selected)"
-                      : "var(--color-border-strong)",
-                }}
-              />
-            ))}
+            <style>{`
+              .slideshow-dot:focus-visible {
+                outline: 2px solid var(--color-focus-ring);
+                outline-offset: -4px;
+              }
+            `}</style>
+            {/* Each dot keeps a full touch target around its small visual mark;
+                long decks wrap into rows so every dot stays visible. */}
+            {items.map((item) => {
+              const isCurrent = item.sequence_number === session?.current_index;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="slideshow-dot"
+                  aria-label={`Slide ${item.sequence_number + 1} of ${totalSlides}`}
+                  aria-current={isCurrent ? "true" : undefined}
+                  title={`Slide ${item.sequence_number + 1}`}
+                  disabled={busy}
+                  onClick={() => void handleJump(item.sequence_number)}
+                  style={{
+                    flex: "0 0 auto",
+                    width: "var(--touch-target-min)",
+                    height: "var(--touch-target-min)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 0,
+                    border: "none",
+                    borderRadius: 8,
+                    background: "transparent",
+                    cursor: busy ? "default" : "pointer",
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: isCurrent ? 14 : 10,
+                      height: isCurrent ? 14 : 10,
+                      borderRadius: "50%",
+                      background: isCurrent
+                        ? "var(--color-selected)"
+                        : "var(--color-border-strong)",
+                    }}
+                  />
+                </button>
+              );
+            })}
           </div>
         ) : null}
 

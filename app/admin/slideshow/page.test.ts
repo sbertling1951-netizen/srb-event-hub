@@ -814,3 +814,29 @@ test("the presenter answers only its own audience window, on this origin, for th
   assert.match(PAGE_SOURCE, /session\?\.status === "live" \? session\.id : null/);
   assert.equal(/postMessage\([^)]*["']\*["']/.test(PAGE_SOURCE_NO_COMMENTS), false);
 });
+
+test("slide dots are labeled buttons that jump through the governed server move", () => {
+  const dots = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf('role="group"\n            aria-label="Choose slide"'),
+    PAGE_SOURCE.indexOf('<PageSection title="Show Control">'),
+  );
+  assert.match(dots, /role="group"\s*aria-label="Choose slide"/);
+  // Long decks wrap within the presenter width instead of scrolling sideways.
+  assert.match(dots, /display: "flex",\s*flexWrap: "wrap"/);
+  assert.doesNotMatch(dots, /overflowX/);
+  assert.match(dots, /<button\s+key=\{item\.id\}\s+type="button"/);
+  assert.match(dots, /aria-label=\{`Slide \$\{item\.sequence_number \+ 1\} of \$\{totalSlides\}`\}/);
+  assert.match(dots, /aria-current=\{isCurrent \? "true" : undefined\}/);
+  assert.match(dots, /disabled=\{busy\}/);
+  assert.match(dots, /onClick=\{\(\) => void handleJump\(item\.sequence_number\)\}/);
+  assert.match(dots, /width: "var\(--touch-target-min\)",\s*height: "var\(--touch-target-min\)"/);
+  assert.match(dots, /\.slideshow-dot:focus-visible \{\s*outline: 2px solid var\(--color-focus-ring\)/);
+  assert.match(dots, /<span\s+aria-hidden="true"/);
+  // The selected slide is distinguished by size as well as color.
+  assert.match(dots, /width: isCurrent \? 14 : 10/);
+
+  const jump = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("const handleJump"), PAGE_SOURCE.indexOf("function handleEnd()"));
+  assert.match(jump, /runControl\("jump_presentation_slide", "Changing slide\.\.\.", "", \{\s*p_sequence_number: sequenceNumber,\s*\}\)/);
+  assert.doesNotMatch(jump, /next_presentation_slide|setInterval|setTimeout/);
+  assert.match(PAGE_SOURCE, /invalid_slide: "That slide is not part of this presentation\."/);
+});

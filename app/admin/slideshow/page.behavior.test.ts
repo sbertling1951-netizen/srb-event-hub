@@ -142,6 +142,45 @@ test("delayed Start and control responses cannot publish into a newly selected E
   }
 });
 
+function jumpHarness(response: { data: unknown; error: unknown }) {
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const h = presenterHarness();
+  let reconciled = 0;
+  Object.assign(h.context, {
+    session: { ...row, deck_id: "deck-A", current_index: 0, state_version: 5 },
+    reconcileAfterStaleVersion: async () => { reconciled++; },
+    isStalePresentationVersionError: (err: { message?: string }) => err?.message === "stale_version",
+    loadDecks() {}, setSelectedDeckId() {}, setRestartCandidateDeckId() {}, setStatus() {}, setError() {},
+  });
+  h.context.supabase = { ...h.context.supabase, rpc: async (name: string, args: Record<string, unknown>) => {
+    calls.push({ name, args });
+    return name === "jump_presentation_slide" ? response : { data: [frame()], error: null };
+  } };
+  return { calls, get state() { return h.state; }, get reconciled() { return reconciled; },
+    jump: (n: number) => vm.runInContext(`runControl("jump_presentation_slide", "", "", { p_sequence_number: ${n} })`, h.context) as Promise<void> };
+}
+
+test("a dot makes one atomic jump with the known version and adopts the server row, paused or playing", async () => {
+  for (const playback_state of ["playing", "paused"]) {
+    const moved = { ...row, deck_id: "deck-A", current_index: 2, state_version: 6, playback_state };
+    const h = jumpHarness({ data: moved, error: null });
+    await h.jump(2);
+    const jumps = h.calls.filter((call) => call.name === "jump_presentation_slide");
+    assert.equal(jumps.length, 1);
+    assert.equal(JSON.stringify(jumps[0].args), JSON.stringify({ p_session_id: SID, p_expected_version: 5, p_sequence_number: 2 }));
+    assert.equal(h.calls.some((call) => /next_presentation_slide|previous_presentation_slide/.test(call.name)), false);
+    assert.equal(h.state.current_index, 2);
+    assert.equal(h.state.playback_state, playback_state);
+  }
+});
+
+test("a stale jump reconciles with the server instead of adopting a guessed position", async () => {
+  const h = jumpHarness({ data: null, error: { message: "stale_version" } });
+  await h.jump(3);
+  assert.equal(h.reconciled, 1);
+  assert.equal(h.state, undefined);
+});
+
 // The presenter's status-answer effect, run against an opened audience window.
 function pairingHarness(liveSessionId: string | null) {
   const win: Record<string, unknown> = {};
