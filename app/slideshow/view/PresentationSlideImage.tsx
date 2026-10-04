@@ -2,6 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 
+// Presenter previews reserve this exact height whatever the photo's shape or
+// loading state, so the controls below them never move between slides.
+export const PREVIEW_HEIGHT = 340;
+
 type Props = {
   sessionId: string;
   contentRefId: string;
@@ -103,11 +107,11 @@ export default function PresentationSlideImage({
       style={{
         gridColumn: previewColumn,
         gridRow: previewColumn ? 2 : undefined,
-        minHeight: previewColumn ? 320 : undefined,
         background: previewColumn ? "#000" : undefined,
         position: "relative",
         width: "100%",
-        height: "100%",
+        height: previewColumn ? PREVIEW_HEIGHT : "100%",
+        overflow: previewColumn ? "hidden" : undefined,
         display: previewColumn || slot === "current" ? "flex" : "none",
         alignItems: "center",
         justifyContent: "center",
@@ -118,7 +122,7 @@ export default function PresentationSlideImage({
           <img
             src={imageSrc}
             alt={previewColumn ? (slot === "current" ? "Current" : "Next") : slot === "current" ? "Slideshow" : ""}
-            style={{ maxWidth: "100%", maxHeight: previewColumn ? 340 : "98vh", objectFit: "contain" }}
+            style={{ maxWidth: "100%", maxHeight: previewColumn ? PREVIEW_HEIGHT : "98vh", objectFit: "contain" }}
           />
           {visibleCaption && (previewColumn || slot === "current") ? (
             <div

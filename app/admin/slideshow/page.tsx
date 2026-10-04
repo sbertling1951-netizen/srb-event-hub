@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import PresentationSlideImage from "@/app/slideshow/view/PresentationSlideImage";
+import PresentationSlideImage, { PREVIEW_HEIGHT } from "@/app/slideshow/view/PresentationSlideImage";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { Alert } from "@/components/ui/Alert";
@@ -1190,9 +1190,6 @@ function AdminSlideshowPageInner() {
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      {status ? <Alert tone="info">{status}</Alert> : null}
-      {error ? <Alert tone="danger">{error}</Alert> : null}
-
       <PageSection title="Presentation Preview">
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 16 }}>
           {/* Stable photo keys retain the decoded Next image when it moves into
@@ -1211,9 +1208,9 @@ function AdminSlideshowPageInner() {
                 <PresentationSlideImage key={`${liveSessionId}:${photoId}${duplicate ? ":duplicate" : ""}`}
                   sessionId={liveSessionId} contentRefId={photoId} slot={slot}
                   caption={null} photographerName={null} previewColumn={index + 1} />
-              ) : <div key={`blank:${slot}`} style={{ gridColumn: index + 1, gridRow: 2, minHeight: 320, background: "#000" }} />;
+              ) : <div key={`blank:${slot}`} style={{ gridColumn: index + 1, gridRow: 2, height: PREVIEW_HEIGHT, background: "#000" }} />;
             })
-          ) : <div style={{ gridColumn: "1 / -1", minHeight: isLive ? 320 : 80, color: "var(--color-text-muted)" }}>{isLive ? "Loading presentation..." : "No live presentation."}</div>}
+          ) : <div style={{ gridColumn: "1 / -1", height: isLive ? PREVIEW_HEIGHT : undefined, minHeight: 80, color: "var(--color-text-muted)" }}>{isLive ? "Loading presentation..." : "No live presentation."}</div>}
         </div>
 
         {isLive && items.length > 1 ? (
@@ -1226,10 +1223,14 @@ function AdminSlideshowPageInner() {
               flexWrap: "wrap",
             }}
           >
+            {/* Keyboard focus draws a ring around the round marker, never a
+                square around the 45px target; box-shadow cannot move layout. */}
             <style>{`
               .slideshow-dot:focus-visible {
-                outline: 2px solid var(--color-focus-ring);
-                outline-offset: -4px;
+                outline: none;
+              }
+              .slideshow-dot:focus-visible > span {
+                box-shadow: 0 0 0 3px var(--color-bg-panel), 0 0 0 5px var(--color-focus-ring);
               }
             `}</style>
             {/* Each dot keeps a full touch target around its small visual mark;
@@ -1244,8 +1245,10 @@ function AdminSlideshowPageInner() {
                   aria-label={`Slide ${item.sequence_number + 1} of ${totalSlides}`}
                   aria-current={isCurrent ? "true" : undefined}
                   title={`Slide ${item.sequence_number + 1}`}
-                  disabled={busy}
-                  onClick={() => void handleJump(item.sequence_number)}
+                  // aria-disabled, not disabled: disabling the focused dot
+                  // would drop keyboard focus to the page during each jump.
+                  aria-disabled={busy || undefined}
+                  onClick={() => { if (!busy) { void handleJump(item.sequence_number); } }}
                   style={{
                     flex: "0 0 auto",
                     width: "var(--touch-target-min)",
@@ -1278,6 +1281,16 @@ function AdminSlideshowPageInner() {
         ) : null}
 
       </PageSection>
+
+      {/* Status sits below the previews and dots so its changes never move them.
+          While live, a one-line slot is kept so clearing a message cannot
+          shorten the page and pull the scroll position (and the dots) up. */}
+      {isLive || status || error ? (
+        <div style={{ display: "grid", gap: 20, minHeight: isLive ? 45 : undefined }}>
+          {status ? <Alert tone="info">{status}</Alert> : null}
+          {error ? <Alert tone="danger">{error}</Alert> : null}
+        </div>
+      ) : null}
 
       <PageSection title="Show Control">
         <div style={{ display: "flex", alignItems: "flex-end", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>

@@ -827,10 +827,14 @@ test("slide dots are labeled buttons that jump through the governed server move"
   assert.match(dots, /<button\s+key=\{item\.id\}\s+type="button"/);
   assert.match(dots, /aria-label=\{`Slide \$\{item\.sequence_number \+ 1\} of \$\{totalSlides\}`\}/);
   assert.match(dots, /aria-current=\{isCurrent \? "true" : undefined\}/);
-  assert.match(dots, /disabled=\{busy\}/);
-  assert.match(dots, /onClick=\{\(\) => void handleJump\(item\.sequence_number\)\}/);
+  // Busy dots stay focusable so a keyboard jump never drops focus to the page.
+  assert.match(dots, /aria-disabled=\{busy \|\| undefined\}/);
+  assert.doesNotMatch(dots, /\sdisabled=\{busy\}/);
+  assert.match(dots, /onClick=\{\(\) => \{ if \(!busy\) \{ void handleJump\(item\.sequence_number\); \} \}\}/);
   assert.match(dots, /width: "var\(--touch-target-min\)",\s*height: "var\(--touch-target-min\)"/);
-  assert.match(dots, /\.slideshow-dot:focus-visible \{\s*outline: 2px solid var\(--color-focus-ring\)/);
+  // Keyboard focus is a circular ring around the marker, not a square target outline.
+  assert.match(dots, /\.slideshow-dot:focus-visible \{\s*outline: none;\s*\}/);
+  assert.match(dots, /\.slideshow-dot:focus-visible > span \{\s*box-shadow: 0 0 0 3px var\(--color-bg-panel\), 0 0 0 5px var\(--color-focus-ring\);/);
   assert.match(dots, /<span\s+aria-hidden="true"/);
   // The selected slide is distinguished by size as well as color.
   assert.match(dots, /width: isCurrent \? 14 : 10/);
@@ -839,4 +843,29 @@ test("slide dots are labeled buttons that jump through the governed server move"
   assert.match(jump, /runControl\("jump_presentation_slide", "Changing slide\.\.\.", "", \{\s*p_sequence_number: sequenceNumber,\s*\}\)/);
   assert.doesNotMatch(jump, /next_presentation_slide|setInterval|setTimeout/);
   assert.match(PAGE_SOURCE, /invalid_slide: "That slide is not part of this presentation\."/);
+});
+
+test("slide changes cannot move the dots: fixed preview height and status below the dots", () => {
+  const image = readFileSync(fileURLToPath(new URL("../../slideshow/view/PresentationSlideImage.tsx", import.meta.url)), "utf8");
+  assert.match(image, /export const PREVIEW_HEIGHT = 340;/);
+  assert.match(image, /height: previewColumn \? PREVIEW_HEIGHT : "100%"/);
+  assert.match(image, /overflow: previewColumn \? "hidden" : undefined/);
+  assert.match(image, /maxWidth: "100%", maxHeight: previewColumn \? PREVIEW_HEIGHT : "98vh", objectFit: "contain"/);
+  assert.doesNotMatch(image, /minHeight: previewColumn/);
+
+  const preview = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf('<PageSection title="Presentation Preview">'),
+    PAGE_SOURCE.indexOf('<PageSection title="Show Control">'),
+  );
+  assert.match(preview, /gridRow: 2, height: PREVIEW_HEIGHT, background: "#000"/);
+  assert.match(preview, /height: isLive \? PREVIEW_HEIGHT : undefined/);
+  assert.doesNotMatch(preview, /minHeight: 320/);
+  // Previews come first; status and error messages follow the dots, in a slot
+  // reserved while live so clearing a message cannot pull the scroll position.
+  const page = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf('    <div style={{ display: "grid", gap: 20 }}>'));
+  assert.ok(page.indexOf('<PageSection title="Presentation Preview">') < page.indexOf('aria-label="Choose slide"'));
+  assert.ok(page.indexOf('aria-label="Choose slide"') < page.indexOf('<Alert tone="info">{status}</Alert>'));
+  assert.ok(page.indexOf('<Alert tone="danger">{error}</Alert>') < page.indexOf('<PageSection title="Show Control">'));
+  assert.equal(PAGE_SOURCE.match(/<Alert tone="info">\{status\}<\/Alert>/g)?.length, 1);
+  assert.match(page, /minHeight: isLive \? 45 : undefined/);
 });
