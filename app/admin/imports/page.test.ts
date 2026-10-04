@@ -520,7 +520,7 @@ test("lower-level semantic section headings and operational content are untouche
 test("the internal 'Back to Imports' door-return links are untouched -- they are page-local navigation between doors, unrelated to the shell-level backTarget", () => {
   const source = readSource();
   assert.equal((source.match(/Back to Imports/g) || []).length, 2);
-  assert.match(source, /<AppLinkButton variant="tertiary" href="\/admin\/imports">\s*\n\s*Back to Imports/);
+  assert.match(source, /<AppLinkButton variant="secondary" href="\/admin\/imports">\s*\n\s*Back to Imports/);
 });
 
 test("the guard, canonical shell mode, route doors, data/RPC contracts, review queue, and lifecycle wiring are all unchanged by this pass", () => {
@@ -778,7 +778,7 @@ test("regression: guard, shell, backTarget, routing doors, review/validation cal
   assert.match(source, /<DataTable caption="Governed import results">/);
   assert.match(source, /<DataTable caption="Imported data preview">/);
   assert.match(source, /<DataTable caption="Saved attendee list">/);
-  assert.match(source, /<AppLinkButton variant="tertiary" href="\/admin\/imports">\s*\n\s*Back to Imports/);
+  assert.match(source, /<AppLinkButton variant="secondary" href="\/admin\/imports">\s*\n\s*Back to Imports/);
 });
 
 // -- Central UI: Imports Interior, Slice 3 Results Card -------------------

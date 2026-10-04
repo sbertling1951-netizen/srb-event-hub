@@ -2185,7 +2185,7 @@ test("the Attendees Workspace entry area derives its links from getAdminNavItemC
   assert.match(source, /import \{ getAdminNavItemChildren \} from "@\/components\/shell\/navigation\/adminNav";/);
   assert.match(source, /const attendeesWorkspaceLinks = getAdminNavItemChildren\(admin, tenantAuthority, "attendees"\);/);
   assert.match(source, /\{attendeesWorkspaceLinks\.map\(\(link\) => \(/);
-  assert.match(source, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="default">/);
+  assert.match(source, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="secondary">/);
 });
 
 test("the Attendees Workspace section renders only when at least one link is visible -- never an empty dead section", () => {

@@ -489,7 +489,7 @@ function AgendaImportDoor() {
           Open Agenda Import
         </AppLinkButton>
         <TemplateDownloadList files={AGENDA_TEMPLATE_FILES} />
-        <AppLinkButton variant="tertiary" href="/admin/imports">
+        <AppLinkButton variant="secondary" href="/admin/imports">
           Back to Imports
         </AppLinkButton>
       </div>
@@ -1466,7 +1466,7 @@ function AdminAttendeeImportsPageInner() {
               Governed workflow: Stage 2 normalize -&gt; Stage 1 stage -&gt; Stage 3 commit -&gt; Stage 3.1 failure recording -&gt; Stage 1.1 recovery.
             </p>
           </div>
-          <AppLinkButton variant="tertiary" href="/admin/imports">
+          <AppLinkButton variant="secondary" href="/admin/imports">
             Back to Imports
           </AppLinkButton>
         </div>

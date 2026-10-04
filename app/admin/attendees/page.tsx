@@ -1968,10 +1968,10 @@ export function AttendeeRecordWorkspace(props: {
           </StatusBadge>
         </div>
         <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
-          <AppLinkButton href={attendeeOwnerHrefs(state.id).checkin}>
+          <AppLinkButton href={attendeeOwnerHrefs(state.id).checkin} variant="secondary">
             View in Check-In
           </AppLinkButton>
-          <AppLinkButton href={attendeeOwnerHrefs(state.id).parking}>
+          <AppLinkButton href={attendeeOwnerHrefs(state.id).parking} variant="secondary">
             View in Parking
           </AppLinkButton>
         </div>
@@ -4764,7 +4764,7 @@ created_at
         <PageSection variant="card" title="Attendees Workspace">
           <FormActions>
             {attendeesWorkspaceLinks.map((link) => (
-              <AppLinkButton key={link.id} href={link.href} variant="default">
+              <AppLinkButton key={link.id} href={link.href} variant="secondary">
                 {link.label}
               </AppLinkButton>
             ))}

@@ -167,7 +167,7 @@ test("the Map Opening Scale Settings form uses the canonical Field/Input/FormAct
 
 test("Create New Master Map uses a real Next Link styled as a button (client-side transition preserved), not a <button> nested inside an <a>", () => {
   assert.equal(/<Link href="\/admin\/master-maps\/new">\s*\n\s*<button/.test(PAGE_SOURCE), false);
-  assert.match(PAGE_SOURCE, /<Link href="\/admin\/master-maps\/new" className="app-button">/);
+  assert.match(PAGE_SOURCE, /<Link href="\/admin\/master-maps\/new" className="app-button app-button-secondary">/);
 });
 
 test("loading and empty presentations use the canonical LoadingState/EmptyState primitives", () => {

@@ -209,7 +209,7 @@ export function VendorWorkspaceSection({
     <PageSection variant="card" title="Vendor Workspace">
       <FormActions>
         {vendorWorkspaceLinks.map((link) => (
-          <AppLinkButton key={link.id} href={link.href} variant="default">
+          <AppLinkButton key={link.id} href={link.href} variant="secondary">
             {link.label}
           </AppLinkButton>
         ))}

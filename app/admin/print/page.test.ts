@@ -219,7 +219,7 @@ test("printing itself (window.print) remains ungated, unchanged -- Print Center'
 // never a copy of the Print Settings check's own state/refs.
 
 test("the Dashboard link remains present and unconditional -- untouched by this change", () => {
-  assert.match(source, /<Link href="\/admin\/dashboard" className="app-button">\s*\n\s*← Dashboard\s*\n\s*<\/Link>/);
+  assert.match(source, /<Link href="\/admin\/dashboard" className="app-button app-button-secondary">\s*\n\s*← Dashboard\s*\n\s*<\/Link>/);
 });
 
 test("Print Settings retains its exact event.print.manage behavior, unmodified by the Reports-link addition", () => {
@@ -252,7 +252,7 @@ test("Reports is omitted, not disabled/errored/fallback-gated, when it is absent
 
   assert.match(
     navBlock,
-    /\{canViewReports \? \(\s*\n\s*<Link href="\/admin\/reports" className="app-button">\s*\n\s*Reports\s*\n\s*<\/Link>\s*\n\s*\) : null\}/,
+    /\{canViewReports \? \(\s*\n\s*<Link href="\/admin\/reports" className="app-button app-button-secondary">\s*\n\s*Reports\s*\n\s*<\/Link>\s*\n\s*\) : null\}/,
   );
   assert.equal(/disabled/i.test(navBlock), false);
   assert.equal(/aria-disabled/.test(navBlock), false);
@@ -354,8 +354,8 @@ test("no raw <button> remains outside the print-area -- every control action use
 
 test("navigation links use the canonical .app-button class via Link (client-side transition preserved), not a page-local navigationLinkStyle", () => {
   assert.equal(/navigationLinkStyle/.test(source), false);
-  assert.match(source, /<Link href="\/admin\/dashboard" className="app-button">/);
-  assert.match(source, /<Link href="\/admin\/reports" className="app-button">/);
+  assert.match(source, /<Link href="\/admin\/dashboard" className="app-button app-button-secondary">/);
+  assert.match(source, /<Link href="\/admin\/reports" className="app-button app-button-secondary">/);
 });
 
 test("the page-local isMobile resize listener is gone -- replaced by the shared useShellInterfaceCapabilities() hook", () => {

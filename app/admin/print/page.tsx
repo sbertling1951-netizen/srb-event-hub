@@ -1077,16 +1077,16 @@ function AdminPrintPageInner() {
           flexWrap: "wrap",
         }}
       >
-        <Link href="/admin/dashboard" className="app-button">
+        <Link href="/admin/dashboard" className="app-button app-button-secondary">
           ← Dashboard
         </Link>
         {canViewReports ? (
-          <Link href="/admin/reports" className="app-button">
+          <Link href="/admin/reports" className="app-button app-button-secondary">
             Reports
           </Link>
         ) : null}
         {canManagePrintSettings ? (
-          <Link href="/admin/print-settings" className="app-button">
+          <Link href="/admin/print-settings" className="app-button app-button-secondary">
             Print Settings
           </Link>
         ) : null}

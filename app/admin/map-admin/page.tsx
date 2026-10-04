@@ -54,7 +54,7 @@ export function MapsWorkspaceSection({
       </p>
       <FormActions>
         {mapsWorkspaceLinks.map((link) => (
-          <AppLinkButton key={link.id} href={link.href} variant="default">
+          <AppLinkButton key={link.id} href={link.href} variant="secondary">
             {link.label}
           </AppLinkButton>
         ))}

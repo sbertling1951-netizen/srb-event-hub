@@ -78,7 +78,7 @@ test("photos consume the shared cache, derive counts, and sign review images on 
   assert.equal(/createSignedUrl\(/.test(PAGE_SOURCE), false);
 });
 
-test("photos use Next Link for the Photo Library navigation", () => {
+test("photos retain Next Link for the button-styled Photo Library navigation", () => {
   assert.match(PAGE_SOURCE, /<Link\s+href="\/admin\/photo-library"/);
   assert.equal(/<a\s+href="\/admin\/photo-library"/.test(PAGE_SOURCE), false);
 });
@@ -158,8 +158,8 @@ test("an explicit EmptyState covers an empty review queue, distinct from the toa
 });
 
 test("both same-app nav links (Slideshow, Photo Library) use Next Link with the canonical .app-button class, not a raw hardcoded-hex <a>", () => {
-  assert.match(PAGE_SOURCE, /<Link href="\/admin\/slideshow" className="app-button">/);
-  assert.match(PAGE_SOURCE, /<Link href="\/admin\/photo-library" className="app-button">/);
+  assert.match(PAGE_SOURCE, /<Link href="\/admin\/slideshow" className="app-button app-button-secondary">/);
+  assert.match(PAGE_SOURCE, /<Link href="\/admin\/photo-library" className="app-button app-button-secondary">/);
   assert.equal(/backgroundColor:\s*#/.test(PAGE_SOURCE), false, "no inline hex background should remain");
 });
 
@@ -215,8 +215,8 @@ test("an admin whose canonical Photos gate passes renders the Photos Workspace s
     createElement(PhotosWorkspaceSection, { admin, tenantAuthority: null }),
   );
 
-  assert.match(html, /<a class="app-button" href="\/admin\/photo-library">Photo Library<\/a>/);
-  assert.match(html, /<a class="app-button" href="\/admin\/slideshow">Slideshow<\/a>/);
+  assert.match(html, /<a class="app-button app-button-secondary" href="\/admin\/photo-library">Photo Library<\/a>/);
+  assert.match(html, /<a class="app-button app-button-secondary" href="\/admin\/slideshow">Slideshow<\/a>/);
   assert.match(html, /Photos Workspace/);
 });
 
@@ -272,9 +272,9 @@ test("no hardcoded child href or second permission/visibility decision exists in
   assert.match(sectionSource, /\{photosWorkspaceLinks\.map\(\(link\) => \(/);
 });
 
-test("the pre-existing hardcoded 'Launch Slideshow' and 'Photo Library' operational buttons are untouched -- the known unconditional Slideshow-link/task mismatch is neither hidden nor fixed here", () => {
-  assert.match(PAGE_SOURCE, /<Link href="\/admin\/slideshow" className="app-button">/);
-  assert.match(PAGE_SOURCE, /<Link href="\/admin\/photo-library" className="app-button">/);
+test("the pre-existing hardcoded 'Launch Slideshow' and 'Photo Library' operational destinations retain button styling -- the known unconditional Slideshow-link/task mismatch is neither hidden nor fixed here", () => {
+  assert.match(PAGE_SOURCE, /<Link href="\/admin\/slideshow" className="app-button app-button-secondary">/);
+  assert.match(PAGE_SOURCE, /<Link href="\/admin\/photo-library" className="app-button app-button-secondary">/);
   assert.match(PAGE_SOURCE, />\s*Launch Slideshow\s*</);
   assert.match(PAGE_SOURCE, />\s*Photo Library\s*</);
 });
@@ -290,7 +290,7 @@ test("the Photos Workspace entry area uses only established shared primitives --
 
   assert.match(sectionSource, /<PageSection variant="card" title="Photos Workspace">/);
   assert.match(sectionSource, /<FormActions>/);
-  assert.match(sectionSource, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="default">/);
+  assert.match(sectionSource, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="secondary">/);
 });
 
 test("the route guard, shell adapter, and page title remain exactly as before -- no double shell, no bespoke guard", () => {

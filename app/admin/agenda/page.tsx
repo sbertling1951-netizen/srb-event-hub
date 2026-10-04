@@ -584,7 +584,7 @@ export function AgendaWorkspaceSection({
     <PageSection variant="card" title="Agenda Workspace">
       <FormActions>
         {agendaWorkspaceLinks.map((link) => (
-          <AppLinkButton key={link.id} href={link.href} variant="default">
+          <AppLinkButton key={link.id} href={link.href} variant="secondary">
             {link.label}
           </AppLinkButton>
         ))}
@@ -2869,7 +2869,7 @@ function AdminAgendaPageInner() {
               through the other door. Navigation only; carries no
               authority (event.agenda.manage is enforced independently by
               whichever door the operator actually uses). */}
-          <AppLinkButton variant="tertiary" href={buildImportsHref("agenda")}>
+          <AppLinkButton variant="secondary" href={buildImportsHref("agenda")}>
             Browse Imports
           </AppLinkButton>
         </div>

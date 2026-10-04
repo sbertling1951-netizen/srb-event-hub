@@ -1263,7 +1263,7 @@ test("an unrecognized or missing ?mode value falls back to the ordinary default 
 
 test("Agenda offers a reciprocal contextual link into the shared Imports Service Center's Agenda door, carrying no authority of its own", () => {
   assert.match(PAGE_SOURCE, /import\s*\{\s*buildImportsHref\s*\}\s*from\s*"@\/lib\/importTypeRouting"/);
-  assert.match(PAGE_SOURCE, /<AppLinkButton variant="tertiary" href=\{buildImportsHref\("agenda"\)\}>/);
+  assert.match(PAGE_SOURCE, /<AppLinkButton variant="secondary" href=\{buildImportsHref\("agenda"\)\}>/);
 });
 
 test("Agenda's own Import Agenda tab still directly renders AgendaImportPanel -- the shared door does not replace the domain's existing entry point", () => {
@@ -1316,7 +1316,7 @@ test("an admin with Agenda management authority renders the Agenda Workspace sec
     createElement(AgendaWorkspaceSection, { admin, tenantAuthority: null }),
   );
 
-  assert.match(html, /<a class="app-button" href="\/admin\/agenda\/categories">Agenda Categories<\/a>/);
+  assert.match(html, /<a class="app-button app-button-secondary" href="\/admin\/agenda\/categories">Agenda Categories<\/a>/);
   assert.match(html, /Agenda Workspace/);
 });
 
@@ -1387,7 +1387,7 @@ test("the Agenda Workspace entry area uses only established shared primitives --
 
   assert.match(sectionSource, /<PageSection variant="card" title="Agenda Workspace">/);
   assert.match(sectionSource, /<FormActions>/);
-  assert.match(sectionSource, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="default">/);
+  assert.match(sectionSource, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="secondary">/);
 });
 
 test("the bare route guard, shell adapter, title/subtitle, and back target are preserved unchanged", () => {

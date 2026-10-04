@@ -55,7 +55,9 @@ test("no hand-applied legacy style objects or app-button class strings remain", 
   ]) {
     assert.equal(source.includes(legacyStyleConst), false, `${legacyStyleConst} should be removed`);
   }
-  assert.equal(/className="app-button app-button-/.test(source), false);
+  // Next Link retains client-side navigation with the shared secondary class.
+  const withoutTenantNavigation = source.replace('<Link href="/admin/tenants" className="app-button app-button-secondary">', "");
+  assert.equal(/className="app-button app-button-/.test(withoutTenantNavigation), false);
 });
 
 test("the page no longer renders a duplicate <h1> page title -- the shell's own pageTitle is the single source", () => {
@@ -363,7 +365,7 @@ test("active/inactive renders through the canonical StatusBadge with the same su
 });
 
 test("the internal Tenant Administration link targets the canonical consolidated workspace while keeping Next client-side transition", () => {
-  assert.match(source, /<Link href="\/admin\/tenants" className="app-button">/);
+  assert.match(source, /<Link href="\/admin\/tenants" className="app-button app-button-secondary">/);
   assert.match(source, /Tenant Administration/);
   assert.equal(/<AppLinkButton\b/.test(source), false);
 });

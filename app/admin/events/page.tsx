@@ -1227,7 +1227,7 @@ function EventAdminPageInner() {
         <PageSection variant="card" title="Event Workspace">
           <FormActions>
             {eventWorkspaceLinks.map((link) => (
-              <AppLinkButton key={link.id} href={link.href} variant="default">
+              <AppLinkButton key={link.id} href={link.href} variant="secondary">
                 {link.label}
               </AppLinkButton>
             ))}
@@ -1582,8 +1582,8 @@ function EventAdminPageInner() {
                 marginTop: "var(--space-1)",
               }}
             >
-              <AppLinkButton href="/admin/master-maps">Master Maps</AppLinkButton>
-              <AppLinkButton href="/admin/nearby">Nearby</AppLinkButton>
+              <AppLinkButton href="/admin/master-maps" variant="secondary">Master Maps</AppLinkButton>
+              <AppLinkButton href="/admin/nearby" variant="secondary">Nearby</AppLinkButton>
 
               <AppButton
                 variant="primary"
@@ -1593,7 +1593,7 @@ function EventAdminPageInner() {
                 {savingAssignments ? "Saving..." : "Save Assignments"}
               </AppButton>
 
-              <AppLinkButton href="/admin/dashboard">Dashboard</AppLinkButton>
+              <AppLinkButton href="/admin/dashboard" variant="secondary">Dashboard</AppLinkButton>
             </div>
           </div>
         </PageSection>

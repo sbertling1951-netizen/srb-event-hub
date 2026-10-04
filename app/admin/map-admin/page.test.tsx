@@ -56,10 +56,10 @@ test("a representative full-access admin renders all four visible Maps children 
     <MapsWorkspaceSection admin={admin} tenantAuthority={{ status: "allowed" }} />,
   );
 
-  assert.match(html, /<a class="app-button" href="\/admin\/master-maps">Master Maps<\/a>/);
-  assert.match(html, /<a class="app-button" href="\/admin\/nearby">Nearby<\/a>/);
-  assert.match(html, /<a class="app-button" href="\/admin\/nearby-settings">Nearby Settings<\/a>/);
-  assert.match(html, /<a class="app-button" href="\/admin\/locations">Locations<\/a>/);
+  assert.match(html, /<a class="app-button app-button-secondary" href="\/admin\/master-maps">Master Maps<\/a>/);
+  assert.match(html, /<a class="app-button app-button-secondary" href="\/admin\/nearby">Nearby<\/a>/);
+  assert.match(html, /<a class="app-button app-button-secondary" href="\/admin\/nearby-settings">Nearby Settings<\/a>/);
+  assert.match(html, /<a class="app-button app-button-secondary" href="\/admin\/locations">Locations<\/a>/);
   assert.match(html, /Maps Workspace/);
 });
 
@@ -71,12 +71,12 @@ test("a constrained access case renders only the visible child -- the real getAd
   const admin = buildAdmin({ permissionMap: { can_manage_master_maps: true } });
   const html = renderToStaticMarkup(<MapsWorkspaceSection admin={admin} tenantAuthority={null} />);
 
-  assert.match(html, /<a class="app-button" href="\/admin\/master-maps">Master Maps<\/a>/);
+  assert.match(html, /<a class="app-button app-button-secondary" href="\/admin\/master-maps">Master Maps<\/a>/);
   assert.doesNotMatch(html, /Nearby Settings/);
-  assert.doesNotMatch(html, /<a class="app-button" href="\/admin\/nearby">Nearby<\/a>/);
-  assert.doesNotMatch(html, /<a class="app-button" href="\/admin\/locations">Locations<\/a>/);
+  assert.doesNotMatch(html, /<a class="app-button app-button-secondary" href="\/admin\/nearby">Nearby<\/a>/);
+  assert.doesNotMatch(html, /<a class="app-button app-button-secondary" href="\/admin\/locations">Locations<\/a>/);
   // Exactly one link rendered.
-  assert.equal((html.match(/<a class="app-button"/g) || []).length, 1);
+  assert.equal((html.match(/<a class="app-button app-button-secondary"/g) || []).length, 1);
 });
 
 test("a no-visible-links case renders nothing at all -- no Maps Workspace section, no PageSection markup", () => {

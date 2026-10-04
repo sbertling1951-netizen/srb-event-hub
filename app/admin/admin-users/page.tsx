@@ -744,7 +744,7 @@ function AdminUsersPageInner() {
             // with the canonical .app-button class applied directly, rather
             // than swapped to AppLinkButton -- AppLinkButton renders a bare
             // <a>, which would silently drop client-side navigation here.
-            <Link href="/admin/tenants" className="app-button">
+            <Link href="/admin/tenants" className="app-button app-button-secondary">
               Tenant Administration
             </Link>
           ) : null}

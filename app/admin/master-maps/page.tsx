@@ -798,7 +798,7 @@ function MasterMapsPageInner() {
             // directly, matching the established Admin Users precedent --
             // AppLinkButton renders a bare <a>, which would silently drop
             // client-side navigation here.
-            <Link href="/admin/master-maps/new" className="app-button">
+            <Link href="/admin/master-maps/new" className="app-button app-button-secondary">
               Create New Master Map
             </Link>
           ) : (

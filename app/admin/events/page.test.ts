@@ -1166,9 +1166,9 @@ test("no raw <button> remains -- every action uses AppButton, and same-app navig
     PAGE_SOURCE,
     /import\s*\{\s*AppButton,\s*AppLinkButton\s*\}\s*from\s*["']@\/components\/ui\/AppButton["']/,
   );
-  assert.match(PAGE_SOURCE, /<AppLinkButton href="\/admin\/master-maps">Master Maps<\/AppLinkButton>/);
-  assert.match(PAGE_SOURCE, /<AppLinkButton href="\/admin\/nearby">Nearby<\/AppLinkButton>/);
-  assert.match(PAGE_SOURCE, /<AppLinkButton href="\/admin\/dashboard">Dashboard<\/AppLinkButton>/);
+  assert.match(PAGE_SOURCE, /<AppLinkButton href="\/admin\/master-maps" variant="secondary">Master Maps<\/AppLinkButton>/);
+  assert.match(PAGE_SOURCE, /<AppLinkButton href="\/admin\/nearby" variant="secondary">Nearby<\/AppLinkButton>/);
+  assert.match(PAGE_SOURCE, /<AppLinkButton href="\/admin\/dashboard" variant="secondary">Dashboard<\/AppLinkButton>/);
 });
 
 test("the page-local 'Return to Dashboard' button is gone -- the canonical shell backTarget now owns that affordance", () => {
@@ -1324,7 +1324,7 @@ test("the Event Workspace entry area derives its links from getAdminNavItemChild
   assert.match(PAGE_SOURCE, /import \{ getAdminNavItemChildren \} from "@\/components\/shell\/navigation\/adminNav";/);
   assert.match(PAGE_SOURCE, /const eventWorkspaceLinks = getAdminNavItemChildren\(admin, tenantAuthority, "events"\);/);
   assert.match(PAGE_SOURCE, /\{eventWorkspaceLinks\.map\(\(link\) => \(/);
-  assert.match(PAGE_SOURCE, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="default">/);
+  assert.match(PAGE_SOURCE, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="secondary">/);
 });
 
 test("Add Event appears in Event Workspace whenever the canonical Event nav model exposes it -- no post-projection filtering removes it", () => {

@@ -219,8 +219,8 @@ test("an admin whose canonical Vendors gate passes renders the Vendor Workspace 
     <VendorWorkspaceSection admin={admin} tenantAuthority={null} />,
   );
 
-  assert.match(html, /<a class="app-button" href="\/admin\/vendor-requests">Vendor Requests<\/a>/);
-  assert.match(html, /<a class="app-button" href="\/admin\/vendors\/access">Vendor Access<\/a>/);
+  assert.match(html, /<a class="app-button app-button-secondary" href="\/admin\/vendor-requests">Vendor Requests<\/a>/);
+  assert.match(html, /<a class="app-button app-button-secondary" href="\/admin\/vendors\/access">Vendor Access<\/a>/);
   assert.match(html, /Vendor Workspace/);
 });
 
@@ -251,7 +251,7 @@ test("a constrained access case renders only the visible child -- the real getAd
   const html = renderToStaticMarkup(
     <VendorWorkspaceSection admin={admin} tenantAuthority={null} />,
   );
-  assert.equal((html.match(/<a class="app-button"/g) || []).length, 2);
+  assert.equal((html.match(/<a class="app-button app-button-secondary"/g) || []).length, 2);
 });
 
 test("an access input with no visible Vendors child renders no Vendor Workspace markup at all", () => {
@@ -321,7 +321,7 @@ test("the Vendor Workspace entry area uses only established shared primitives --
 
   assert.match(sectionSource, /<PageSection variant="card" title="Vendor Workspace">/);
   assert.match(sectionSource, /<FormActions>/);
-  assert.match(sectionSource, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="default">/);
+  assert.match(sectionSource, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="secondary">/);
 });
 
 test("the route guard, shell adapter, and page title remain exactly as before -- no double shell, no bespoke guard", () => {

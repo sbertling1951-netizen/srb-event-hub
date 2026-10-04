@@ -73,7 +73,7 @@ export function PhotosWorkspaceSection({
     <PageSection variant="card" title="Photos Workspace">
       <FormActions>
         {photosWorkspaceLinks.map((link) => (
-          <AppLinkButton key={link.id} href={link.href} variant="default">
+          <AppLinkButton key={link.id} href={link.href} variant="secondary">
             {link.label}
           </AppLinkButton>
         ))}
@@ -389,10 +389,10 @@ function AdminPhotosPageInner() {
         </div>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-3)" }}>
-          <Link href="/admin/slideshow" className="app-button">
+          <Link href="/admin/slideshow" className="app-button app-button-secondary">
             Launch Slideshow
           </Link>
-          <Link href="/admin/photo-library" className="app-button">
+          <Link href="/admin/photo-library" className="app-button app-button-secondary">
             Photo Library
           </Link>
         </div>
