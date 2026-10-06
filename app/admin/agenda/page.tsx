@@ -19,6 +19,7 @@ import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewpo
 import { Alert } from "@/components/ui/Alert";
 import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
 import { FormActions } from "@/components/ui/FormActions";
@@ -700,6 +701,17 @@ function AdminAgendaPageInner() {
   // exists yet in components/ui; this remains the smallest Agenda-local
   // implementation, still a future Central UI standardization candidate.
   const [editorExpanded, setEditorExpanded] = useState(false);
+  const editorReturnScrollRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (editorExpanded || !editorReturnScrollRef.current) {return;}
+    const position = editorReturnScrollRef.current;
+    const frame = requestAnimationFrame(() => {
+      window.scrollTo(position.x, position.y);
+      editorReturnScrollRef.current = null;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [editorExpanded]);
   // Deliberate-location-choice gate: the comparison key of a NEW location name
   // the operator explicitly chose to add via the picker. Typing alone never
   // sets this, so a save cannot silently accept a typed new name (or a likely
@@ -898,6 +910,7 @@ function AdminAgendaPageInner() {
   // baseline (blank, or the selected item's persisted values).
   function openBlankEditor() {
     if (recoverableDraft || loading || hasAgendaAccess !== true) {return;}
+    editorReturnScrollRef.current = { x: window.scrollX, y: window.scrollY };
     const defaultCat = agendaCategories.find((cat) => cat.is_default);
     const next = defaultCat
       ? { ...emptyForm, category: defaultCat.name, color: defaultCat.color }
@@ -907,7 +920,15 @@ function AdminAgendaPageInner() {
     setEditorExpanded(true);
   }
 
+  function selectAgendaItem(item: AgendaItem) {
+    if (editorExpanded || recoverableDraft || loading || hasAgendaAccess !== true) {return;}
+    const next = formFromItem(item);
+    originalFormRef.current = next;
+    setForm(next);
+  }
+
   function openEditorForItem(item: AgendaItem) {
+    editorReturnScrollRef.current = { x: window.scrollX, y: window.scrollY };
     const next = formFromItem(item);
     originalFormRef.current = next;
     setForm(next);
@@ -947,9 +968,9 @@ function AdminAgendaPageInner() {
 
   // Cancel/Close. Reuses the same requestConfirmation()/ConfirmDialog
   // already wired up for Delete -- no second confirmation mechanism.
-  // Never wired to a backdrop or outside click: this editor is an inline
-  // disclosure, not a modal, so there is no such surface to guard.
+  // Backdrop dismissal is disabled; Escape and Cancel share this dirty check.
   async function closeEditor() {
+    if (saving) {return;}
     if (!agendaItemFormsAreEqual(form, originalFormRef.current)) {
       const confirmed = await requestConfirmation({
         title: "Discard Unsaved Changes?",
@@ -2799,7 +2820,7 @@ function AdminAgendaPageInner() {
 
   if (hasAgendaAccess === false) {
     return (
-      <div style={{ display: "grid", gap: "var(--space-10)" }}>
+      <div style={{ display: "grid", gap: "var(--space-5)" }}>
         <PageSection variant="section">
           <PageHeader
             title="No Agenda access for this event"
@@ -2816,7 +2837,7 @@ function AdminAgendaPageInner() {
   }
 
   return (
-    <div style={{ display: "grid", gap: "var(--space-10)" }}>
+    <div style={{ display: "grid", gap: "var(--space-5)" }}>
       <ConfirmDialog
         open={!!confirmDialog}
         title={confirmDialog?.title || "Confirm Action"}
@@ -2831,14 +2852,7 @@ function AdminAgendaPageInner() {
       <PageSection variant="section">
         <PageHeader title="Admin Agenda" headingLevel="h2" titleClassName="app-section-title" />
 
-        <div
-          style={{
-            display: "flex",
-            gap: "var(--space-2)",
-            flexWrap: "wrap",
-            marginBottom: "var(--space-4)",
-          }}
-        >
+        <FormActions>
           <AppButton
             variant={agendaMode === "items" ? "primary" : "tertiary"}
             aria-pressed={agendaMode === "items"}
@@ -2872,9 +2886,9 @@ function AdminAgendaPageInner() {
           <AppLinkButton variant="secondary" href={buildImportsHref("agenda")}>
             Browse Imports
           </AppLinkButton>
-        </div>
+        </FormActions>
 
-        <div style={{ display: "grid", gap: "var(--space-1)" }}>
+        <div style={{ display: "grid", gap: "var(--space-1)", marginTop: "var(--space-3)" }}>
           <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
             {activeEvent?.name || "No admin working event selected"}
           </div>
@@ -3040,6 +3054,7 @@ function AdminAgendaPageInner() {
 
           {agendaMode === "items" ? (
           <>
+          <AgendaEditorSurface open={editorExpanded} onClose={() => void closeEditor()}>
           <PageSection
             variant="section"
             style={{
@@ -3327,6 +3342,7 @@ function AdminAgendaPageInner() {
                 )}
               </Field>
 
+              {error ? <Alert tone="danger">{error}</Alert> : null}
               <FormActions>
                 <AppButton
                   variant="primary"
@@ -3366,6 +3382,7 @@ function AdminAgendaPageInner() {
               ) : null}
             </div>
           </PageSection>
+          </AgendaEditorSurface>
 
           <PageSection variant="section">
             <div style={{ display: "grid", gap: "var(--space-3)" }}>
@@ -3419,14 +3436,7 @@ function AdminAgendaPageInner() {
                   })}
                 </div>
 
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "var(--space-2)",
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                  }}
-                >
+                <FormActions>
                   <AppButton
                     variant="tertiary"
                     aria-pressed={forceDesktopDrag}
@@ -3461,7 +3471,7 @@ function AdminAgendaPageInner() {
                   >
                     {savingOrder ? "Saving Order..." : "Save Order"}
                   </AppButton>
-                </div>
+                </FormActions>
               </div>
 
               <p className="app-subtle-text" style={{ margin: 0 }}>
@@ -3474,6 +3484,16 @@ function AdminAgendaPageInner() {
 
           <PageSection title="Visual Agenda Editor" titleStyle={{ margin: 0 }}>
             <div style={{ display: "grid", gap: "var(--space-3)" }}>
+              <FormActions>
+                <AppButton variant="secondary" disabled={!form.id || loading}
+                  onClick={() => {
+                    const selected = items.find((item) => item.id === form.id);
+                    if (selected) {void requestOpenEditorForItem(selected);}
+                  }}>
+                  Edit selected item
+                </AppButton>
+                <span className="app-subtle-text">Select an item, then choose Edit or double-click it.</span>
+              </FormActions>
               <div
                 style={{
                   display: "flex",
@@ -3756,7 +3776,14 @@ function AdminAgendaPageInner() {
                                     setCalendarDraggingId(null);
                                     setCalendarDropPreview(null);
                                   }}
-                                  onClick={() => void requestOpenEditorForItem(item)}
+                                  onClick={() => selectAgendaItem(item)}
+                                  onDoubleClick={() => void requestOpenEditorForItem(item)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      void requestOpenEditorForItem(item);
+                                    }
+                                  }}
                                   style={{
                                     position: "absolute",
                                     top: block.top + 2,
@@ -3803,7 +3830,7 @@ function AdminAgendaPageInner() {
 
                                     zIndex: isSelected ? 20 : block.lane + 1,
                                   }}
-                                  title="Drag to move. Click to edit. Drag top/bottom handles to change time."
+                                  title="Click to select. Double-click or press Enter to edit. Drag to move; drag top/bottom handles to change time."
                                 >
                                   <span
                                     onMouseDown={(e) => {
@@ -3815,6 +3842,7 @@ function AdminAgendaPageInner() {
                                       e.preventDefault();
                                       e.stopPropagation();
                                     }}
+                                    onDoubleClick={(event) => event.stopPropagation()}
                                     draggable={false}
                                     style={{
                                       position: "absolute",
@@ -3882,6 +3910,7 @@ function AdminAgendaPageInner() {
                                       e.preventDefault();
                                       e.stopPropagation();
                                     }}
+                                    onDoubleClick={(event) => event.stopPropagation()}
                                     draggable={false}
                                     style={{
                                       position: "absolute",
@@ -4032,7 +4061,14 @@ function AdminAgendaPageInner() {
 
                       <button
                         type="button"
-                        onClick={() => void requestOpenEditorForItem(item)}
+                        onClick={() => selectAgendaItem(item)}
+                        onDoubleClick={() => void requestOpenEditorForItem(item)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            void requestOpenEditorForItem(item);
+                          }
+                        }}
                         style={{
                           textAlign: "left",
                           background: "transparent",
@@ -4197,6 +4233,13 @@ function AdminAgendaPageInner() {
                         }}
                       >
                         <AppButton
+                          variant="secondary"
+                          onClick={() => void requestOpenEditorForItem(item)}
+                          aria-label={`Edit ${item.title || "agenda item"}`}
+                        >
+                          Edit
+                        </AppButton>
+                        <AppButton
                           variant="tertiary"
                           onClick={() => void togglePublished(item)}
                         >
@@ -4221,6 +4264,23 @@ function AdminAgendaPageInner() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Keep one editor and one form state; the shared dialog owns focus and scroll lock.
+function AgendaEditorSurface({ open, onClose, children }: {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <>
+      {!open ? children : null}
+      <Dialog open={open} onClose={onClose} title="Agenda item editor"
+        className="app-dialog-wide" dismissOnBackdrop={false}>
+        {open ? children : null}
+      </Dialog>
+    </>
   );
 }
 

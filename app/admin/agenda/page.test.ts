@@ -851,12 +851,12 @@ test("3. Edit Item opens the editor with the selected item's existing values", (
   // below -- preserving the existing item selection/data-sync behavior
   // via a single code path.
   const callSites = [
-    ...PAGE_SOURCE.matchAll(/onClick=\{\(\) => void requestOpenEditorForItem\(item\)\}/g),
+    ...PAGE_SOURCE.matchAll(/onDoubleClick=\{\(\) => void requestOpenEditorForItem\(item\)\}/g),
   ];
   assert.equal(
     callSites.length,
     2,
-    "expected both the calendar block and list row onClick to route through requestOpenEditorForItem",
+    "expected both calendar and list double-clicks to use guarded editing",
   );
   assert.equal(
     /onClick=\{\(\) => openEditorForItem\(item\)\}/.test(PAGE_SOURCE),
@@ -917,13 +917,25 @@ test("9. confirming discard closes the editor -- the reset/collapse lines run un
   assert.ok(resetIdx > returnIdx, "the reset/collapse must come after the early-return guard, not before it");
 });
 
-test("10. no backdrop/outside-click dismissal exists for the editor -- it is an inline disclosure, not a modal, so there is no such surface, and the shared Dialog's dismissOnBackdrop is never wired to it", () => {
-  assert.equal(/components\/ui\/Dialog["']/.test(PAGE_SOURCE.slice(0, PAGE_SOURCE.indexOf("export default function AdminAgendaPage"))), false);
-  assert.equal(/dismissOnBackdrop/.test(PAGE_SOURCE), false);
-  // The only close paths are the two explicit Cancel controls and a
-  // successful Save -- confirmed above -- not any generic outside click.
-  const cancelOnClicks = [...PAGE_SOURCE.matchAll(/onClick=\{\(\) => void closeEditor\(\)\}/g)];
-  assert.equal(cancelOnClicks.length, 2, "expected exactly the header Cancel and the FormActions Cancel");
+test("the modal uses the shared Dialog, disables backdrop dismissal, and routes Escape through guarded close", () => {
+  assert.match(PAGE_SOURCE, /import \{ Dialog \} from "@\/components\/ui\/Dialog"/);
+  assert.match(PAGE_SOURCE, /dismissOnBackdrop=\{false\}/);
+  assert.match(PAGE_SOURCE, /<AgendaEditorSurface open=\{editorExpanded\} onClose=\{\(\) => void closeEditor\(\)\}/);
+  assert.match(PAGE_SOURCE, /async function closeEditor\(\) \{\s*if \(saving\) \{return;\}/);
+});
+
+test("single-click selects without expanding; keyboard and explicit Edit remain available", () => {
+  const start = PAGE_SOURCE.indexOf("function selectAgendaItem(item: AgendaItem)");
+  const end = PAGE_SOURCE.indexOf("function openEditorForItem", start);
+  const selection = PAGE_SOURCE.slice(start, end);
+  assert.match(selection, /originalFormRef\.current = next/);
+  assert.match(selection, /setForm\(next\)/);
+  assert.doesNotMatch(selection, /setEditorExpanded/);
+  assert.equal([...PAGE_SOURCE.matchAll(/onClick=\{\(\) => selectAgendaItem\(item\)\}/g)].length, 2);
+  assert.equal([...PAGE_SOURCE.matchAll(/event\.key === "Enter" \|\| event\.key === " "/g)].length, 2);
+  assert.match(PAGE_SOURCE, /Edit selected item/);
+  assert.equal([...PAGE_SOURCE.matchAll(/onDoubleClick=\{\(event\) => event\.stopPropagation\(\)\}/g)].length, 2, "resize handles must not open editing");
+  assert.match(PAGE_SOURCE, /aria-label=\{`Edit \$\{item\.title/);
 });
 
 test("11. existing Agenda save/update RPC calls and their exact parameters are unchanged by the visibility/workflow change", () => {
