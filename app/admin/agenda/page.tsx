@@ -797,6 +797,13 @@ function AdminAgendaPageInner() {
   const editorHeaderSticky = editorExpanded;
   const [forceDesktopDrag, setForceDesktopDrag] = useState(false);
   const [compactCalendarView, setCompactCalendarView] = useState(false);
+  const [dayWidths, setDayWidths] = useState<Record<string, number>>({});
+  const calendarWidthRootRef = useRef<HTMLDivElement>(null);
+  const dayWidthDragRef = useRef<{ pointerId: number; day: string; x: number; width: number } | null>(null);
+  useEffect(() => {
+    setDayWidths({});
+    dayWidthDragRef.current = null;
+  }, [activeEvent?.id]);
   const useButtonReorder = isCompact && !forceDesktopDrag;
   const [templates, setTemplates] = useState<AgendaTemplate[]>([]);
   const [applicationHistory, setApplicationHistory] = useState<AgendaTemplateApplication[]>([]);
@@ -1732,6 +1739,41 @@ function AdminAgendaPageInner() {
 
     return dates.sort((a, b) => a.localeCompare(b));
   }, [filteredItems]);
+
+  const minimumDayWidth = 180;
+  const maximumDayWidth = 720;
+  const defaultDayWidth = compactCalendarView ? 180 : 260;
+  const calendarDayWidth = (day: string) => dayWidths[day] ?? defaultDayWidth;
+  const calendarWidth = (compactCalendarView ? 76 : 92) +
+    calendarDays.reduce((total, day) => total + calendarDayWidth(day), 0);
+  const calendarColumns = `${compactCalendarView ? 76 : 92}px ${calendarDays.map((day) => `${calendarDayWidth(day)}px`).join(" ")}`;
+
+  function setCalendarDayWidth(day: string, width: number) {
+    if (!Number.isFinite(width)) {return;}
+    setDayWidths((previous) => ({ ...previous,
+      [day]: Math.max(minimumDayWidth, Math.min(maximumDayWidth, Math.round(width))),
+    }));
+  }
+
+  function fittedDayWidth(day: string) {
+    const root = calendarWidthRootRef.current;
+    const context = document.createElement("canvas").getContext("2d");
+    if (!root || !context) {return defaultDayWidth;}
+    let width = minimumDayWidth;
+    // Measure displayed text with its rendered font, including overlapping lanes.
+    root.querySelectorAll<HTMLElement>("[data-agenda-width-day]").forEach((column) => {
+      if (column.dataset.agendaWidthDay !== day) {return;}
+      column.querySelectorAll<HTMLElement>("[data-agenda-fit-text]").forEach((text) => {
+        const style = getComputedStyle(text);
+        context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        const lanes = Number(text.closest<HTMLElement>("[data-agenda-lanes]")?.dataset.agendaLanes ?? 1);
+        const textWidth = Math.max(...(text.textContent ?? "").split("\n").map((line) =>
+          context.measureText(line).width + Math.max(0, parseFloat(style.letterSpacing) || 0) * line.length));
+        width = Math.max(width, (textWidth + 44) * lanes);
+      });
+    });
+    return Math.min(maximumDayWidth, Math.ceil(width));
+  }
 
   const printableAgendaItems = useMemo(() => {
     if (printDayFilter === "all") {
@@ -3518,17 +3560,28 @@ function AdminAgendaPageInner() {
                 </AppButton>
               </div>
 
-              {/* Calendar grid below: native HTML5 drag-and-drop (move +
-                  resize) is a specialized direct-manipulation surface
-                  (Central UI blueprint Part 12 carve-out) and is left
-                  completely untouched -- only the outer section chrome
-                  above this comment was migrated. */}
+              <FormActions>
+                <AppButton variant="secondary" disabled={!calendarDays.length}
+                  onClick={() => setDayWidths(Object.fromEntries(calendarDays.map((day) => [day, fittedDayWidth(day)])))}>
+                  Fit all days
+                </AppButton>
+                <AppButton variant="tertiary" disabled={!calendarDays.length}
+                  onClick={() => setDayWidths({})}>Reset widths</AppButton>
+              </FormActions>
+              <p id="agenda-width-help" className="app-subtle-text" style={{ margin: 0 }}>
+                Drag a day’s right divider; double-click to fit. Use arrow keys on a divider,
+                or open Day width for touch controls. Fit measures displayed text (including overlapping items),
+                within 180–720 px; long text still wraps. Widths last until you leave or change Event.
+              </p>
+              {/* Specialized calendar interactions remain local (blueprint Part 12). */}
               <div
+                ref={calendarWidthRootRef}
                 style={{
                   border: "1px solid #d1d5db",
                   borderRadius: 12,
                   background: "#ffffff",
                   overflow: "auto",
+                  maxWidth: "100%",
                 }}
               >
                 {calendarDays.length === 0 ? (
@@ -3539,17 +3592,14 @@ function AdminAgendaPageInner() {
                 ) : (
                   <div
                     style={{
-                      minWidth: compactCalendarView
-                        ? Math.max(720, calendarDays.length * 180)
-                        : Math.max(820, calendarDays.length * 260),
+                      width: calendarWidth,
+                      minWidth: calendarWidth,
                     }}
                   >
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: compactCalendarView
-                          ? `76px repeat(${calendarDays.length}, minmax(170px, 1fr))`
-                          : `92px repeat(${calendarDays.length}, minmax(240px, 1fr))`,
+                        gridTemplateColumns: calendarColumns,
                         position: "sticky",
                         top: 0,
                         zIndex: 4,
@@ -3561,8 +3611,12 @@ function AdminAgendaPageInner() {
                       {calendarDays.map((day) => (
                         <div
                           key={day}
+                          data-agenda-width-day={day}
                           style={{
-                            padding: 10,
+                            position: "relative",
+                            minWidth: 0,
+                            padding: "10px calc(var(--touch-target-min) + 4px) 10px 10px",
+                            overflowWrap: "anywhere",
                             fontWeight: 900,
                             borderLeft: "1px solid #e5e7eb",
                             display: "flex",
@@ -3571,7 +3625,7 @@ function AdminAgendaPageInner() {
                             gap: 2,
                           }}
                         >
-                          <span
+                          <span data-agenda-fit-text
                             style={{
                               fontSize: 12,
                               fontWeight: 600,
@@ -3585,7 +3639,7 @@ function AdminAgendaPageInner() {
                               weekday: "long",
                             })}
                           </span>
-                          <span
+                          <span data-agenda-fit-text
                             style={{
                               fontSize: 16,
                               fontWeight: 800,
@@ -3595,6 +3649,50 @@ function AdminAgendaPageInner() {
                           >
                             {formatAgendaDate(day)}
                           </span>
+                          <details>
+                            <summary style={{ minHeight: "var(--touch-target-min)", cursor: "pointer", display: "list-item" }}>Day width</summary>
+                            <Field label={`Width for ${formatAgendaDate(day)}: ${calendarDayWidth(day)} px`}>
+                              {(props) => <Input {...props} type="range" step={10} min={minimumDayWidth} max={maximumDayWidth}
+                                value={calendarDayWidth(day)} style={{ width: "100%", minHeight: "var(--touch-target-min)" }}
+                                onChange={(event) => {
+                                  if (event.target.value) {setCalendarDayWidth(day, event.target.valueAsNumber);}
+                                }} />}
+                            </Field>
+                            <AppButton variant="tertiary" onClick={() => setCalendarDayWidth(day, fittedDayWidth(day))}>Fit day</AppButton>
+                          </details>
+                          <AppButton variant="tertiary" role="separator" aria-orientation="vertical"
+                            aria-label={`Resize ${formatAgendaDate(day)}`} aria-describedby="agenda-width-help"
+                            aria-valuemin={minimumDayWidth} aria-valuemax={maximumDayWidth}
+                            aria-valuenow={calendarDayWidth(day)} aria-valuetext={`${calendarDayWidth(day)} pixels`}
+                            style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: "var(--touch-target-min)",
+                              padding: 0, borderRadius: 0, cursor: "col-resize", touchAction: "pan-y pinch-zoom", userSelect: "none" }}
+                            onPointerDown={(event) => {
+                              if (event.button !== 0 || !event.isPrimary) {return;}
+                              event.currentTarget.setPointerCapture(event.pointerId);
+                              dayWidthDragRef.current = { pointerId: event.pointerId, day, x: event.clientX, width: calendarDayWidth(day) };
+                            }}
+                            onPointerMove={(event) => {
+                              const drag = dayWidthDragRef.current;
+                              if (drag?.pointerId === event.pointerId && drag.day === day) {
+                                setCalendarDayWidth(day, drag.width + event.clientX - drag.x);
+                              }
+                            }}
+                            onPointerUp={() => { dayWidthDragRef.current = null; }}
+                            onPointerCancel={() => { dayWidthDragRef.current = null; }}
+                            onLostPointerCapture={() => { dayWidthDragRef.current = null; }}
+                            onDoubleClick={() => setCalendarDayWidth(day, fittedDayWidth(day))}
+                            onKeyDown={(event) => {
+                              const width = calendarDayWidth(day);
+                              if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                                event.preventDefault();
+                                setCalendarDayWidth(day, width + (event.key === "ArrowRight" ? 1 : -1) * (event.shiftKey ? 50 : 10));
+                              } else if (event.key === "Home" || event.key === "End") {
+                                event.preventDefault();
+                                setCalendarDayWidth(day, event.key === "Home" ? minimumDayWidth : maximumDayWidth);
+                              } else if (event.key === "Enter") {
+                                event.preventDefault(); setCalendarDayWidth(day, fittedDayWidth(day));
+                              }
+                            }}><span aria-hidden="true">↔</span></AppButton>
                         </div>
                       ))}
                     </div>
@@ -3602,9 +3700,7 @@ function AdminAgendaPageInner() {
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: compactCalendarView
-                          ? `76px repeat(${calendarDays.length}, minmax(170px, 1fr))`
-                          : `92px repeat(${calendarDays.length}, minmax(240px, 1fr))`,
+                        gridTemplateColumns: calendarColumns,
                         minHeight: calendarGridHeight,
                       }}
                     >
@@ -3654,6 +3750,7 @@ function AdminAgendaPageInner() {
                           <div
                             key={day}
                             data-agenda-calendar-day={day}
+                            data-agenda-width-day={day}
                             onDragOver={(e) => handleCalendarDragOver(e, day)}
                             onDragLeave={() => setCalendarDropPreview(null)}
                             onDrop={(e) => handleCalendarColumnDrop(e, day)}
@@ -3767,6 +3864,7 @@ function AdminAgendaPageInner() {
                               return (
                                 <button
                                   key={item.id}
+                                  data-agenda-lanes={block.laneCount}
                                   type="button"
                                   draggable
                                   onDragStart={(e) =>
@@ -3815,6 +3913,7 @@ function AdminAgendaPageInner() {
                                     padding: "16px 8px 16px",
                                     cursor: "pointer",
                                     overflow: "hidden",
+                                    overflowWrap: "anywhere",
 
                                     boxShadow: isSelected
                                       ? "0 0 0 3px rgba(37,99,235,.25), 0 6px 16px rgba(0,0,0,.15)"
@@ -3858,11 +3957,11 @@ function AdminAgendaPageInner() {
                                     title="Drag to change start time"
                                   />
 
-                                  <div style={{ fontWeight: 900, fontSize: 12 }}>
+                                  <div data-agenda-fit-text style={{ fontWeight: 900, fontSize: 12 }}>
                                     {item.title}
                                   </div>
 
-                                  <div
+                                  <div data-agenda-fit-text
                                     style={{
                                       fontSize: 11,
                                       color: "#475569",
@@ -3875,7 +3974,7 @@ function AdminAgendaPageInner() {
                                     )}
                                   </div>
 
-                                  <div
+                                  <div data-agenda-fit-text
                                     style={{
                                       fontSize: 10,
                                       color: "#64748b",
@@ -3889,7 +3988,7 @@ function AdminAgendaPageInner() {
                                   </div>
 
                                   {item.location ? (
-                                    <div
+                                    <div data-agenda-fit-text
                                       style={{
                                         fontSize: 11,
                                         color: "#334155",

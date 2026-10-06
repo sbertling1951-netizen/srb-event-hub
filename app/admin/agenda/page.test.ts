@@ -631,7 +631,8 @@ test("the Event Agenda working pane takes the full content width -- the permanen
     /<div\s*\n\s*style=\{\{\s*\n\s*display: "grid",\s*\n\s*gap: "var\(--space-5\)",\s*\n\s*alignItems: "start",\s*\n\s*minWidth: 0,\s*\n\s*\}\}\s*\n\s*>\s*\n\s*\{\/\* Catalog & Templates/,
   );
   assert.equal(/navigator\.userAgent/.test(PAGE_SOURCE), false);
-  assert.equal(/orientation/i.test(PAGE_SOURCE), false);
+  // Accessible separators declare aria-orientation; device-orientation layout branching remains forbidden.
+  assert.equal(/matchMedia\([^)]*orientation|screen\.orientation/i.test(PAGE_SOURCE), false);
 });
 
 test("Catalog & Templates and Recent Template Activity live in one initially closed, accessible disclosure above the working pane (page-local, mirroring the item editor's toggle) -- expanding never creates a side column", () => {
@@ -1543,4 +1544,24 @@ test("an add-new acknowledgment is scoped to the current edit and reset when the
     PAGE_SOURCE,
     /useEffect\(\(\) => \{\s*\n\s*setLocationAckKey\(null\);\s*\n\s*setLocationChoiceError\(null\);\s*\n\s*\}, \[form\.id, editorExpanded\]\);/,
   );
+});
+
+
+test("day widths share one header/body track definition and remain display-only", () => {
+  assert.equal((PAGE_SOURCE.match(/gridTemplateColumns: calendarColumns/g) || []).length, 2);
+  const widths = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("  const minimumDayWidth"), PAGE_SOURCE.indexOf("  const printableAgendaItems"));
+  assert.doesNotMatch(widths, /supabase|setItems|setForm|agendaVersion/);
+  assert.match(widths, /getComputedStyle/);
+  assert.match(widths, /data-agenda-lanes/);
+  assert.match(widths, /Math.min\(maximumDayWidth/);
+});
+
+test("day divider controls expose bounded keyboard and native touch alternatives", () => {
+  assert.match(PAGE_SOURCE, /role="separator" aria-orientation="vertical"/);
+  assert.match(PAGE_SOURCE, /aria-valuenow=\{calendarDayWidth\(day\)\}/);
+  assert.match(PAGE_SOURCE, /type="range" step=\{10\}/);
+  assert.match(PAGE_SOURCE, /onPointerCancel=/);
+  assert.match(PAGE_SOURCE, /touchAction: "pan-y pinch-zoom"/);
+  assert.match(PAGE_SOURCE, /Fit all days/);
+  assert.match(PAGE_SOURCE, /Reset widths/);
 });
