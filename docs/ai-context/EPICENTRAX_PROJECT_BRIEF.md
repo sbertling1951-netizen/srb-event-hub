@@ -231,6 +231,35 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Vendor Contacts status presentation — 2026-10-08 (Validated; commit/push authorized)
+
+- **Approved scope:** only the Contacts page's loading, error and empty
+  branches now use the established `LoadingState`, `Alert tone="danger"`
+  and `EmptyState`. Messages remain exact. The shared components provide
+  the existing standard spinner/tone presentation and status/alert semantics.
+  API calls, state/effect logic, populated contact cards and the canonical
+  Vendor shell are unchanged. No new primitive or dependency was added.
+- **Qwen-first execution:** local Qwen performed one native page read and
+  proposed the three replacements. Mel corrected its proposed child-text
+  usage to the actual `message` props required by LoadingState/EmptyState,
+  then applied and reviewed the bounded edit. No cloud worker was used.
+- **Validation:** changed-page ESLint passed. The existing Alert, EmptyState
+  and LoadingState tests passed 12/12 via the installed `tsx --test` runner.
+  A temporary render harness exercised all four page branches using real
+  shared UI components with the shell and React state/effect hooks mocked.
+  Loading/empty status semantics and error alert semantics passed; populated
+  HTML was identical to before. The API/state/effect source was confirmed
+  byte-identical. `git diff --check` passed. No live API, database,
+  authenticated-browser or Safari/device acceptance test was performed.
+- **Delivery boundary:** Pap authorized commit and push. This presentation
+  change is the new local development baseline; remote delivery and
+  production acceptance remain pending. The established push-to-main
+  webhook triggers production deployment, so the prior no-production
+  constraint requires Pap's direction before that push. No schema or
+  production operation was performed. Earlier unrelated edits, including
+  `next-env.d.ts`, were preserved. Other pages require separate bounded
+  approval. `npm run context:update` refreshed the repository snapshot.
+
 ### Browser keep-awake recovery — 2026-10-02 (Validated; commit and push authorized)
 
 - **Approved repair:** the live, visible slideshow audience requests a screen
@@ -3577,14 +3606,14 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-10-02T15:49:10-06:00`
-**Branch:** `codex/slideshow-vendor-activation-fixes`
-**Commit:** `a3130b4 Reconnect restarted slideshows and choose audience window mode`
-**Commit date:** `2026-10-01T18:04:49-06:00`
-**origin/main:** `a3130b4`
+**Generated at:** `2026-10-08T16:56:37-07:00`
+**Branch:** `main`
+**Commit:** `085d65d Add resizable and auto-fit Agenda day columns`
+**Commit date:** `2026-10-05T18:28:45-07:00`
+**origin/main:** `085d65d`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `5`
+**Tracked modified:** `6`
 **Staged:** `0`
 **Untracked:** `1`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
@@ -3665,17 +3694,17 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `273`
-- Latest migration: `20261031000000_fix_activate_vendor_invitation_ambiguous_person_id.sql`
+- Total migration files: `274`
+- Latest migration: `20261101000000_jump_presentation_slide.sql`
 - Latest five:
-  - `20261029100000_govern_event_photo_person_contributors.sql`
   - `20261029200000_loop_presentation_session.sql`
   - `20261030000000_confirm_arrival_and_parking.sql`
   - `20261030100000_fix_site_placement_override_and_retry.sql`
   - `20261031000000_fix_activate_vendor_invitation_ambiguous_person_id.sql`
+  - `20261101000000_jump_presentation_slide.sql`
 
 ### Identity-audit inventory
-- SQL files: `14`
+- SQL files: `13`
 - Markdown files: `25`
 - Latest five:
   - `baseline-diagnostics/stage7_identity_integrity_verification.md`

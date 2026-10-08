@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 
+import { Alert } from "@/components/ui/Alert";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { LoadingState } from "@/components/ui/LoadingState";
 import VendorWorkspaceShell from "@/components/vendor/VendorWorkspaceShell";
 
 type ContactRow = {
@@ -70,11 +73,11 @@ export default function VendorWorkspaceContactsPage() {
   return (
     <VendorWorkspaceShell title="Contacts">
       {loading ? (
-        <div>Loading contacts...</div>
+        <LoadingState message="Loading contacts..." />
       ) : error ? (
-        <div style={{ color: "#991b1b", fontWeight: 700 }}>{error}</div>
+        <Alert tone="danger">{error}</Alert>
       ) : contacts.length === 0 ? (
-        <div>No contacts available for this vendor organization.</div>
+        <EmptyState message="No contacts available for this vendor organization." />
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
           {contacts.map((contact) => {
