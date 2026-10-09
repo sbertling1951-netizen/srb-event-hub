@@ -79,7 +79,7 @@ test("blank logo yields a null logo URL so the component can render its neutral 
 // ---- Component render shape ----
 
 test("logo renders with an onError fallback to a neutral placeholder", () => {
-  assert.match(SOURCE, /onError=\{\(\) => setLogoFailed\(true\)\}/);
+  assert.match(SOURCE, /onError=\{\(\) => setFailedLogoUrl\(brand\.logoUrl \?\? null\)\}/);
   assert.match(SOURCE, /tenant-branding-preview-logo-fallback/);
 });
 

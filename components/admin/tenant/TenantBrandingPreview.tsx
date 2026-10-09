@@ -69,9 +69,9 @@ export function TenantBrandingPreview({
 }: {
   form: TenantBrandingPreviewForm;
 }) {
-  const [logoFailed, setLogoFailed] = useState(false);
+  const [failedLogoUrl, setFailedLogoUrl] = useState<string | null>(null);
   const brand = previewBrandFromForm(form);
-  const logoUrl = logoFailed ? null : brand.logoUrl || null;
+  const logoUrl = failedLogoUrl === brand.logoUrl ? null : brand.logoUrl || null;
   const fallbackInitial =
     (brand.logoAlt || brand.title || "?").trim().charAt(0).toUpperCase() || "?";
 
@@ -84,7 +84,7 @@ export function TenantBrandingPreview({
             src={logoUrl}
             alt={brand.logoAlt || brand.title}
             className="tenant-branding-preview-logo"
-            onError={() => setLogoFailed(true)}
+            onError={() => setFailedLogoUrl(brand.logoUrl ?? null)}
           />
         ) : (
           <span

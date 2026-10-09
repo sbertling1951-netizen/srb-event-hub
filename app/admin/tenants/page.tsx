@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { TenantBrandingPreview } from "@/components/admin/tenant/TenantBrandingPreview";
+import { TenantLogoField } from "@/components/admin/tenant/TenantLogoField";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { Alert } from "@/components/ui/Alert";
@@ -224,11 +225,15 @@ function validateMetadata(form: TenantMetadataForm): string | null {
 }
 
 function TenantBrandingFields({
+  tenantId,
+  onBusyChange,
   form,
   disabled,
   colorErrors,
   onChange,
 }: {
+  tenantId?: string;
+  onBusyChange?: (busy: boolean) => void;
   form: TenantMetadataForm;
   disabled?: boolean;
   colorErrors: Partial<Record<BrandingColorKey, string>>;
@@ -276,20 +281,14 @@ function TenantBrandingFields({
             />
           )}
         </Field>
-        <Field
-          label="Logo URL"
-          help="Shown across EpicentraX presentation. An SVG or a roughly square PNG (192px+) works best; blank uses the neutral platform default."
+        <TenantLogoField
+          key={tenantId ?? "new-tenant"}
+          tenantId={tenantId}
+          value={form.logo_url}
           disabled={disabled}
-        >
-          {(props) => (
-            <Input
-              {...props}
-              type="url"
-              value={form.logo_url}
-              onChange={(event) => onChange({ logo_url: event.target.value })}
-            />
-          )}
-        </Field>
+          onBusyChange={onBusyChange}
+          onChange={(logo_url) => onChange({ logo_url })}
+        />
         <Field
           label="Favicon URL"
           help="Stored branding metadata. It is not yet applied to the browser tab icon."
@@ -660,6 +659,7 @@ function TenantAdministrationWorkspace() {
   }, []);
 
   function resetMetadataEditor() {
+    if (busy) {return;}
     setMetadataForm(metadataBaseline);
     setMetadataReason("");
   }
@@ -671,6 +671,7 @@ function TenantAdministrationWorkspace() {
   }
 
   function requestSelectTenant(tenantId: string) {
+    if (busy) {return;}
     if (tenantId === selectedTenantId) {return;}
     if (metadataDirty) {
       setDiscardIntent({ kind: "select", tenantId });
@@ -680,6 +681,7 @@ function TenantAdministrationWorkspace() {
   }
 
   function requestOpenCreate() {
+    if (busy) {return;}
     if (metadataDirty) {
       setDiscardIntent({ kind: "open-create" });
       return;
@@ -698,6 +700,7 @@ function TenantAdministrationWorkspace() {
   }
 
   function requestNavigation(href: string) {
+    if (busy) {return;}
     if (metadataDirty) {
       setDiscardIntent({ kind: "navigate", href });
       return;
@@ -733,7 +736,7 @@ function TenantAdministrationWorkspace() {
 
   async function saveMetadata(event: React.FormEvent) {
     event.preventDefault();
-    if (!detail) {return;}
+    if (!detail || busy) {return;}
     setStatus(null);
     const validationError = validateMetadata(metadataForm);
     if (validationError) {
@@ -1169,6 +1172,8 @@ function TenantAdministrationWorkspace() {
                     descriptionClassName="app-subtle-text"
                   />
                   <TenantBrandingFields
+                    tenantId={detail.id}
+                    onBusyChange={setBusy}
                     form={metadataForm}
                     disabled={busy}
                     colorErrors={metadataColorErrors}

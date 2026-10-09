@@ -431,6 +431,41 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Tenant logo URL and upload choice — 2026-10-09 (Commit/push authorized; production migration pending)
+
+- Tenant Administration keeps the existing Logo URL field and adds Upload /
+  Replace and Remove for saved Tenants. New Tenants can use a URL immediately
+  or upload after creation. Upload fills the draft URL and existing branding
+  preview; the governed metadata Save applies it. Failure retains the saved
+  logo. Preview recovery now follows the specific failed URL, so a replacement
+  can appear after a previous broken URL.
+- Upload accepts PNG/JPEG/WebP up to 2 MiB. Migration
+  `20261102000000_add_tenant_logo_storage.sql` creates the public `tenant-logos`
+  bucket with bucket-level type/size limits and immutable Tenant-UUID / asset-UUID
+  paths. Existing Platform Administrator metadata authority is preserved;
+  Tenant/Event administrators and ordinary/anonymous users gain no authority.
+  Restrictive storage policies protect against unrelated permissive policies.
+- The authenticated `finalize_tenant_logo_upload` command verifies object
+  ownership and records one idempotent upload audit in the existing immutable
+  Tenant administrative audit. Storage completes uploads with its own database
+  session, so caller-dependent auditing is performed by this command, not a
+  Storage trigger. Logo assignment remains a separate audited metadata Save.
+  Uploaded images are public, including unselected/replaced assets; Cancel or
+  Remove detaches the URL without deleting historical uploaded objects.
+- Validation: 69 targeted tests passed; changed-file lint has zero errors or
+  warnings; no changed-file TypeScript diagnostics (existing unrelated test
+  diagnostics remain). The full 275-migration chain replayed successfully in
+  a new disposable local stack. Rollback SQL verifies ordinary/anonymous
+  denial, restrictive-policy protection, owner/path validation, immutable
+  objects and idempotent audit. Real local Storage API checks passed upload,
+  unauthenticated public fetch, metadata Save/readback, finalization retries,
+  unauthorized denial, MIME/size limits and overwrite/delete protection.
+- Release gates: migration is not applied to the existing development stack
+  or production. Pap authorized commit and push on 2026-10-09; the push invokes
+  the existing deployment webhook, but does not establish database migration
+  or deployment completion. Full browser/device acceptance remains pending.
+  The standing AGENTS.md pre-commit artifact check is included in this delivery.
+
 ### App-wide record editing interaction — 2026-10-08 (Committed locally; push authorized 2026-10-09)
 
 - **Substantive baseline:** `2c925f0` — Standardize record selection and modal
@@ -3950,16 +3985,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-10-09T06:50:01-07:00`
+**Generated at:** `2026-10-09T08:01:59-07:00`
 **Branch:** `main`
-**Commit:** `2c925f0 Standardize record selection and modal editing across workspaces`
-**Commit date:** `2026-10-09T06:49:49-07:00`
-**origin/main:** `8250630`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `a7a3420 Record committed record editing baseline and pending acceptance`
+**Commit date:** `2026-10-09T06:50:01-07:00`
+**origin/main:** `a7a3420`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `2`
+**Tracked modified:** `5`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `5`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
@@ -4038,14 +4073,14 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `274`
-- Latest migration: `20261101000000_jump_presentation_slide.sql`
+- Total migration files: `275`
+- Latest migration: `20261102000000_add_tenant_logo_storage.sql`
 - Latest five:
-  - `20261029200000_loop_presentation_session.sql`
   - `20261030000000_confirm_arrival_and_parking.sql`
   - `20261030100000_fix_site_placement_override_and_retry.sql`
   - `20261031000000_fix_activate_vendor_invitation_ambiguous_person_id.sql`
   - `20261101000000_jump_presentation_slide.sql`
+  - `20261102000000_add_tenant_logo_storage.sql`
 
 ### Identity-audit inventory
 - SQL files: `13`

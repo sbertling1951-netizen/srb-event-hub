@@ -89,6 +89,7 @@ separately instructed.
 - Treat database evidence and observable runtime output as proof. Code intent alone is not proof that a workflow works.
 - Make narrow changes. Avoid collisions and unintended consequences.
 - Never modify unrelated files.
+- Before every commit, inspect `git diff -- next-env.d.ts`. If the only change is generated development output (for example, `.next/types/routes.d.ts` becoming `.next/dev/types/routes.d.ts`), restore the committed version before staging and verify the diff is empty. Pap has authorized this routine artifact cleanup. Preserve intentional configuration changes; do not blindly restore the file.
 - Never weaken authentication, authorization, RLS, auditability, or tenant isolation to make a feature work.
 - Do not invent identity evidence or use ambiguous identifiers as conclusive proof.
 - Do not commit, push, deploy, reset a database, or run destructive commands unless the task explicitly authorizes it.
