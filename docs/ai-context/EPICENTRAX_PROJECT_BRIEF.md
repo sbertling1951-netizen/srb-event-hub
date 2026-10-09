@@ -433,6 +433,9 @@ state override this subsection whenever they disagree, per the
 
 ### Tenant logo URL and upload choice — 2026-10-09 (Commit/push authorized; production migration pending)
 
+- **Substantive baseline:** `2070702` — Add tenant logo uploads alongside URL
+  branding — committed on main. Production remains gated on applying migration
+  `20261102000000` and verifying the deployed upload flow.
 - Tenant Administration keeps the existing Logo URL field and adds Upload /
   Replace and Remove for saved Tenants. New Tenants can use a URL immediately
   or upload after creation. Upload fills the draft URL and existing branding
@@ -3985,16 +3988,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-10-09T08:01:59-07:00`
+**Generated at:** `2026-10-09T08:02:10-07:00`
 **Branch:** `main`
-**Commit:** `a7a3420 Record committed record editing baseline and pending acceptance`
-**Commit date:** `2026-10-09T06:50:01-07:00`
+**Commit:** `2070702 Add tenant logo uploads alongside URL branding`
+**Commit date:** `2026-10-09T08:01:59-07:00`
 **origin/main:** `a7a3420`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `5`
+**Tracked modified:** `1`
 **Staged:** `0`
-**Untracked:** `5`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
