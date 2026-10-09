@@ -727,7 +727,7 @@ test("variant=\"start\"/variant=\"stop\" are fully retired from this page -- the
 });
 
 test("every former variant=\"start\" site (Save deck edit, Start/Restart, Create Deck, Add photo, Resume) now uses variant=\"primary\" -- the blueprint's own prescribed mapping for non-destructive confirmation", () => {
-  assert.match(PAGE_SOURCE, /variant="primary"\s*\n\s*onClick=\{handleSaveEditDeck\}/);
+  assert.match(PAGE_SOURCE, /variant="primary"\s*\n\s*type="submit"/);
   assert.match(PAGE_SOURCE, /variant="primary"\s*\n\s*onClick=\{handleStart\}/);
   assert.match(PAGE_SOURCE, /variant="primary"\s*\n\s*onClick=\{handleCreateDeck\}/);
   assert.match(PAGE_SOURCE, /variant="primary"\s*\n\s*onClick=\{\(\) => void addManualDeckPhoto\(photo\.id\)\}/);
@@ -771,7 +771,7 @@ test("archive/end confirmation copy is byte-identical to the original window.con
 
 test("repeated button-row divs adopt the canonical FormActions primitive instead of page-local flex-row styling", () => {
   assert.match(PAGE_SOURCE, /import \{ FormActions \} from "@\/components\/ui\/FormActions";/);
-  assert.ok((PAGE_SOURCE.match(/<FormActions>/g) || []).length >= 4);
+  assert.ok((PAGE_SOURCE.match(/<FormActions(?: className="record-editor-actions")?>/g) || []).length >= 4);
 });
 
 test("presenter uses shared surfaces, labeled fields and announced feedback", () => {

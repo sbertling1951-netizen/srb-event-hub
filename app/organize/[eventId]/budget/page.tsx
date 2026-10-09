@@ -1,14 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { OrganizerBudgetFields } from "@/components/organize/OrganizerBudgetFields";
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
+import { Dialog } from "@/components/ui/Dialog";
 import { Page } from "@/components/ui/Page";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
+import { recordEditorKeyDown, recordRowProps } from "@/components/ui/recordInteraction";
 import {
   addMyPrivateDraftBudgetLine,
   type BudgetLine,
@@ -67,6 +69,8 @@ export default function OrganizerBudgetPage({ params }: BudgetPageProps) {
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
+  const editInFlight = useRef(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<BudgetLineInput | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
@@ -132,6 +136,8 @@ export default function OrganizerBudgetPage({ params }: BudgetPageProps) {
   }
 
   function startEdit(line: BudgetLine) {
+    if (editInFlight.current) {return;}
+    setSelectedId(line.id);
     setEditingId(line.id);
     setEditForm(budgetLineValues(line));
     setEditError(null);
@@ -146,6 +152,7 @@ export default function OrganizerBudgetPage({ params }: BudgetPageProps) {
 
   async function submitEdit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (editInFlight.current) {return;}
     if (!editingId || !editForm) {
       return;
     }
@@ -154,6 +161,7 @@ export default function OrganizerBudgetPage({ params }: BudgetPageProps) {
       setEditError(validationError);
       return;
     }
+    editInFlight.current = true;
     setSavingId(editingId);
     setEditError(null);
     try {
@@ -167,6 +175,7 @@ export default function OrganizerBudgetPage({ params }: BudgetPageProps) {
     } catch (error) {
       setEditError(error instanceof Error ? error.message : "We could not save that budget line.");
     } finally {
+      editInFlight.current = false;
       setSavingId(null);
     }
   }
@@ -217,18 +226,16 @@ export default function OrganizerBudgetPage({ params }: BudgetPageProps) {
         ) : (
           <ul style={{ display: "grid", gap: 10, listStyle: "none", margin: 0, padding: 0 }}>
             {lines.map((line) => (
-              <li key={line.id} className="card" style={{ display: "grid", gap: 8 }}>
-                {editingId === line.id && editForm ? (
-                  <form onSubmit={submitEdit} style={{ display: "grid", gap: 12 }}>
+              <li key={line.id} {...recordRowProps(line, (record) => setSelectedId(record.id), startEdit)} className={"card" + (selectedId === line.id ? " data-table-row-selected" : "")} style={{ display: "grid", gap: 8 }}>
+                {editingId === line.id && editForm ? <Dialog open title="Edit budget" onClose={() => { if (!editInFlight.current) {cancelEdit();} }} dismissOnBackdrop={false} className="app-dialog-wide record-editor-dialog"><form onSubmit={submitEdit} onKeyDown={recordEditorKeyDown} style={{ display: "grid", gap: 12 }}>
                     {editError ? <Alert tone="danger">{editError}</Alert> : null}
                     <OrganizerBudgetFields values={editForm} onChange={setEditForm} />
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <div className="record-editor-actions" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                       <AppButton type="submit" variant="primary" loading={savingId === line.id}>Save changes</AppButton>
                       <AppButton type="button" onClick={cancelEdit} disabled={savingId === line.id}>Cancel</AppButton>
                     </div>
-                  </form>
-                ) : (
-                  <>
+                  </form></Dialog> : null}
+<>
                     <strong>{line.lineName}</strong>
                     {line.category ? (
                       <span style={{ color: "var(--color-text-muted, #475569)" }}>Category: {line.category}</span>
@@ -248,7 +255,6 @@ export default function OrganizerBudgetPage({ params }: BudgetPageProps) {
                       </AppButton>
                     </div>
                   </>
-                )}
               </li>
             ))}
           </ul>

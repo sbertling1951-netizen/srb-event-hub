@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { Dialog } from "@/components/ui/Dialog";
+import { recordEditorKeyDown, recordRowProps } from "@/components/ui/recordInteraction";
 import VendorWorkspaceShell from "@/components/vendor/VendorWorkspaceShell";
 import {
   formatVendorNoticeDisplay,
@@ -62,13 +64,18 @@ function NoticeEditor({
   row,
   onSaved,
   onDeleted,
+  selected,
+  onSelect,
 }: {
+  selected: boolean;
+  onSelect: (row: ParticipationRow) => void;
   row: ParticipationRow;
   onSaved: (eventId: string, notice: NoticeRow) => void;
   onDeleted: (eventId: string) => void;
 }) {
   const event = getEventDetails(row.events);
   const existing = row.currentNotice;
+  const saveInFlight = useRef(false);
   const [editing, setEditing] = useState(false);
   const [noticeType, setNoticeType] = useState<VendorNoticeType>(
     existing?.status_type || "available_today",
@@ -79,6 +86,24 @@ function NoticeEditor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  function openEditor() {
+    if (saveInFlight.current) {return;}
+    onSelect(row);
+    setNoticeType(existing?.status_type || "available_today");
+    setMessage(existing?.message || "");
+    setExpiresAt(toDatetimeLocalValue(existing?.expires_at));
+    setIsActive(existing?.is_active ?? true);
+    setError(null);
+    setEditing(true);
+  }
+
+  function cancelEditor() {
+    if (saveInFlight.current) {return;}
+    setEditing(false);
+    setError(null);
+    setMessage(existing?.message || "");
+  }
+
   const displayText = formatVendorNoticeDisplay(existing);
 
   async function saveNotice(fields: {
@@ -87,6 +112,8 @@ function NoticeEditor({
     expiresAtIso: string | null;
     isActive: boolean;
   }) {
+    if (saveInFlight.current) {return false;}
+    saveInFlight.current = true;
     try {
       setBusy(true);
       setError(null);
@@ -120,6 +147,7 @@ function NoticeEditor({
       setError(err instanceof Error ? err.message : "Could not save notice.");
       return false;
     } finally {
+      saveInFlight.current = false;
       setBusy(false);
     }
   }
@@ -182,13 +210,12 @@ function NoticeEditor({
   }
 
   return (
-    <div className="app-card-section-muted" style={{ display: "grid", gap: 8 }}>
+    <div {...recordRowProps(row, onSelect, openEditor)} className={"app-card-section-muted" + (selected ? " data-table-row-selected" : "")} style={{ display: "grid", gap: 8 }}>
       <div style={{ fontWeight: 700 }}>{event?.name || "Event"}</div>
 
       <div>{displayText || "No active notice"}</div>
 
-      {editing ? (
-        <div style={{ display: "grid", gap: 8, marginTop: 4 }}>
+      {editing ? <Dialog open title="Edit Vendor Notice" onClose={cancelEditor} dismissOnBackdrop={false} className="record-editor-dialog"><form onSubmit={(event) => { event.preventDefault(); void handleSaveForm(); }} onKeyDown={recordEditorKeyDown} style={{ display: "grid", gap: 8, marginTop: 4 }}>
           <label>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Notice type</div>
             <select
@@ -243,12 +270,11 @@ function NoticeEditor({
             <div style={{ color: "#991b1b", fontWeight: 700 }}>{error}</div>
           ) : null}
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="record-editor-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button
-              type="button"
+              type="submit"
               className="app-button app-button-primary"
               disabled={busy}
-              onClick={() => void handleSaveForm()}
             >
               {busy ? "Saving..." : "Save"}
             </button>
@@ -256,7 +282,7 @@ function NoticeEditor({
               type="button"
               className="app-button app-button-muted"
               disabled={busy}
-              onClick={() => setEditing(false)}
+              onClick={cancelEditor}
             >
               Cancel
             </button>
@@ -271,13 +297,14 @@ function NoticeEditor({
               </button>
             ) : null}
           </div>
-        </div>
-      ) : (
+        </form>
+</Dialog> : null}
+
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button
             type="button"
             className="app-button app-button-muted"
-            onClick={() => setEditing(true)}
+            onClick={openEditor}
           >
             {existing ? "Edit Notice" : "Create Notice"}
           </button>
@@ -305,12 +332,12 @@ function NoticeEditor({
             <div style={{ color: "#991b1b", fontWeight: 700, width: "100%" }}>{error}</div>
           ) : null}
         </div>
-      )}
     </div>
   );
 }
 
 export default function VendorNoticesPage() {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<ParticipationRow[]>([]);
@@ -370,7 +397,7 @@ export default function VendorNoticesPage() {
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
           {rows.map((row) => (
-            <NoticeEditor key={row.id} row={row} onSaved={handleSaved} onDeleted={handleDeleted} />
+            <NoticeEditor key={row.id} row={row} selected={selectedId === row.id} onSelect={(item) => setSelectedId(item.id)} onSaved={handleSaved} onDeleted={handleDeleted} />
           ))}
         </div>
       )}

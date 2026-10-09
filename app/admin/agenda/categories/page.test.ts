@@ -58,8 +58,8 @@ test("mutation controls are hidden from non-Platform-admins", () => {
 test("the category dialog uses the canonical Field controls without changing its controlled state", () => {
   assert.match(PAGE_SOURCE, /import \{ Checkbox, Field, Input \} from "@\/components\/ui\/Field";/);
   const dialog = PAGE_SOURCE.slice(
-    PAGE_SOURCE.indexOf("{showDialog && ("),
-    PAGE_SOURCE.indexOf("</div>\n      )}", PAGE_SOURCE.indexOf("{showDialog && (")),
+    PAGE_SOURCE.indexOf("<Dialog open={showDialog}"),
+    PAGE_SOURCE.indexOf("</Dialog>", PAGE_SOURCE.indexOf("<Dialog open={showDialog}")),
   );
   assert.match(dialog, /<Field label="Category Name" required>/);
   assert.match(dialog, /<Input[\s\S]*?value=\{formName\}[\s\S]*?setFormName\(e\.target\.value\)/);

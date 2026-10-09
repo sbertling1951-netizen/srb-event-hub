@@ -431,6 +431,76 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### App-wide record editing interaction — 2026-10-08 (Release authorized 2026-10-09)
+
+- **Accepted standard:** Pap authorized the reasonably applicable app-wide
+  rollout. The full agreement is recorded in the existing Central UI Standard
+  Blueprint, Part 22: click selects; double-click or visible Edit opens a modal;
+  Escape/Cancel discard; Enter saves ordinary text, multiline Enter inserts a
+  newline and Cmd/Ctrl+Enter saves; scoped arrows navigate rows/actions;
+  preserve page context, authority, validation, drafts on failure and focus.
+- **Applied source:** Vendor catalog, Announcements, Validation Rules, Agenda
+  Categories, Admin Users, Registry Provider catalog, Slideshow deck metadata,
+  Admin Agenda; private organizer Guests, Budget, Registry, Checklist, Vendors,
+  Places and Agenda; Vendor Notices. Nearby's working-list selection,
+  activation, visible Edit and direct cancellation were aligned separately.
+  Nearby's distinct Event/canonical/destination save commands remain explicit;
+  this is not a claim that its multi-scope editor meets the generic Save shortcut.
+- **Mobile direction:** Pap prioritizes pertinent record data and usable space
+  over controls/readouts. Part 22 now explicitly requires mobile information
+  visibility and control-footprint review; phone-width Vendor checks do not
+  establish acceptance for the remaining pages.
+- **Shared behavior:** opt-in recordInteraction helpers leave selection and
+  mutation authority in each page. DataTable remains presentational. One
+  parent-controlled inline form moves into RecordEditorSurface; measured,
+  ResizeObserver-maintained placeholder height prevents page shortening.
+  Dialog now waits for portal mounting before initial focus, uses preventScroll
+  on focus/return, and can return to a refreshed record when the old trigger
+  was replaced. Existing RPCs, RLS, payloads and route guards are preserved.
+- **Applicability boundaries:** Attendees/Participant Identity retain their
+  explicitly governed view/review workflows. Events/Tenants remain contextual
+  administration workspaces with lifecycle, assignments and authority actions.
+  Maps, Location placement, Parking and calendar drag/resize keep specialized
+  controls. Imports/admission/check-in/refunds remain governed workflows.
+  Profile/evaluation/private Event details are single-object forms; Nearby
+  Settings retains atomic InlineEdit. Photo Details already supplies the
+  multiline shortcut and bounded modal reference. No competing guideline was
+  created. ADR-002 Admin Workspace Architecture is empty; that documentation
+  gap remains and was not filled by inference.
+- **Validation:** 330 targeted automated tests passed. Changed source/tests
+  have no ESLint errors; existing hook/unused-state warnings remain. Subsequent
+  focused tests after integration passed; full type checking still fails in
+  the existing unrelated ReportsSummaryCards, import and vendor-migration
+  tests, with no diagnostics in the changed app/shared UI files. Diff checking
+  passed. No source-only result is treated as production acceptance.
+- **Observed Vendor behavior:** local in-app browser tests at desktop and
+  phone widths confirmed click selection, Up/Down and action navigation,
+  double-click/keyboard/visible Edit, focus entry/return, Escape draft discard,
+  validation retaining the draft, multiline Enter and Cmd+Enter persistence.
+  Browser testing exposed and corrected both initial portal-focus timing and
+  background page shortening. Desktop scroll was exactly 610 before, during
+  and after the retested edit. Save/Cancel were visible at phone width. Actual
+  Safari/touch-device acceptance, remaining page runtime verification and
+  simulated network-failure browser checks remain pending.
+- **Local testing setup (Pap approved):** localhost uses Supabase at
+  127.0.0.1:54321. It initially had zero Auth/admin users. A synthetic test
+  Auth user and exactly linked active local Platform admin were created,
+  sign-in was verified, and one Development-Tenant UI Interaction Test Event
+  was created through create_event_for_tenant. Two synthetic Vendor fixtures
+  were added through normal session/RLS; only Beta's description was edited.
+  Credentials are outside Git and the repository; no credentials are recorded
+  here. No production identities or data were copied; no emails were sent.
+- **Crew/delivery:** Mel integrated and ran browser checks. Qwen completed a
+  bounded native read review; its suggestions conflicted with the accepted
+  workflow and were rejected. Claude Max completed a tool-free bounded review;
+  its applicable stale-height finding was fixed, and the other findings were
+  assessed against the parent-controlled draft/stable-trigger contract. No
+  paid API fallback or permission auto-approval was used. Pap authorized
+  commit and push on 2026-10-09. Release checks passed: 323 tests across the
+  changed test files, changed-file ESLint with zero errors and three existing
+  warnings, and git diff --check. Generated next-env.d.ts remains excluded. App-wide production
+  acceptance is not established. Context snapshot refreshed before closeout.
+
 ### Mini setup and UI records delivery — 2026-10-08 (Commit/push authorized)
 
 Pap approved committing the previously reviewed Mini/agent continuity
@@ -3875,16 +3945,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-10-08T18:25:46-07:00`
+**Generated at:** `2026-10-09T06:49:49-07:00`
 **Branch:** `main`
-**Commit:** `2fe012f Standardize Vendor Contacts status presentation`
-**Commit date:** `2026-10-08T16:56:44-07:00`
-**origin/main:** `085d65d`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `8250630 Record Mini agent setup and harden local Qwen reviews`
+**Commit date:** `2026-10-08T18:25:51-07:00`
+**origin/main:** `8250630`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `5`
+**Tracked modified:** `28`
 **Staged:** `0`
-**Untracked:** `1`
+**Untracked:** `3`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records

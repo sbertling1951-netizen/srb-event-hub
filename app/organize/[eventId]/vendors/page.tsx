@@ -1,14 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { OrganizerVendorPlanFields } from "@/components/organize/OrganizerVendorPlanFields";
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
+import { Dialog } from "@/components/ui/Dialog";
 import { Page } from "@/components/ui/Page";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
+import { recordEditorKeyDown, recordRowProps } from "@/components/ui/recordInteraction";
 import { getMyPrivateEventDraft, type OrganizerDraft } from "@/lib/organizerDrafts";
 import {
   addMyPrivateDraftVendorPlan,
@@ -60,6 +62,8 @@ export default function OrganizerVendorPlanPage({ params }: VendorsPageProps) {
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
+  const editInFlight = useRef(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<VendorPlanInput | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
@@ -125,6 +129,8 @@ export default function OrganizerVendorPlanPage({ params }: VendorsPageProps) {
   }
 
   function startEdit(entry: VendorPlanEntry) {
+    if (editInFlight.current) {return;}
+    setSelectedId(entry.id);
     setEditingId(entry.id);
     setEditForm(vendorPlanValues(entry));
     setEditError(null);
@@ -139,6 +145,7 @@ export default function OrganizerVendorPlanPage({ params }: VendorsPageProps) {
 
   async function submitEdit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (editInFlight.current) {return;}
     if (!editingId || !editForm) {
       return;
     }
@@ -147,6 +154,7 @@ export default function OrganizerVendorPlanPage({ params }: VendorsPageProps) {
       setEditError(validationError);
       return;
     }
+    editInFlight.current = true;
     setSavingId(editingId);
     setEditError(null);
     try {
@@ -160,6 +168,7 @@ export default function OrganizerVendorPlanPage({ params }: VendorsPageProps) {
     } catch (error) {
       setEditError(error instanceof Error ? error.message : "We could not save that vendor.");
     } finally {
+      editInFlight.current = false;
       setSavingId(null);
     }
   }
@@ -210,18 +219,16 @@ export default function OrganizerVendorPlanPage({ params }: VendorsPageProps) {
         ) : (
           <ul style={{ display: "grid", gap: 10, listStyle: "none", margin: 0, padding: 0 }}>
             {entries.map((entry) => (
-              <li key={entry.id} className="card" style={{ display: "grid", gap: 8 }}>
-                {editingId === entry.id && editForm ? (
-                  <form onSubmit={submitEdit} style={{ display: "grid", gap: 12 }}>
+              <li key={entry.id} {...recordRowProps(entry, (record) => setSelectedId(record.id), startEdit)} className={"card" + (selectedId === entry.id ? " data-table-row-selected" : "")} style={{ display: "grid", gap: 8 }}>
+                {editingId === entry.id && editForm ? <Dialog open title="Edit vendor" onClose={() => { if (!editInFlight.current) {cancelEdit();} }} dismissOnBackdrop={false} className="app-dialog-wide record-editor-dialog"><form onSubmit={submitEdit} onKeyDown={recordEditorKeyDown} style={{ display: "grid", gap: 12 }}>
                     {editError ? <Alert tone="danger">{editError}</Alert> : null}
                     <OrganizerVendorPlanFields values={editForm} onChange={setEditForm} />
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <div className="record-editor-actions" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                       <AppButton type="submit" variant="primary" loading={savingId === entry.id}>Save changes</AppButton>
                       <AppButton type="button" onClick={cancelEdit} disabled={savingId === entry.id}>Cancel</AppButton>
                     </div>
-                  </form>
-                ) : (
-                  <>
+                  </form></Dialog> : null}
+<>
                     <strong>{entry.vendorName}</strong>
                     <span style={{ color: "var(--color-text-muted, #475569)" }}>
                       {VENDOR_PLAN_STATUS_LABELS[entry.planningStatus]} — {planDetails(entry)}
@@ -246,7 +253,6 @@ export default function OrganizerVendorPlanPage({ params }: VendorsPageProps) {
                       </AppButton>
                     </div>
                   </>
-                )}
               </li>
             ))}
           </ul>

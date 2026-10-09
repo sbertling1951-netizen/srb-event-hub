@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
+import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, Input, Textarea } from "@/components/ui/Field";
 import { FormActions } from "@/components/ui/FormActions";
@@ -13,6 +14,7 @@ import { LoadingState } from "@/components/ui/LoadingState";
 import { Page } from "@/components/ui/Page";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
+import { recordEditorKeyDown, recordRowProps } from "@/components/ui/recordInteraction";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import {
   createRegistryProviderCatalogAsset,
@@ -100,6 +102,8 @@ function RegistryProviderCatalogWorkspace() {
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
+  const editInFlight = useRef(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<RegistryProviderCatalogAssetInput | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
@@ -152,6 +156,8 @@ function RegistryProviderCatalogWorkspace() {
   }
 
   function startEdit(row: RegistryProviderCatalogAssetRow) {
+    if (editInFlight.current) {return;}
+    setSelectedId(row.id);
     setEditingId(row.id);
     setEditForm(registryProviderCatalogAssetValues(row));
     setEditError(null);
@@ -166,6 +172,7 @@ function RegistryProviderCatalogWorkspace() {
 
   async function submitEdit(event: React.FormEvent<HTMLFormElement>, row: RegistryProviderCatalogAssetRow) {
     event.preventDefault();
+    if (editInFlight.current) {return;}
     if (!editForm) {
       return;
     }
@@ -174,6 +181,7 @@ function RegistryProviderCatalogWorkspace() {
       setEditError(validationError);
       return;
     }
+    editInFlight.current = true;
     setSavingId(row.id);
     setEditError(null);
     try {
@@ -185,6 +193,7 @@ function RegistryProviderCatalogWorkspace() {
       setEditError(message);
       await recoverFromConflict(message);
     } finally {
+      editInFlight.current = false;
       setSavingId(null);
     }
   }
@@ -223,12 +232,11 @@ function RegistryProviderCatalogWorkspace() {
           ) : (
             <ul style={{ display: "grid", gap: 10, listStyle: "none", margin: 0, padding: 0 }}>
               {rows.map((row) => (
-                <li key={row.id} className="card" style={{ display: "grid", gap: 8 }}>
-                  {editingId === row.id && editForm ? (
-                    <form onSubmit={(event) => void submitEdit(event, row)} style={{ display: "grid", gap: 12 }}>
+                <li key={row.id} {...recordRowProps(row, (record) => setSelectedId(record.id), startEdit)} className={"card" + (selectedId === row.id ? " data-table-row-selected" : "")} style={{ display: "grid", gap: 8 }}>
+                  {editingId === row.id && editForm ? <Dialog open title="Edit Registry Provider" onClose={() => { if (!editInFlight.current) {cancelEdit();} }} dismissOnBackdrop={false} className="app-dialog-wide record-editor-dialog"><form onKeyDown={recordEditorKeyDown} onSubmit={(event) => void submitEdit(event, row)} style={{ display: "grid", gap: 12 }}>
                       {editError ? <Alert tone="danger">{editError}</Alert> : null}
                       <AssetFields values={editForm} onChange={setEditForm} />
-                      <FormActions>
+                      <FormActions className="record-editor-actions">
                         <AppButton type="submit" variant="primary" loading={savingId === row.id}>
                           Save changes
                         </AppButton>
@@ -236,9 +244,8 @@ function RegistryProviderCatalogWorkspace() {
                           Cancel
                         </AppButton>
                       </FormActions>
-                    </form>
-                  ) : (
-                    <>
+                    </form></Dialog> : null}
+<>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                         <strong>{row.provider_name}</strong>
                         <StatusBadge tone={row.is_active ? "success" : "neutral"}>
@@ -258,7 +265,6 @@ function RegistryProviderCatalogWorkspace() {
                         </AppButton>
                       </FormActions>
                     </>
-                  )}
                 </li>
               ))}
             </ul>

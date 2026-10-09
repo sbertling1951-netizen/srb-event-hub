@@ -1077,3 +1077,80 @@ own "Stage 5A" section — this entry exists so the pattern itself is
 discoverable from the Central UI Standard's own index the next time a
 second shared-service-center candidate appears, without re-litigating
 Imports' own specifics here.
+
+
+## 22. Accepted Record Editing Interaction (Pap, 2026-10-08)
+
+Apply this interaction wherever an editable record list reasonably fits. This is
+an interaction acceptance requirement, not a styling preference. Agenda is the
+reference for single-click selection and double-click editor activation; its
+implementation still needs verification against the complete contract below.
+Photo Details supplies the multiline keyboard and bounded editor layout reference.
+
+- Single-click selects a row. Double-click opens its editor in an in-place
+  popup/modal, preserving the underlying page, filters, scroll and selection.
+- Keep a visible Edit action for equivalent touch and keyboard access. Enter
+  on a focused record opens its editor; double-click is never the only access.
+- Escape and visible Cancel close without saving and discard the draft. Return
+  focus to the triggering row/control without moving the underlying page.
+- Enter invokes Save subject to validation. In multiline fields Enter inserts
+  a newline and Cmd/Ctrl+Enter invokes Save. Preserve native input, picker,
+  composition and control behavior.
+- Keep visible Save and Cancel accessible, with bounded scrolling for long
+  editor content. Prevent duplicate submissions synchronously, retain the draft
+  on validation/save failure, and close only after confirmed successful saving.
+- Up/Down navigate focused records and reveal the selection. Left/Right move
+  between applicable row actions/cells. Scope arrows to the list/grid; retain
+  conventional Tab navigation and native text, map and calendar key behavior.
+- Preserve existing permissions, governed save actions and business behavior.
+
+This extends Part 19 and the native-interaction standard; it does not replace
+Part 18 atomic field editing, specialized map/calendar gestures, explicit
+identity review, admission, check-in or other governed workflows with generic
+record editing. Canonical shell document scrolling remains authoritative.
+Use the existing Dialog foundation for modal focus, Escape and scroll locking.
+Pages own selection and persistence; DataTable remains a presentation primitive.
+
+**Mobile acceptance (Pap, 2026-10-08):** prioritize pertinent record data and
+usable space over repeated controls, readouts and decorative chrome. Keep
+primary context and actions visible; place secondary details/actions behind
+clear disclosure when appropriate, without removing access or weakening
+permissions. Edit, Save and Cancel remain discoverable. Verify actual narrow
+layouts, wrapping, modal scrolling and action reachability; desktop parity
+alone is insufficient. Record specific space/visibility defects before claiming
+mobile acceptance.
+
+Acceptance requires observing selection, activation, cancel/save, failed save,
+multiline shortcuts, scoped arrows, focus return and preserved page context on
+desktop keyboard and touch-sized layouts. Shared primitives and passing automated
+tests alone do not establish compliance. Rollout status belongs in the existing
+Project Brief checkpoint; this agreement is not a claim of app-wide completion.
+
+
+## 23. Accepted Workflow-State Primary Buttons (Pap, 2026-10-04)
+
+**Provenance:** Pap identified this agreement as approved in the chat
+“Slideshow Dot Focus Styling” on October 4, 2026, and supplied its recovered
+wording on October 8, 2026. This entry records that user-provided agreement;
+it does not claim independent inspection of the original chat or app-wide
+implementation compliance.
+
+Where the workflow warrants it, the primary button stays in the same position
+but changes its label and action after the current operation succeeds—for
+example, Save becomes Done or Next. The new label must clearly describe the
+next action. Do not change every Save button automatically.
+
+- Transition only after confirmed success. Pending operations, validation
+  failures and save failures must not advance the button to the next action.
+- Prevent a double-click or repeated Enter from accidentally invoking the
+  newly assigned action. Preventing duplicate submissions of the original
+  operation alone does not establish this protection.
+- Centralize appearance and interaction through the shared button component
+  and theme styling. Each page supplies its verified workflow state, current
+  label and next action; workflow logic does not belong in CSS.
+
+This extends Part 19's action semantics and complements Part 22's record
+editing contract. It preserves governed actions, permissions and business
+behavior. Audit acceptance requires verifying the appropriate next action,
+confirmed-success transition and protection against repeated activation;
+shared styling alone does not establish compliance.

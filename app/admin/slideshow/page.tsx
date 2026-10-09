@@ -8,9 +8,11 @@ import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { Dialog } from "@/components/ui/Dialog";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { FormActions } from "@/components/ui/FormActions";
 import { PageSection } from "@/components/ui/PageSection";
+import { recordEditorKeyDown, recordRowProps } from "@/components/ui/recordInteraction";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import {
   getCurrentAdminEvent,
@@ -463,7 +465,11 @@ function AdminSlideshowPageInner() {
     setDeckActionBusy(false);
   }
 
+  const deckSaveInFlight = useRef(false);
+
   function startEditDeck(deck: PresentationDeck) {
+    if (deckSaveInFlight.current || deckActionBusy) {return;}
+    setSelectedDeckId(deck.id);
     setEditingDeckId(deck.id);
     setEditDeckName(deck.name);
     setEditDeckDescription("");
@@ -476,6 +482,7 @@ function AdminSlideshowPageInner() {
   }
 
   async function handleSaveEditDeck() {
+    if (deckSaveInFlight.current) {return;}
     if (!editingDeckId || !eventId || deckActionBusy) {
       return;
     }
@@ -484,7 +491,9 @@ function AdminSlideshowPageInner() {
       return;
     }
 
+    deckSaveInFlight.current = true;
     setDeckActionBusy(true);
+    try {
     showStatus("Saving deck...");
 
     const { error: updateError } = await supabase.rpc(
@@ -512,7 +521,13 @@ function AdminSlideshowPageInner() {
     await loadDecks(eventId);
     setEditingDeckId(null);
     showStatus("Deck updated.");
-    setDeckActionBusy(false);
+    } catch (err: unknown) {
+      showError(err instanceof Error ? err.message : "Could not save the deck.");
+    } finally {
+      deckSaveInFlight.current = false;
+      setDeckActionBusy(false);
+    }
+
   }
 
   async function handleArchiveDeck(deck: PresentationDeck) {
@@ -1418,11 +1433,10 @@ function AdminSlideshowPageInner() {
                     marginBottom: 16,
                   }}
                 >
-                  {decks.map((deck) =>
-                    editingDeckId === deck.id ? (
-                      <div
-                        key={deck.id}
-                        style={{
+                  {decks.map((deck) => (
+                    <div key={deck.id} {...recordRowProps(deck, (item) => setSelectedDeckId(item.id), startEditDeck)}>
+                      {editingDeckId === deck.id ? <Dialog open title="Edit Deck" onClose={() => { if (!deckSaveInFlight.current) {cancelEditDeck();} }} dismissOnBackdrop={false} className="record-editor-dialog">                      <form onSubmit={(event) => { event.preventDefault(); void handleSaveEditDeck(); }} onKeyDown={recordEditorKeyDown}
+                                                style={{
                           border: "1px solid var(--color-selected)",
                           borderRadius: 8,
                           padding: 12,
@@ -1435,6 +1449,7 @@ function AdminSlideshowPageInner() {
                             gap: 8,
                           }}
                         >
+                          {error ? <Alert tone="danger">{error}</Alert> : null}
                           <Field label="Deck name">
                             {(controlProps) => (
                               <Input
@@ -1485,10 +1500,10 @@ function AdminSlideshowPageInner() {
                               )}
                             </Field>
                           </div>
-                          <FormActions>
+                          <FormActions className="record-editor-actions">
                             <AppButton
                               variant="primary"
-                              onClick={handleSaveEditDeck}
+                              type="submit"
                               disabled={deckActionBusy || !editDeckName.trim()}
                             >
                               Save
@@ -1502,10 +1517,10 @@ function AdminSlideshowPageInner() {
                             </AppButton>
                           </FormActions>
                         </div>
-                      </div>
-                    ) : (
+                      </form>
+</Dialog> : null}
+
                       <div
-                        key={deck.id}
                         style={{
                           display: "flex",
                           alignItems: "center",
@@ -1564,6 +1579,7 @@ function AdminSlideshowPageInner() {
                           </AppButton>
                         </FormActions>
                       </div>
+                    </div>
                     ),
                   )}
                 </div>

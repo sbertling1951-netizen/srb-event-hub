@@ -4680,3 +4680,17 @@ a.ui-ref-legacy-danger {
    .app-button/.app-button-primary/.app-button-danger/.app-button-stop
    rules above (Central UI Standard) -- see those rules' own comments.
    There is no longer a separate prototype class set to maintain here. */
+
+
+/* Opt-in record editors keep actions reachable while long forms scroll. */
+.record-editor-dialog .record-editor-actions {
+  position: sticky;
+  bottom: 0;
+  background: var(--color-surface, white);
+  padding-block: var(--space-3);
+  z-index: 1;
+}
+[data-record-row]:focus-visible {
+  outline: 2px solid var(--color-accent-primary, #2563eb);
+  outline-offset: -2px;
+}

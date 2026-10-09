@@ -17,6 +17,8 @@ import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field"
 import { FormActions } from "@/components/ui/FormActions";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
+import { RecordEditorSurface } from "@/components/ui/RecordEditorSurface";
+import { recordEditorKeyDown, recordRowProps } from "@/components/ui/recordInteraction";
 import { RowActions } from "@/components/ui/RowActions";
 import {
   StatusBadge as SharedStatusBadge,
@@ -224,6 +226,8 @@ function AdminVendorsPageInner() {
   const [applications, setApplications] = useState<VendorEventApplicationRow[]>([]);
   const [form, setForm] = useState<VendorForm>(emptyVendor);
   const [selectedVendorId, setSelectedVendorId] = useState("");
+  const [editorOpen, setEditorOpen] = useState(false);
+  const catalogSaveRef = useRef(false);
   const [status, setStatus] = useState("Loading vendors...");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -382,6 +386,7 @@ function AdminVendorsPageInner() {
   );
 
   function startEdit(vendor: Vendor) {
+    if (saving) {return;}
     setSelectedVendorId(vendor.id);
     setForm({
       id: vendor.id,
@@ -395,17 +400,15 @@ function AdminVendorsPageInner() {
       preferred_contact_method: vendor.preferred_contact_method || "email",
       is_active: vendor.is_active !== false,
     });
-    // UI Phase 3: the catalog table now renders above the form (Part 8
-    // hierarchy), so an Edit click needs to bring the form into view --
-    // the same scroll-on-edit pattern already established in Announcements.
-    document
-      .getElementById("vendor-catalog-form")
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setError(null);
+    setEditorOpen(true);
   }
 
   function startNew() {
-    setSelectedVendorId("");
+    if (saving) {return;}
+    setEditorOpen(false);
     setForm(emptyVendor);
+    setError(null);
   }
 
   async function uploadVendorLogo(file: File) {
@@ -463,11 +466,13 @@ function AdminVendorsPageInner() {
   // reconciled in the prior Vendor Catalog Authority stage), unchanged
   // and unrelated to the admission lifecycle below.
   async function saveVendor() {
+    if (saving || catalogSaveRef.current) {return;}
     if (!form.business_name.trim()) {
       setError("Business name is required.");
       return;
     }
 
+    catalogSaveRef.current = true;
     try {
       setSaving(true);
       setError(null);
@@ -512,11 +517,16 @@ function AdminVendorsPageInner() {
       }
 
       await loadPage();
+      if (editorOpen) {
+        setEditorOpen(false);
+        setForm(emptyVendor);
+      }
     } catch (err: any) {
       console.error("save vendor error:", err);
       setError("We couldn't save this vendor. Please try again.");
       setStatus("Save failed.");
     } finally {
+      catalogSaveRef.current = false;
       setSaving(false);
     }
   }
@@ -889,236 +899,17 @@ function AdminVendorsPageInner() {
     );
   }
 
-  return (
-    <div style={{ display: "grid", gap: "var(--space-10)", minWidth: 0 }}>
-      {error ? (
-        <Alert tone="danger">{error}</Alert>
-      ) : status ? (
-        <Alert tone={vendorPageStatusTone(status)}>{status}</Alert>
-      ) : null}
-
-      <VendorWorkspaceSection admin={admin} tenantAuthority={tenantAuthority} />
-
-      {adminEvent?.id && pendingApplications.length > 0 ? (
-        <section style={{ display: "grid", gap: "var(--space-4)" }}>
-          <PageHeader
-            title="Needs Review"
-            titleId="vendors-needs-review-heading"
-            headingLevel="h2"
-            titleClassName="app-section-title"
-            description={`Candidacy applications awaiting a decision for ${adminEvent.name}.`}
-            descriptionClassName="app-subtle-text"
-          />
-          <ResponsiveList aria-labelledby="vendors-needs-review-heading">
-            {pendingApplications.map((app) => {
-              const vendor = vendors.find((v) => v.id === app.vendor_id);
-              if (!vendor) {
-                return null;
-              }
-              return (
-                <li key={app.application_id} className="responsive-list-item">
-                  <div className="responsive-list-item-header">
-                    <div className="responsive-list-item-title">{vendor.business_name}</div>
-                    <StatusBadge status="pending" />
-                  </div>
-                  <div className="responsive-list-item-meta">
-                    <span>Submitted {new Date(app.submitted_at).toLocaleDateString()}</span>
-                  </div>
-                  <RowActions>
-                    <AppButton
-                      variant="success"
-                      onClick={() => void admit(vendor)}
-                      disabled={saving}
-                      aria-label={`Admit "${vendor.business_name}" for this Event`}
-                    >
-                      Admit
-                    </AppButton>
-                    <AppButton
-                      variant="danger"
-                      onClick={() => setDecisionModal({ mode: "reject", vendor })}
-                      disabled={saving}
-                      aria-label={`Reject "${vendor.business_name}" for this Event`}
-                    >
-                      Reject
-                    </AppButton>
-                  </RowActions>
-                </li>
-              );
-            })}
-          </ResponsiveList>
-        </section>
-      ) : null}
-
-      <section style={{ display: "grid", gap: "var(--space-4)" }}>
-        <PageHeader
-          title="Vendor Catalog"
-          titleId="vendors-catalog-heading"
+  const catalogForm = (
+      <form id="vendor-catalog-form" style={{ display: "grid", gap: "var(--space-4)" }}
+        onSubmit={(event) => {event.preventDefault(); void saveVendor();}}
+        onKeyDown={recordEditorKeyDown}
+      >
+        {editorOpen && error ? <Alert tone="danger">{error}</Alert> : null}
+        {!editorOpen ? <PageHeader
+          title="Add Vendor"
           headingLevel="h2"
           titleClassName="app-section-title"
-          description="Every vendor here is a known EpicentraX catalog vendor. Considering or admitting a vendor for the working Event never creates a duplicate vendor record and never affects any other Event."
-          descriptionClassName="app-subtle-text"
-        />
-
-        {!adminEvent?.id ? (
-          <Alert tone="neutral">
-            No Event is selected -- Event relationship and admission actions are unavailable until
-            one is. Catalog identity can still be viewed and edited below.
-          </Alert>
-        ) : null}
-
-        {vendors.length === 0 ? (
-          <EmptyState message="No vendors in the catalog yet. Add one below." />
-        ) : isCompact ? (
-          <ResponsiveList aria-labelledby="vendors-catalog-heading">
-            {vendors.map((vendor) => {
-              const eventVendor = eventVendorByVendorId.get(vendor.id);
-              const application = applicationByVendorId.get(vendor.id);
-              const displayStatus = deriveVendorEventDisplayStatus(
-                application?.candidacy_status ?? null,
-                application?.current_participation_state ?? null,
-              );
-              const isExpanded = expandedVendorId === vendor.id;
-
-              return (
-                <li
-                  key={vendor.id}
-                  className={
-                    "responsive-list-item" +
-                    (displayStatus === "admitted" ? " responsive-list-item-pinned" : "") +
-                    (selectedVendorId === vendor.id ? " responsive-list-item-selected" : "")
-                  }
-                >
-                  <div className="responsive-list-item-header">
-                    <div className="responsive-list-item-title">{vendor.business_name}</div>
-                    <SharedStatusBadge tone={catalogStatusTone(vendor.is_active)}>
-                      {vendor.is_active === false ? "Inactive" : "Active"}
-                    </SharedStatusBadge>
-                  </div>
-
-                  <div className="responsive-list-item-badges">
-                    {adminEvent?.id ? (
-                      <StatusBadge status={displayStatus} />
-                    ) : (
-                      <SharedStatusBadge tone="neutral">No Event selected</SharedStatusBadge>
-                    )}
-                  </div>
-
-                  <div className="responsive-list-item-meta">
-                    <span>{vendor.contact_name || "No contact"}</span>
-                    <span>{vendor.email || vendor.phone || "No contact info"}</span>
-                  </div>
-
-                  {renderCatalogActions(vendor, displayStatus)}
-
-                  {isExpanded
-                    ? renderVendorReviewPanel(
-                        vendor,
-                        eventVendor,
-                        intelligenceByVendorId[vendor.id] || null,
-                        dispositionsByVendorId[vendor.id] || [],
-                      )
-                    : null}
-                </li>
-              );
-            })}
-          </ResponsiveList>
-        ) : (
-          <DataTable caption="Vendor catalog with Event relationship and status">
-            <thead>
-              <tr>
-                <th scope="col">Vendor</th>
-                <th scope="col">Catalog Status</th>
-                <th scope="col">Event Status</th>
-                <th scope="col">Contact</th>
-                <th scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vendors.map((vendor) => {
-                const eventVendor = eventVendorByVendorId.get(vendor.id);
-                const application = applicationByVendorId.get(vendor.id);
-                const displayStatus = deriveVendorEventDisplayStatus(
-                  application?.candidacy_status ?? null,
-                  application?.current_participation_state ?? null,
-                );
-                const isExpanded = expandedVendorId === vendor.id;
-
-                return (
-                  <React.Fragment key={vendor.id}>
-                    <tr
-                      className={
-                        [
-                          displayStatus === "admitted" ? "data-table-row-pinned" : "",
-                          selectedVendorId === vendor.id ? "data-table-row-selected" : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" ") || undefined
-                      }
-                    >
-                      <td>
-                        <div className="data-table-cell-primary">
-                          {vendor.logo_url ? (
-                            <img
-                              src={vendor.logo_url}
-                              alt=""
-                              style={{
-                                width: 40,
-                                height: 32,
-                                objectFit: "contain",
-                                borderRadius: "var(--radius-small)",
-                                border: "var(--border-width-default) solid var(--color-border-default)",
-                                background: "var(--color-bg-elevated)",
-                                flexShrink: 0,
-                              }}
-                            />
-                          ) : null}
-                          {vendor.business_name}
-                        </div>
-                      </td>
-                      <td>
-                        <SharedStatusBadge tone={catalogStatusTone(vendor.is_active)}>
-                          {vendor.is_active === false ? "Inactive" : "Active"}
-                        </SharedStatusBadge>
-                      </td>
-                      <td>
-                        {adminEvent?.id ? (
-                          <StatusBadge status={displayStatus} />
-                        ) : (
-                          <SharedStatusBadge tone="neutral">No Event selected</SharedStatusBadge>
-                        )}
-                      </td>
-                      <td className="data-table-cell-meta">
-                        {vendor.contact_name || "No contact"}
-                        {vendor.email ? ` · ${vendor.email}` : vendor.phone ? ` · ${vendor.phone}` : ""}
-                      </td>
-                      <td>{renderCatalogActions(vendor, displayStatus)}</td>
-                    </tr>
-                    {isExpanded ? (
-                      <tr>
-                        <td colSpan={5} style={{ background: "var(--color-bg-muted)" }}>
-                          {renderVendorReviewPanel(
-                            vendor,
-                            eventVendor,
-                            intelligenceByVendorId[vendor.id] || null,
-                            dispositionsByVendorId[vendor.id] || [],
-                          )}
-                        </td>
-                      </tr>
-                    ) : null}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </DataTable>
-        )}
-      </section>
-
-      <section id="vendor-catalog-form" style={{ display: "grid", gap: "var(--space-4)" }}>
-        <PageHeader
-          title={form.id ? "Edit Vendor" : "Add Vendor"}
-          headingLevel="h2"
-          titleClassName="app-section-title"
-        />
+        /> : null}
 
         <PageSection variant="section">
           <div style={{ display: "grid", gap: "var(--space-5)" }}>
@@ -1263,17 +1054,248 @@ function AdminVendorsPageInner() {
               label="Vendor is active"
             />
 
-            <FormActions>
-              <AppButton variant="primary" onClick={saveVendor} disabled={saving}>
+            <FormActions className="record-editor-actions">
+              <AppButton variant="primary" type="submit" disabled={saving}>
                 {saving ? "Saving..." : "Save Vendor"}
               </AppButton>
               <AppButton onClick={startNew} disabled={saving}>
-                New Vendor
+                {editorOpen ? "Cancel" : "New Vendor"}
               </AppButton>
             </FormActions>
           </div>
         </PageSection>
+      </form>
+  );
+
+  return (
+    <div style={{ display: "grid", gap: "var(--space-10)", minWidth: 0 }}>
+      {error ? (
+        <Alert tone="danger">{error}</Alert>
+      ) : status ? (
+        <Alert tone={vendorPageStatusTone(status)}>{status}</Alert>
+      ) : null}
+
+      <VendorWorkspaceSection admin={admin} tenantAuthority={tenantAuthority} />
+
+      {adminEvent?.id && pendingApplications.length > 0 ? (
+        <section style={{ display: "grid", gap: "var(--space-4)" }}>
+          <PageHeader
+            title="Needs Review"
+            titleId="vendors-needs-review-heading"
+            headingLevel="h2"
+            titleClassName="app-section-title"
+            description={`Candidacy applications awaiting a decision for ${adminEvent.name}.`}
+            descriptionClassName="app-subtle-text"
+          />
+          <ResponsiveList aria-labelledby="vendors-needs-review-heading">
+            {pendingApplications.map((app) => {
+              const vendor = vendors.find((v) => v.id === app.vendor_id);
+              if (!vendor) {
+                return null;
+              }
+              return (
+                <li key={app.application_id} className="responsive-list-item">
+                  <div className="responsive-list-item-header">
+                    <div className="responsive-list-item-title">{vendor.business_name}</div>
+                    <StatusBadge status="pending" />
+                  </div>
+                  <div className="responsive-list-item-meta">
+                    <span>Submitted {new Date(app.submitted_at).toLocaleDateString()}</span>
+                  </div>
+                  <RowActions>
+                    <AppButton
+                      variant="success"
+                      onClick={() => void admit(vendor)}
+                      disabled={saving}
+                      aria-label={`Admit "${vendor.business_name}" for this Event`}
+                    >
+                      Admit
+                    </AppButton>
+                    <AppButton
+                      variant="danger"
+                      onClick={() => setDecisionModal({ mode: "reject", vendor })}
+                      disabled={saving}
+                      aria-label={`Reject "${vendor.business_name}" for this Event`}
+                    >
+                      Reject
+                    </AppButton>
+                  </RowActions>
+                </li>
+              );
+            })}
+          </ResponsiveList>
+        </section>
+      ) : null}
+
+      <section style={{ display: "grid", gap: "var(--space-4)" }}>
+        <PageHeader
+          title="Vendor Catalog"
+          titleId="vendors-catalog-heading"
+          headingLevel="h2"
+          titleClassName="app-section-title"
+          description="Every vendor here is a known EpicentraX catalog vendor. Considering or admitting a vendor for the working Event never creates a duplicate vendor record and never affects any other Event."
+          descriptionClassName="app-subtle-text"
+        />
+
+        {!adminEvent?.id ? (
+          <Alert tone="neutral">
+            No Event is selected -- Event relationship and admission actions are unavailable until
+            one is. Catalog identity can still be viewed and edited below.
+          </Alert>
+        ) : null}
+
+        {vendors.length === 0 ? (
+          <EmptyState message="No vendors in the catalog yet. Add one below." />
+        ) : isCompact ? (
+          <ResponsiveList aria-labelledby="vendors-catalog-heading">
+            {vendors.map((vendor) => {
+              const eventVendor = eventVendorByVendorId.get(vendor.id);
+              const application = applicationByVendorId.get(vendor.id);
+              const displayStatus = deriveVendorEventDisplayStatus(
+                application?.candidacy_status ?? null,
+                application?.current_participation_state ?? null,
+              );
+              const isExpanded = expandedVendorId === vendor.id;
+
+              return (
+                <li
+                  key={vendor.id}
+                  {...recordRowProps(vendor, (item) => setSelectedVendorId(item.id), startEdit)}
+                  className={
+                    "responsive-list-item" +
+                    (displayStatus === "admitted" ? " responsive-list-item-pinned" : "") +
+                    (selectedVendorId === vendor.id ? " responsive-list-item-selected" : "")
+                  }
+                >
+                  <div className="responsive-list-item-header">
+                    <div className="responsive-list-item-title">
+                      <span>{vendor.business_name}</span>
+                    </div>
+                    <SharedStatusBadge tone={catalogStatusTone(vendor.is_active)}>
+                      {vendor.is_active === false ? "Inactive" : "Active"}
+                    </SharedStatusBadge>
+                  </div>
+
+                  <div className="responsive-list-item-badges">
+                    {adminEvent?.id ? (
+                      <StatusBadge status={displayStatus} />
+                    ) : (
+                      <SharedStatusBadge tone="neutral">No Event selected</SharedStatusBadge>
+                    )}
+                  </div>
+
+                  <div className="responsive-list-item-meta">
+                    <span>{vendor.contact_name || "No contact"}</span>
+                    <span>{vendor.email || vendor.phone || "No contact info"}</span>
+                  </div>
+
+                  {renderCatalogActions(vendor, displayStatus)}
+
+                  {isExpanded
+                    ? renderVendorReviewPanel(
+                        vendor,
+                        eventVendor,
+                        intelligenceByVendorId[vendor.id] || null,
+                        dispositionsByVendorId[vendor.id] || [],
+                      )
+                    : null}
+                </li>
+              );
+            })}
+          </ResponsiveList>
+        ) : (
+          <DataTable caption="Vendor catalog with Event relationship and status">
+            <thead>
+              <tr>
+                <th scope="col">Vendor</th>
+                <th scope="col">Catalog Status</th>
+                <th scope="col">Event Status</th>
+                <th scope="col">Contact</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {vendors.map((vendor) => {
+                const eventVendor = eventVendorByVendorId.get(vendor.id);
+                const application = applicationByVendorId.get(vendor.id);
+                const displayStatus = deriveVendorEventDisplayStatus(
+                  application?.candidacy_status ?? null,
+                  application?.current_participation_state ?? null,
+                );
+                const isExpanded = expandedVendorId === vendor.id;
+
+                return (
+                  <React.Fragment key={vendor.id}>
+                    <tr
+                  {...recordRowProps(vendor, (item) => setSelectedVendorId(item.id), startEdit)}
+                      className={
+                        [
+                          displayStatus === "admitted" ? "data-table-row-pinned" : "",
+                          selectedVendorId === vendor.id ? "data-table-row-selected" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ") || undefined
+                      }
+                    >
+                      <td>
+                        <div className="data-table-cell-primary">
+                          {vendor.logo_url ? (
+                            <img
+                              src={vendor.logo_url}
+                              alt=""
+                              style={{
+                                width: 40,
+                                height: 32,
+                                objectFit: "contain",
+                                borderRadius: "var(--radius-small)",
+                                border: "var(--border-width-default) solid var(--color-border-default)",
+                                background: "var(--color-bg-elevated)",
+                                flexShrink: 0,
+                              }}
+                            />
+                          ) : null}
+                          <span>{vendor.business_name}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <SharedStatusBadge tone={catalogStatusTone(vendor.is_active)}>
+                          {vendor.is_active === false ? "Inactive" : "Active"}
+                        </SharedStatusBadge>
+                      </td>
+                      <td>
+                        {adminEvent?.id ? (
+                          <StatusBadge status={displayStatus} />
+                        ) : (
+                          <SharedStatusBadge tone="neutral">No Event selected</SharedStatusBadge>
+                        )}
+                      </td>
+                      <td className="data-table-cell-meta">
+                        {vendor.contact_name || "No contact"}
+                        {vendor.email ? ` · ${vendor.email}` : vendor.phone ? ` · ${vendor.phone}` : ""}
+                      </td>
+                      <td>{renderCatalogActions(vendor, displayStatus)}</td>
+                    </tr>
+                    {isExpanded ? (
+                      <tr>
+                        <td colSpan={5} style={{ background: "var(--color-bg-muted)" }}>
+                          {renderVendorReviewPanel(
+                            vendor,
+                            eventVendor,
+                            intelligenceByVendorId[vendor.id] || null,
+                            dispositionsByVendorId[vendor.id] || [],
+                          )}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </DataTable>
+        )}
       </section>
+
+      <RecordEditorSurface open={editorOpen} onClose={startNew} title={`Edit ${form.business_name || "Vendor"}`} className="app-dialog-wide record-editor-dialog" dismissOnBackdrop={false}>{catalogForm}</RecordEditorSurface>
 
       {decisionModal ? (
         <VendorEventDecisionModal

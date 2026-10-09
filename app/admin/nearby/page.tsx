@@ -39,6 +39,7 @@ import { FormActions } from "@/components/ui/FormActions";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
+import { recordRowProps } from "@/components/ui/recordInteraction";
 import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
 import { SearchField, TableToolbar, TableToolbarDisclosure, TableToolbarPrimaryRow } from "@/components/ui/TableToolbar";
 import { useAdmin } from "@/lib/adminContext";
@@ -494,8 +495,9 @@ function SortableEventPlaceCard(props: {
   place: EventPlace;
   selected: boolean;
   onSelect: () => void;
+  onEdit: () => void;
 }) {
-  const { place, selected, onSelect } = props;
+  const { place, selected, onSelect, onEdit } = props;
 
   const {
     attributes,
@@ -517,6 +519,7 @@ function SortableEventPlaceCard(props: {
   return (
     <div
       ref={setNodeRef}
+      {...recordRowProps(place, onSelect, onEdit)}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
@@ -547,6 +550,7 @@ function SortableEventPlaceCard(props: {
           }}
         >
           <div style={{ fontWeight: 700 }}>{place.name}</div>
+          <AppButton onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onEdit(); }}>Edit</AppButton>
 
           <div
             style={{
@@ -772,6 +776,7 @@ function AdminNearbyPageInner() {
   // ---------------------------------------------------------------------
   // Nearby Scope Model Stage 3 -- unified editor state.
   // ---------------------------------------------------------------------
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [editorExpanded, setEditorExpanded] = useState(false);
   const [editorMode, setEditorMode] = useState<"add" | "edit">("add");
   const [editorScope, setEditorScope] = useState<PlaceScope | null>(null);
@@ -1017,21 +1022,9 @@ function AdminNearbyPageInner() {
     await openNearbyEditorForPlace(place);
   }
 
-  // Cancel/Close. Never wired to a backdrop or outside click: this
-  // editor is an inline disclosure, not a modal.
+  // Escape and Cancel discard this editor without changing list selection.
   async function closeNearbyEditor() {
-    if (isNearbyEditorDirty()) {
-      const confirmed = await requestConfirmation({
-        title: "Discard Unsaved Changes?",
-        message: "This nearby place has unsaved changes. Discard them and close the editor?",
-        confirmLabel: "Discard Changes",
-        cancelLabel: "Keep Editing",
-        danger: true,
-      });
-      if (!confirmed) {
-        return;
-      }
-    }
+    if (editingBusy) {return;}
     resetNearbyEditorToClosed();
   }
 
@@ -4772,8 +4765,9 @@ function AdminNearbyPageInner() {
                         <SortableEventPlaceCard
                           key={place.id}
                           place={place}
-                          selected={editorExpanded && editorMode === "edit" && nearbyEventForm.id === place.id}
-                          onSelect={() => void requestOpenNearbyEditorForPlace(place)}
+                          selected={selectedPlaceId === place.id}
+                          onSelect={() => setSelectedPlaceId(place.id)}
+                          onEdit={() => { setSelectedPlaceId(place.id); void requestOpenNearbyEditorForPlace(place); }}
                         />
                       ))}
                     </div>

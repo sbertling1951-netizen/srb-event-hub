@@ -37,7 +37,7 @@ test("the shell-level parent return target points to the Catalogs workspace, usi
 
 test("every provider action row uses the shared FormActions layout primitive", () => {
   assert.match(SOURCE, /import \{ FormActions \} from "@\/components\/ui\/FormActions";/);
-  assert.equal((SOURCE.match(/<FormActions>/g) || []).length, 3);
+  assert.equal((SOURCE.match(/<FormActions(?: className="record-editor-actions")?>/g) || []).length, 3);
   assert.equal(/display: "flex", gap: 10, flexWrap: "wrap"/.test(SOURCE), false);
 });
 

@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
+import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Input } from "@/components/ui/Field";
 import { LoadingState } from "@/components/ui/LoadingState";
+import { recordEditorKeyDown, recordRowProps } from "@/components/ui/recordInteraction";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
 import { supabase } from "@/lib/supabase";
@@ -44,6 +46,8 @@ function AgendaCategoriesPageInner() {
   const [categories, setCategories] = useState<any[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
 
+  const saveInFlight = useRef(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showDialog, setShowDialog] = useState(false);
   const [formName, setFormName] = useState("");
   const [formColor, setFormColor] = useState("#4f46e5");
@@ -72,6 +76,8 @@ function AgendaCategoriesPageInner() {
   }
 
   async function saveCategory() {
+    if (saveInFlight.current || !isSuperAdmin || !formName.trim()) {return;}
+    saveInFlight.current = true;
     setSaving(true);
     setErrorMessage("");
     try {
@@ -121,11 +127,14 @@ function AgendaCategoriesPageInner() {
     } catch (err: any) {
       setErrorMessage(mapCategoryRpcError(err, "An error occurred"));
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   }
 
   function openEditDialog(category: any) {
+    if (saving || !isSuperAdmin) {return;}
+    setSelectedId(category.id);
     setEditingCategoryId(category.id);
     setFormName(category.name);
     setFormColor(category.color);
@@ -239,7 +248,7 @@ function AgendaCategoriesPageInner() {
       ) : isCompact ? (
         <ResponsiveList aria-label="Agenda categories">
           {categories.map((category) => (
-            <li key={category.id} className="responsive-list-item">
+            <li key={category.id} {...recordRowProps(category, (item) => setSelectedId(item.id), openEditDialog)} className={"responsive-list-item" + (selectedId === category.id ? " responsive-list-item-selected" : "")}>
               <div className="responsive-list-item-header">
                 <div className="responsive-list-item-title">{category.name}</div>
                 {renderActiveBadge(category)}
@@ -268,7 +277,7 @@ function AgendaCategoriesPageInner() {
           </thead>
           <tbody>
             {categories.map((category) => (
-              <tr key={category.id}>
+              <tr key={category.id} {...recordRowProps(category, (item) => setSelectedId(item.id), openEditDialog)} className={selectedId === category.id ? "data-table-row-selected" : undefined}>
                 <td>
                   <div className="data-table-cell-primary">{category.name}</div>
                 </td>
@@ -282,32 +291,9 @@ function AgendaCategoriesPageInner() {
         </DataTable>
       )}
 
-      {showDialog && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            backgroundColor: "rgba(0,0,0,0.5)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "white",
-              padding: 24,
-              borderRadius: 8,
-              border: "1px solid #dbe4ef",
-              width: 400,
-              boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
-            }}
-          >
-            <h2 style={{ marginTop: 0, color: "#334155" }}>{editingCategoryId ? "Edit Category" : "New Category"}</h2>
+      <Dialog open={showDialog} onClose={() => { if (!saving) { setShowDialog(false); setEditingCategoryId(null); setFormName(""); } }} title={editingCategoryId ? "Edit Category" : "New Category"} dismissOnBackdrop={false} className="record-editor-dialog">
+        <form onSubmit={(event) => { event.preventDefault(); void saveCategory(); }} onKeyDown={recordEditorKeyDown}>
+          {errorMessage ? <p role="alert">{errorMessage}</p> : null}
             <div style={{ marginBottom: 12 }}>
               <Field label="Category Name" required>
                 {(props) => (
@@ -348,9 +334,10 @@ function AgendaCategoriesPageInner() {
                 label="Default Category"
               />
             </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <div className="record-editor-actions" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button
-                onClick={() => setShowDialog(false)}
+                type="button"
+                onClick={() => { setShowDialog(false); setEditingCategoryId(null); setFormName(""); }}
                 disabled={saving}
                 style={{
                   padding: "8px 16px",
@@ -365,7 +352,7 @@ function AgendaCategoriesPageInner() {
                 Cancel
               </button>
               <button
-                onClick={saveCategory}
+                type="submit"
                 disabled={saving || formName.trim() === ""}
                 style={{
                   padding: "8px 16px",
@@ -380,9 +367,8 @@ function AgendaCategoriesPageInner() {
                 {saving ? "Saving…" : "Save"}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+        </form>
+      </Dialog>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   emptyOrganizerAgendaItem,
@@ -10,9 +10,11 @@ import {
 } from "@/components/organize/OrganizerAgendaItemFields";
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
+import { Dialog } from "@/components/ui/Dialog";
 import { Page } from "@/components/ui/Page";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
+import { recordEditorKeyDown, recordRowProps } from "@/components/ui/recordInteraction";
 import {
   createMyPrivateDraftAgendaItem,
   deleteMyPrivateDraftAgendaItem,
@@ -53,6 +55,8 @@ export default function OrganizerAgendaPage({ params }: AgendaPageProps) {
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
+  const editInFlight = useRef(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<OrganizerAgendaItemInput | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
@@ -131,6 +135,8 @@ export default function OrganizerAgendaPage({ params }: AgendaPageProps) {
   }
 
   function startEdit(item: OrganizerAgendaItem) {
+    if (editInFlight.current) {return;}
+    setSelectedId(item.id);
     setEditingId(item.id);
     setEditForm(organizerAgendaItemValues(item));
     setEditError(null);
@@ -145,6 +151,7 @@ export default function OrganizerAgendaPage({ params }: AgendaPageProps) {
 
   async function submitEdit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (editInFlight.current) {return;}
     if (!editingId || !editForm) {
       return;
     }
@@ -153,6 +160,7 @@ export default function OrganizerAgendaPage({ params }: AgendaPageProps) {
       setEditError(validationError);
       return;
     }
+    editInFlight.current = true;
     setSavingId(editingId);
     setEditError(null);
     try {
@@ -172,6 +180,7 @@ export default function OrganizerAgendaPage({ params }: AgendaPageProps) {
     } catch (error) {
       setEditError(error instanceof Error ? error.message : "We could not save that agenda item.");
     } finally {
+      editInFlight.current = false;
       setSavingId(null);
     }
   }
@@ -238,18 +247,16 @@ export default function OrganizerAgendaPage({ params }: AgendaPageProps) {
         ) : (
           <ul style={{ display: "grid", gap: 10, listStyle: "none", margin: 0, padding: 0 }}>
             {items.map((item) => (
-              <li key={item.id} className="card" style={{ display: "grid", gap: 8 }}>
-                {editingId === item.id && editForm ? (
-                  <form onSubmit={submitEdit} style={{ display: "grid", gap: 12 }}>
+              <li key={item.id} {...recordRowProps(item, (record) => setSelectedId(record.id), startEdit)} className={"card" + (selectedId === item.id ? " data-table-row-selected" : "")} style={{ display: "grid", gap: 8 }}>
+                {editingId === item.id && editForm ? <Dialog open title="Edit agenda" onClose={() => { if (!editInFlight.current) {cancelEdit();} }} dismissOnBackdrop={false} className="app-dialog-wide record-editor-dialog"><form onSubmit={submitEdit} onKeyDown={recordEditorKeyDown} style={{ display: "grid", gap: 12 }}>
                     {editError ? <Alert tone="danger">{editError}</Alert> : null}
                     <OrganizerAgendaItemFields values={editForm} onChange={setEditForm} />
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <div className="record-editor-actions" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                       <AppButton type="submit" variant="primary" loading={savingId === item.id}>Save changes</AppButton>
                       <AppButton type="button" onClick={cancelEdit} disabled={savingId === item.id}>Cancel</AppButton>
                     </div>
-                  </form>
-                ) : (
-                  <>
+                  </form></Dialog> : null}
+<>
                     <strong>{item.title}</strong>
                     <span style={{ color: "var(--color-text-muted, #475569)" }}>{itemSchedule(item)}</span>
                     {item.location ? <span>Location: {item.location}</span> : null}
@@ -266,7 +273,6 @@ export default function OrganizerAgendaPage({ params }: AgendaPageProps) {
                       </AppButton>
                     </div>
                   </>
-                )}
               </li>
             ))}
           </ul>

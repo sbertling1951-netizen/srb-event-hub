@@ -165,6 +165,7 @@ export function Dialog({
   const titleId = titleIdProp ?? generatedTitleId;
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const returnRecordIdRef = useRef<string | null>(null);
   const pushedHistoryRef = useRef(false);
   const layerIdRef = useRef<symbol | null>(null);
   const onCloseRef = useRef(onClose);
@@ -178,25 +179,32 @@ export function Dialog({
 
   // Move focus in on open; capture and restore the triggering control.
   useEffect(() => {
-    if (!open) {
+    if (!open || !mounted) {
       return;
     }
 
     returnFocusRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
+    returnRecordIdRef.current = returnFocusRef.current?.closest("[data-record-id]")?.getAttribute("data-record-id") ?? null;
+
     const focusTarget =
       initialFocusRef?.current ??
       dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR) ??
       dialogRef.current;
-    focusTarget?.focus();
+    focusTarget?.focus({ preventScroll: true });
 
     return () => {
-      returnFocusRef.current?.focus();
+      const trigger = returnFocusRef.current;
+      const replacement = returnRecordIdRef.current
+        ? document.querySelector<HTMLElement>(`[data-record-id="${CSS.escape(returnRecordIdRef.current)}"]`)
+        : null;
+      (trigger?.isConnected ? trigger : replacement)?.focus({ preventScroll: true });
+      returnRecordIdRef.current = null;
       returnFocusRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, mounted]);
 
   // Lock background scroll while open. If another dialog is already open
   // underneath, this simply re-applies the same "hidden" value it already

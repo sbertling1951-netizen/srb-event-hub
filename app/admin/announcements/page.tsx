@@ -15,6 +15,8 @@ import { FormActions } from "@/components/ui/FormActions";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
+import { RecordEditorSurface } from "@/components/ui/RecordEditorSurface";
+import { recordEditorKeyDown, recordRowProps } from "@/components/ui/recordInteraction";
 import { RowActions } from "@/components/ui/RowActions";
 import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
@@ -155,7 +157,9 @@ function AdminAnnouncementsPageInner() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ title?: string; body?: string }>({});
-  const formSectionRef = useRef<HTMLDivElement | null>(null);
+  const saveInFlight = useRef(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const { isCompact } = useShellInterfaceCapabilities();
 
   const [loadingEvent, setLoadingEvent] = useState(true);
@@ -247,7 +251,7 @@ function AdminAnnouncementsPageInner() {
   }, []);
 
   useEffect(() => {
-    if (!admin) return;
+    if (!admin) {return;}
 
     function loadCurrentEvent() {
       setLoadingEvent(true);
@@ -341,6 +345,8 @@ function AdminAnnouncementsPageInner() {
   }, [announcements]);
 
   function resetForm() {
+    if (saveInFlight.current) {return;}
+    setEditorOpen(false);
     setForm(EMPTY_FORM);
     setEditingId(null);
     setFieldErrors({});
@@ -369,6 +375,9 @@ function AdminAnnouncementsPageInner() {
   }
 
   function startEdit(item: Announcement) {
+    if (saving) {return;}
+    setSelectedId(item.id);
+    setEditorOpen(true);
     setEditingId(item.id);
     setFieldErrors({});
     setForm({
@@ -379,10 +388,10 @@ function AdminAnnouncementsPageInner() {
       is_published: !!item.is_published,
       expire_at: normalizeForInput(item.expire_at),
     });
-    formSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   async function handleSave() {
+    if (saveInFlight.current) {return;}
     if (!eventId) {
       showError("No active event selected.");
       return;
@@ -401,6 +410,7 @@ function AdminAnnouncementsPageInner() {
     }
     setFieldErrors({});
 
+    saveInFlight.current = true;
     setSaving(true);
     showStatus(
       editingId ? "Updating announcement..." : "Creating announcement...",
@@ -457,8 +467,13 @@ function AdminAnnouncementsPageInner() {
       }
 
       await loadAnnouncements(eventId);
-      resetForm();
+      setEditorOpen(false);
+      setForm(EMPTY_FORM);
+      setFieldErrors({});
+    } catch (err: unknown) {
+      showError(err instanceof Error ? err.message : "Could not save announcement.");
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   }
@@ -600,154 +615,15 @@ function AdminAnnouncementsPageInner() {
     );
   }
 
-  return (
-    <div style={{ display: "grid", gap: "var(--space-10)" }}>
-      <ConfirmDialog
-        open={!!confirmDialog}
-        title={confirmDialog?.title || "Confirm Action"}
-        message={confirmDialog?.message || "Are you sure you want to continue?"}
-        confirmLabel={confirmDialog?.confirmLabel || "Confirm"}
-        cancelLabel={confirmDialog?.cancelLabel || "Cancel"}
-        danger={!!confirmDialog?.danger}
-        onCancel={() => closeConfirmDialog(false)}
-        onConfirm={() => closeConfirmDialog(true)}
-      />
-
-      {/* Page context: lifted above both sections (rather than nested
-          inside the form, as before) so a status/error from a row action
-          (Publish/Pin/Delete) in the list below is immediately visible
-          without scrolling down to the form section. Non-steady-state
-          only (Stage 3B §D): the canonical Admin shell header now owns
-          Event name/location/date range for the normal resolved+
-          authorized case, so this line shows only what the shell cannot
-          -- that a selection is still loading, or that nothing is
-          currently selected. The specific access-denied reason remains
-          the separate `error` Alert below, unchanged. */}
-      {loadingEvent ? (
-        <LoadingState message="Loading selected event..." />
-      ) : !currentEvent ? (
-        <EmptyState message="No event selected." />
-      ) : null}
-      {error ? <Alert tone="danger">{error}</Alert> : null}
-      {!error && status ? (
-        <Alert tone={announcementStatusTone(status)}>{status}</Alert>
-      ) : null}
-
-      <section style={{ display: "grid", gap: "var(--space-4)" }}>
-        <PageHeader
-          title="Existing Announcements"
-          titleId="announcements-existing-heading"
-          headingLevel="h2"
-          titleClassName="app-section-title"
-        />
-
-        {loadingAnnouncements ? (
-          <LoadingState message="Loading announcements..." />
-        ) : sortedAnnouncements.length === 0 ? (
-          <EmptyState message="No announcements yet for this event." />
-        ) : isCompact ? (
-          <ResponsiveList aria-labelledby="announcements-existing-heading">
-            {sortedAnnouncements.map((announcement) => {
-              const name = announcement.title || "Untitled";
-              return (
-                <li
-                  key={announcement.id}
-                  className={
-                    "responsive-list-item" +
-                    (announcement.is_pinned
-                      ? " responsive-list-item-pinned"
-                      : "")
-                  }
-                >
-                  <div className="responsive-list-item-header">
-                    <div className="responsive-list-item-title">{name}</div>
-                    <StatusBadge
-                      tone={announcement.is_published ? "success" : "neutral"}
-                    >
-                      {announcement.is_published ? "Published" : "Draft"}
-                    </StatusBadge>
-                  </div>
-
-                  <div className="responsive-list-item-badges">
-                    <StatusBadge tone={priorityTone(announcement.priority)}>
-                      {priorityLabel(announcement.priority)} priority
-                    </StatusBadge>
-                    {announcement.is_pinned ? (
-                      <StatusBadge tone="warning">Pinned</StatusBadge>
-                    ) : null}
-                  </div>
-
-                  <div className="responsive-list-item-meta">
-                    <span>Created {formatDate(announcement.created_at, "Unknown")}</span>
-                    <span>Expires {formatDate(announcement.expire_at, "No expiration")}</span>
-                  </div>
-
-                  {renderRowActions(announcement)}
-                </li>
-              );
-            })}
-          </ResponsiveList>
-        ) : (
-          <DataTable caption="Existing announcements for this event">
-            <thead>
-              <tr>
-                <th scope="col">Title</th>
-                <th scope="col">Status</th>
-                <th scope="col">Priority</th>
-                <th scope="col">Created</th>
-                <th scope="col">Expires</th>
-                <th scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedAnnouncements.map((announcement) => (
-                <tr
-                  key={announcement.id}
-                  className={
-                    announcement.is_pinned ? "data-table-row-pinned" : undefined
-                  }
-                >
-                  <td>
-                    <div className="data-table-cell-primary">
-                      {announcement.title || "Untitled"}
-                      {announcement.is_pinned ? (
-                        <StatusBadge tone="warning">Pinned</StatusBadge>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td>
-                    <StatusBadge
-                      tone={announcement.is_published ? "success" : "neutral"}
-                    >
-                      {announcement.is_published ? "Published" : "Draft"}
-                    </StatusBadge>
-                  </td>
-                  <td>
-                    <StatusBadge tone={priorityTone(announcement.priority)}>
-                      {priorityLabel(announcement.priority)}
-                    </StatusBadge>
-                  </td>
-                  <td className="data-table-cell-meta">
-                    {formatDate(announcement.created_at, "Unknown")}
-                  </td>
-                  <td className="data-table-cell-meta">
-                    {formatDate(announcement.expire_at, "No expiration")}
-                  </td>
-                  <td>{renderRowActions(announcement)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </DataTable>
-        )}
-      </section>
-
-      <section ref={formSectionRef} style={{ display: "grid", gap: "var(--space-4)" }}>
-        <PageHeader
+  const announcementForm = (
+      <form style={{ display: "grid", gap: "var(--space-4)" }} onSubmit={(event) => { event.preventDefault(); void handleSave(); }} onKeyDown={recordEditorKeyDown}>
+        {!editorOpen ? <PageHeader
           title={editingId ? "Edit Announcement" : "New Announcement"}
           headingLevel="h2"
           titleClassName="app-section-title"
-        />
+        /> : null}
 
+        {editorOpen && error ? <Alert tone="danger">{error}</Alert> : null}
         <PageSection variant="section">
           <div style={{ display: "grid", gap: "var(--space-5)" }}>
             <Field label="Title" required error={fieldErrors.title}>
@@ -826,10 +702,10 @@ function AdminAnnouncementsPageInner() {
               />
             </div>
 
-            <FormActions>
+            <FormActions className="record-editor-actions">
               <AppButton
                 variant="primary"
-                onClick={() => void handleSave()}
+                type="submit"
                 disabled={saving || !eventId}
               >
                 {saving
@@ -845,7 +721,154 @@ function AdminAnnouncementsPageInner() {
             </FormActions>
           </div>
         </PageSection>
+      </form>
+  );
+
+  return (
+    <div style={{ display: "grid", gap: "var(--space-10)" }}>
+      <ConfirmDialog
+        open={!!confirmDialog}
+        title={confirmDialog?.title || "Confirm Action"}
+        message={confirmDialog?.message || "Are you sure you want to continue?"}
+        confirmLabel={confirmDialog?.confirmLabel || "Confirm"}
+        cancelLabel={confirmDialog?.cancelLabel || "Cancel"}
+        danger={!!confirmDialog?.danger}
+        onCancel={() => closeConfirmDialog(false)}
+        onConfirm={() => closeConfirmDialog(true)}
+      />
+
+      {/* Page context: lifted above both sections (rather than nested
+          inside the form, as before) so a status/error from a row action
+          (Publish/Pin/Delete) in the list below is immediately visible
+          without scrolling down to the form section. Non-steady-state
+          only (Stage 3B §D): the canonical Admin shell header now owns
+          Event name/location/date range for the normal resolved+
+          authorized case, so this line shows only what the shell cannot
+          -- that a selection is still loading, or that nothing is
+          currently selected. The specific access-denied reason remains
+          the separate `error` Alert below, unchanged. */}
+      {loadingEvent ? (
+        <LoadingState message="Loading selected event..." />
+      ) : !currentEvent ? (
+        <EmptyState message="No event selected." />
+      ) : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {!error && status ? (
+        <Alert tone={announcementStatusTone(status)}>{status}</Alert>
+      ) : null}
+
+      <section style={{ display: "grid", gap: "var(--space-4)" }}>
+        <PageHeader
+          title="Existing Announcements"
+          titleId="announcements-existing-heading"
+          headingLevel="h2"
+          titleClassName="app-section-title"
+        />
+
+        {loadingAnnouncements ? (
+          <LoadingState message="Loading announcements..." />
+        ) : sortedAnnouncements.length === 0 ? (
+          <EmptyState message="No announcements yet for this event." />
+        ) : isCompact ? (
+          <ResponsiveList aria-labelledby="announcements-existing-heading">
+            {sortedAnnouncements.map((announcement) => {
+              const name = announcement.title || "Untitled";
+              return (
+                <li
+                  key={announcement.id}
+                  {...recordRowProps(announcement, (item) => setSelectedId(item.id), startEdit)}
+                  className={
+                    "responsive-list-item" + (selectedId === announcement.id ? " responsive-list-item-selected" : "") +
+                    (announcement.is_pinned
+                      ? " responsive-list-item-pinned"
+                      : "")
+                  }
+                >
+                  <div className="responsive-list-item-header">
+                    <div className="responsive-list-item-title">{name}</div>
+                    <StatusBadge
+                      tone={announcement.is_published ? "success" : "neutral"}
+                    >
+                      {announcement.is_published ? "Published" : "Draft"}
+                    </StatusBadge>
+                  </div>
+
+                  <div className="responsive-list-item-badges">
+                    <StatusBadge tone={priorityTone(announcement.priority)}>
+                      {priorityLabel(announcement.priority)} priority
+                    </StatusBadge>
+                    {announcement.is_pinned ? (
+                      <StatusBadge tone="warning">Pinned</StatusBadge>
+                    ) : null}
+                  </div>
+
+                  <div className="responsive-list-item-meta">
+                    <span>Created {formatDate(announcement.created_at, "Unknown")}</span>
+                    <span>Expires {formatDate(announcement.expire_at, "No expiration")}</span>
+                  </div>
+
+                  {renderRowActions(announcement)}
+                </li>
+              );
+            })}
+          </ResponsiveList>
+        ) : (
+          <DataTable caption="Existing announcements for this event">
+            <thead>
+              <tr>
+                <th scope="col">Title</th>
+                <th scope="col">Status</th>
+                <th scope="col">Priority</th>
+                <th scope="col">Created</th>
+                <th scope="col">Expires</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedAnnouncements.map((announcement) => (
+                <tr
+                  key={announcement.id}
+                  {...recordRowProps(announcement, (item) => setSelectedId(item.id), startEdit)}
+                  className={
+                    [announcement.is_pinned ? "data-table-row-pinned" : "", selectedId === announcement.id ? "data-table-row-selected" : ""].filter(Boolean).join(" ")
+                  }
+                >
+                  <td>
+                    <div className="data-table-cell-primary">
+                      {announcement.title || "Untitled"}
+                      {announcement.is_pinned ? (
+                        <StatusBadge tone="warning">Pinned</StatusBadge>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td>
+                    <StatusBadge
+                      tone={announcement.is_published ? "success" : "neutral"}
+                    >
+                      {announcement.is_published ? "Published" : "Draft"}
+                    </StatusBadge>
+                  </td>
+                  <td>
+                    <StatusBadge tone={priorityTone(announcement.priority)}>
+                      {priorityLabel(announcement.priority)}
+                    </StatusBadge>
+                  </td>
+                  <td className="data-table-cell-meta">
+                    {formatDate(announcement.created_at, "Unknown")}
+                  </td>
+                  <td className="data-table-cell-meta">
+                    {formatDate(announcement.expire_at, "No expiration")}
+                  </td>
+                  <td>{renderRowActions(announcement)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        )}
       </section>
+
+      <RecordEditorSurface open={editorOpen} onClose={resetForm} title={"Edit Announcement"} className="app-dialog-wide record-editor-dialog" dismissOnBackdrop={false}>{announcementForm}</RecordEditorSurface>
+
     </div>
   );
 }

@@ -410,3 +410,53 @@ test("an inactive vendor still renders in the catalog list, distinguished only b
     /<SharedStatusBadge tone=\{catalogStatusTone\(vendor\.is_active\)\}>\s*\n\s*\{vendor\.is_active === false \? "Inactive" : "Active"\}/,
   );
 });
+
+// Exercise the production handlers without a DOM or any real database writes.
+test("Vendor editor cancel resets the draft and closes; an in-flight operation prevents dismissal", () => {
+  const body = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf('  function startNew() {') + '  function startNew() {'.length,
+    PAGE_SOURCE.indexOf('\n  async function uploadVendorLogo')).replace(/\n  }\s*$/, '');
+  for (const busy of [false, true]) {
+    const calls: unknown[] = [];
+    new Function('saving', 'emptyVendor', 'setEditorOpen', 'setSelectedVendorId', 'setForm', 'setError', body)(
+      busy, {id: ''}, (...args: unknown[]) => calls.push(args), (...args: unknown[]) => calls.push(args),
+      (...args: unknown[]) => calls.push(args), (...args: unknown[]) => calls.push(args));
+    assert.deepEqual(calls, busy ? [] : [[false], [{id: ''}], [null]]);
+  }
+});
+
+test("Vendor save closes only on success, preserves a failed draft, and rejects overlapping submissions", async () => {
+  const source = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf('  async function saveVendor()'),
+    PAGE_SOURCE.indexOf('  async function loadReviewData')).replace('err: any', 'err');
+  for (const failure of [false, true]) {
+    let release!: (value: {error: Error | null}) => void;
+    const pending = new Promise<{error: Error | null}>((resolve) => {release = resolve;});
+    let updates = 0;
+    const closed: boolean[] = [];
+    const errors: unknown[] = [];
+    const saveRef = {current: false};
+    const form = {id: 'vendor-test', business_name: 'Test Vendor', contact_name: '', email: '', phone: '', website: '', logo_url: '', business_description: '', preferred_contact_method: 'email', is_active: true};
+    const save = new Function('form', 'saving', 'catalogSaveRef', 'supabase', 'loadPage', 'editorOpen',
+      'emptyVendor', 'setSaving', 'setError', 'setStatus', 'setEditorOpen', 'setSelectedVendorId', 'setForm', 'console',
+      source + '\nreturn saveVendor;')(
+      form, false, saveRef, {from: () => ({update: () => {updates++; return {eq: () => pending};}})},
+      async () => {}, true, {}, () => {}, (value: unknown) => errors.push(value), () => {},
+      (value: boolean) => closed.push(value), () => {}, () => {}, {error: () => {}});
+    const first = save();
+    await save();
+    assert.equal(updates, 1);
+    release({error: failure ? new Error('synthetic failure') : null});
+    await first;
+    assert.deepEqual(closed, failure ? [] : [false]);
+    assert.equal(saveRef.current, false);
+    if (failure) {assert.ok(errors.includes("We couldn't save this vendor. Please try again."));}
+  }
+});
+
+test("Vendor edit uses the shared Dialog and a native form; row actions are excluded from row activation", () => {
+  assert.match(PAGE_SOURCE, /<RecordEditorSurface open=\{editorOpen\} onClose=\{startNew\}/);
+  assert.match(PAGE_SOURCE, /dismissOnBackdrop=\{false\}/);
+  assert.match(PAGE_SOURCE, /type="submit" disabled=\{saving\}/);
+  assert.equal(PAGE_SOURCE.includes('scrollIntoView'), false);
+  assert.equal((PAGE_SOURCE.match(/recordRowProps\(vendor/g) || []).length, 2);
+  assert.match(PAGE_SOURCE, /onKeyDown=\{recordEditorKeyDown\}/);
+});

@@ -13,6 +13,7 @@ import { Checkbox, Field, Input, Select } from "@/components/ui/Field";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
+import { recordEditorKeyDown, recordRowProps } from "@/components/ui/recordInteraction";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
 import { isArchivedEventStatus } from "@/lib/eventStatus";
@@ -356,6 +357,7 @@ function AdminUsersPageInner() {
   // useAdminWorkingEventScope (captureGeneration/isCurrent).
   const assignedEventsRequestIdRef = useRef(0);
   const [saveStatus, setSaveStatus] = useState("");
+  const saveInFlight = useRef(false);
   const [saving, setSaving] = useState(false);
   const [password, setPassword] = useState("");
   const [resetStatus, setResetStatus] = useState("");
@@ -364,7 +366,7 @@ function AdminUsersPageInner() {
   const [selectedEventId, setSelectedEventId] = useState("");
 
   useEffect(() => {
-    if (!admin) return;
+    if (!admin) {return;}
     void loadPageData();
   }, [admin]);
 
@@ -433,7 +435,7 @@ function AdminUsersPageInner() {
     setPassword("");
     setSaveStatus("");
     setResetStatus("");
-  }, [selectedRow]);
+  }, [selectedRow, dialogOpen]);
 
   // Event Access loading/initial-focus, deliberately keyed on
   // selectedAdminId (a stable primitive) rather than selectedRow (a
@@ -533,6 +535,7 @@ function AdminUsersPageInner() {
   // underlying selection/reset logic (startNewAdmin, the selectedRow
   // effect) is unchanged; only when the form becomes visible changes.
   function openEditAdminDialog(adminId: string) {
+    if (saveInFlight.current) {return;}
     setSelectedAdminId(adminId);
     setDialogOpen(true);
   }
@@ -549,6 +552,9 @@ function AdminUsersPageInner() {
   }
 
   function closeAdminDialog() {
+    if (saveInFlight.current) {return;}
+    setPassword("");
+    setAssignedEventIds(currentAssignments.map((assignment) => assignment.event_id));
     setDialogOpen(false);
   }
 
@@ -674,6 +680,7 @@ function AdminUsersPageInner() {
   }
 
   async function handleSave() {
+    if (saveInFlight.current) {return;}
     // An existing admin's event assignments must be a confirmed, current
     // snapshot before Save can run syncEventAccess against them -- pending,
     // stale, or failed must never be read as "this admin has no
@@ -687,6 +694,7 @@ function AdminUsersPageInner() {
       );
       return;
     }
+    saveInFlight.current = true;
     setSaving(true);
     try {
       setSaveStatus("Saving...");
@@ -707,10 +715,12 @@ function AdminUsersPageInner() {
       );
       await loadPageData();
       await loadAssignedEvents(adminUserId);
+      setDialogOpen(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Could not save admin user.";
       setSaveStatus(msg);
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   }
@@ -759,7 +769,7 @@ function AdminUsersPageInner() {
           title="Existing Admins"
           headingLevel="h2"
           titleClassName="app-section-title"
-          description="Select an admin user to edit them."
+          description="Select an admin user, then use Edit or double-click to edit them."
           descriptionClassName="app-subtle-text"
           actions={
             <AppButton onClick={openNewAdminDialog} aria-haspopup="dialog">
@@ -777,11 +787,9 @@ function AdminUsersPageInner() {
             {rows.map((row) => {
               const isSelected = selectedAdminId === row.id;
               return (
-                <button
+                <div
                   key={row.id}
-                  type="button"
-                  onClick={() => openEditAdminDialog(row.id)}
-                  aria-haspopup="dialog"
+                  {...recordRowProps(row, (item) => setSelectedAdminId(item.id), (item) => openEditAdminDialog(item.id))}
                   style={{
                     textAlign: "left",
                     width: "100%",
@@ -808,7 +816,8 @@ function AdminUsersPageInner() {
                       {row.is_active ? "Active" : "Inactive"}
                     </StatusBadge>
                   </div>
-                </button>
+                <AppButton onClick={() => openEditAdminDialog(row.id)} aria-haspopup="dialog">Edit</AppButton>
+                </div>
               );
             })}
           </div>
@@ -819,7 +828,7 @@ function AdminUsersPageInner() {
           full form sharing one page forced excessive scrolling on every
           device. The form now lives in the canonical Dialog -- same fields,
           same business logic, same selectedAdminId semantics -- opened by
-          selecting a row or New, closed by Cancel/Escape/backdrop click.
+          double-clicking a row or using Edit/New, closed by Cancel/Escape.
           app-dialog-form (app/globals.css) is a narrowly scoped width/height
           modifier consumed through Dialog's own documented className escape
           hatch; it does not touch the shared .app-dialog base rule any other
@@ -834,12 +843,13 @@ function AdminUsersPageInner() {
             : "Create a new admin user and assign event access."
         }
         className="app-dialog-form"
+        dismissOnBackdrop={false}
         footer={
           <>
             <AppButton onClick={closeAdminDialog}>Cancel</AppButton>
             <AppButton
               variant="primary"
-              onClick={() => void handleSave()}
+              type="submit" form="admin-user-editor"
               loading={saving}
               disabled={!isAssignedEventsReadyForSave(!!selectedAdminId, assignedEventsStatus)}
             >
@@ -848,7 +858,7 @@ function AdminUsersPageInner() {
           </>
         }
       >
-        <div style={{ display: "grid", gap: "var(--space-5)", minWidth: 0 }}>
+        <form id="admin-user-editor" onSubmit={(event) => { event.preventDefault(); void handleSave(); }} onKeyDown={recordEditorKeyDown} style={{ display: "grid", gap: "var(--space-5)", minWidth: 0 }}>
           <div className="app-dialog-form-pair">
             <Field label="Email">
               {(controlProps) => (
@@ -1031,7 +1041,7 @@ function AdminUsersPageInner() {
           </div>
 
           {saveStatus ? <Alert tone={adminUserStatusTone(saveStatus)}>{saveStatus}</Alert> : null}
-        </div>
+        </form>
       </Dialog>
     </div>
   );

@@ -879,50 +879,26 @@ test("4 & 5. successful Add and successful Save both close the editor -- Save/Ad
   assert.equal(/if \(form\.id\) \{\s*\n\s*setEditorExpanded\(false\);/.test(body), false);
 });
 
-test("6. clean Cancel/Close closes immediately (no unsaved changes)", () => {
-  const fnStart = PAGE_SOURCE.indexOf("async function closeEditor() {");
-  assert.notEqual(fnStart, -1);
-  const fnEnd = PAGE_SOURCE.indexOf("\n\n", fnStart + "async function closeEditor() {".length + 400);
-  const body = PAGE_SOURCE.slice(fnStart, fnEnd === -1 ? fnStart + 900 : fnEnd);
-  assert.match(body, /if \(!agendaItemFormsAreEqual\(form, originalFormRef\.current\)\) \{/);
-  assert.match(body, /originalFormRef\.current = emptyForm;\s*\n\s*setForm\(emptyForm\);\s*\n\s*setEditorExpanded\(false\);/);
-});
-
-test("7. dirty Cancel/Close requires discard confirmation, reusing the existing requestConfirmation()/ConfirmDialog pattern -- no second confirmation mechanism", () => {
-  const fnStart = PAGE_SOURCE.indexOf("async function closeEditor() {");
-  const fnEnd = PAGE_SOURCE.indexOf("\n\n  useEffect(() => {\n    itemsRef.current = items;", fnStart);
-  assert.notEqual(fnStart, -1);
-  assert.notEqual(fnEnd, -1);
-  const body = PAGE_SOURCE.slice(fnStart, fnEnd);
-  assert.match(body, /await requestConfirmation\(\{/);
-  assert.match(body, /confirmLabel: "Discard Changes",/);
-  assert.match(body, /cancelLabel: "Keep Editing",/);
-  assert.match(body, /danger: true,/);
-});
-
-test("8. declining discard leaves the editor open with edits intact -- closeEditor returns before touching form/editorExpanded when the confirmation resolves false", () => {
-  const fnStart = PAGE_SOURCE.indexOf("async function closeEditor() {");
-  const fnEnd = PAGE_SOURCE.indexOf("\n\n  useEffect(() => {\n    itemsRef.current = items;", fnStart);
-  const body = PAGE_SOURCE.slice(fnStart, fnEnd);
-  assert.match(body, /if \(!confirmed\) \{\s*\n\s*return;\s*\n\s*\}/);
-});
-
-test("9. confirming discard closes the editor -- the reset/collapse lines run unconditionally after the guarded confirmation block", () => {
-  const fnStart = PAGE_SOURCE.indexOf("async function closeEditor() {");
-  const fnEnd = PAGE_SOURCE.indexOf("\n\n  useEffect(() => {\n    itemsRef.current = items;", fnStart);
-  const body = PAGE_SOURCE.slice(fnStart, fnEnd);
-  const resetIdx = body.indexOf("originalFormRef.current = emptyForm;");
-  const returnIdx = body.indexOf("return;");
-  assert.notEqual(resetIdx, -1);
-  assert.notEqual(returnIdx, -1);
-  assert.ok(resetIdx > returnIdx, "the reset/collapse must come after the early-return guard, not before it");
+test("Cancel discards changed or unchanged drafts, preserves selection, and cannot interrupt a save", async () => {
+  const start = PAGE_SOURCE.indexOf("  async function closeEditor() {");
+  const end = PAGE_SOURCE.indexOf("\n  useEffect(() => {\n    itemsRef", start);
+  const handler = PAGE_SOURCE.slice(start, end);
+  for (const saving of [false, true]) {
+    const calls: unknown[] = [];
+    const original = {title: "Persisted title"};
+    const cancel = new Function("saving", "saveInFlight", "originalFormRef", "setForm", "setEditorExpanded", handler + "\nreturn closeEditor;")(
+      saving, {current: false}, {current: original}, (value: unknown) => calls.push(value), (value: unknown) => calls.push(value));
+    await cancel();
+    assert.deepEqual(calls, saving ? [] : [original, false]);
+  }
+  assert.doesNotMatch(handler, /requestConfirmation|setSelectedItemId|supabase/);
 });
 
 test("the modal uses the shared Dialog, disables backdrop dismissal, and routes Escape through guarded close", () => {
   assert.match(PAGE_SOURCE, /import \{ Dialog \} from "@\/components\/ui\/Dialog"/);
   assert.match(PAGE_SOURCE, /dismissOnBackdrop=\{false\}/);
   assert.match(PAGE_SOURCE, /<AgendaEditorSurface open=\{editorExpanded\} onClose=\{\(\) => void closeEditor\(\)\}/);
-  assert.match(PAGE_SOURCE, /async function closeEditor\(\) \{\s*if \(saving\) \{return;\}/);
+  assert.match(PAGE_SOURCE, /async function closeEditor\(\) \{\s*if \(saving \|\| saveInFlight.current\) \{return;\}/);
 });
 
 test("single-click selects without expanding; keyboard and explicit Edit remain available", () => {
@@ -980,7 +956,7 @@ function requestOpenEditorForItemSource() {
   return PAGE_SOURCE.slice(fnStart, fnEnd);
 }
 
-test("requestOpenEditorForItem reuses the exact same dirty check as closeEditor -- no second dirty-state calculation", () => {
+test("switching editors retains one dirty-state check; Cancel discards directly", () => {
   const guardBody = requestOpenEditorForItemSource();
   assert.match(
     guardBody,
@@ -992,7 +968,7 @@ test("requestOpenEditorForItem reuses the exact same dirty check as closeEditor 
       /if \(!agendaItemFormsAreEqual\(form, originalFormRef\.current\)\) \{/g,
     ),
   ];
-  assert.equal(occurrences.length, 2, "expected exactly closeEditor and requestOpenEditorForItem to share this one dirty expression");
+  assert.equal(occurrences.length, 1, "only switching records asks whether to discard");
 });
 
 test("1 & 5. clean editor + selecting a different item (list row or Visual Agenda block) switches immediately -- opening only happens after the dirty check, never gated behind an unconditional prompt", () => {
@@ -1076,23 +1052,11 @@ test("9. editor closed + item click still opens normally -- the same-item guard 
   assert.equal(agendaItemFormsAreEqual(BASE_AGENDA_FORM, BASE_AGENDA_FORM), true);
 });
 
-test("10. existing Cancel/Close dirty protection is untouched by the switching guard -- closeEditor remains its own independent function with its own copy of the same discard-confirmation shape", () => {
-  const closeStart = PAGE_SOURCE.indexOf("async function closeEditor() {");
-  const closeEnd = PAGE_SOURCE.indexOf(
-    "\n\n  useEffect(() => {\n    itemsRef.current = items;",
-    closeStart,
-  );
-  assert.notEqual(closeStart, -1);
-  assert.notEqual(closeEnd, -1);
-  const closeBody = PAGE_SOURCE.slice(closeStart, closeEnd);
-  assert.match(closeBody, /title: "Discard Unsaved Changes\?",/);
-  assert.match(
-    closeBody,
-    /message:\s*\n\s*"This agenda item has unsaved changes\. Discard them and close the editor\?",/,
-  );
-  // requestOpenEditorForItem is defined separately, not folded into
-  // closeEditor -- Cancel/Close keeps its own exact prior behavior.
-  assert.notEqual(closeStart, PAGE_SOURCE.indexOf("async function requestOpenEditorForItem"));
+test("Cancel remains independent of the guarded switching entry point", () => {
+  const start = PAGE_SOURCE.indexOf("async function closeEditor()");
+  const end = PAGE_SOURCE.indexOf("\n  useEffect", start);
+  assert.match(PAGE_SOURCE.slice(start, end), /setForm\(originalFormRef.current\)/);
+  assert.doesNotMatch(PAGE_SOURCE.slice(start, end), /requestConfirmation/);
 });
 
 test("11. existing Save/Add behavior is untouched by the switching guard -- same governed RPCs, same always-collapse-on-success behavior", () => {
@@ -1198,7 +1162,7 @@ test("the New/Edit Item form's Save/New Blank/Delete row uses the canonical Form
   const formStart = PAGE_SOURCE.indexOf('title={form.id ? `Editing:');
   const formEnd = PAGE_SOURCE.indexOf("</PageSection>", formStart);
   const formBlock = PAGE_SOURCE.slice(formStart, formEnd);
-  assert.match(formBlock, /<FormActions>/);
+  assert.match(formBlock, /<FormActions(?: className="record-editor-actions")?>/);
   assert.equal(/className="app-button-row"/.test(formBlock), false);
 });
 
@@ -1215,7 +1179,7 @@ test("AgendaTemplatePanel's two action rows use the canonical FormActions wrappe
     TEMPLATE_PANEL_SOURCE,
     /import\s*\{\s*FormActions\s*\}\s*from\s*["']@\/components\/ui\/FormActions["']/,
   );
-  const formActionsCount = (TEMPLATE_PANEL_SOURCE.match(/<FormActions>/g) || []).length;
+  const formActionsCount = (TEMPLATE_PANEL_SOURCE.match(/<FormActions(?: className="record-editor-actions")?>/g) || []).length;
   assert.equal(formActionsCount, 2);
   assert.equal(/className="app-button-row"/.test(TEMPLATE_PANEL_SOURCE), false);
 });
@@ -1399,7 +1363,7 @@ test("the Agenda Workspace entry area uses only established shared primitives --
   const sectionSource = PAGE_SOURCE.slice(sectionStart, sectionEnd);
 
   assert.match(sectionSource, /<PageSection variant="card" title="Agenda Workspace">/);
-  assert.match(sectionSource, /<FormActions>/);
+  assert.match(sectionSource, /<FormActions(?: className="record-editor-actions")?>/);
   assert.match(sectionSource, /<AppLinkButton key=\{link\.id\} href=\{link\.href\} variant="secondary">/);
 });
 

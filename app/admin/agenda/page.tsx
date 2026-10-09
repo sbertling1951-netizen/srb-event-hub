@@ -25,6 +25,7 @@ import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field"
 import { FormActions } from "@/components/ui/FormActions";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PageSection } from "@/components/ui/PageSection";
+import { recordEditorKeyDown, recordRowProps } from "@/components/ui/recordInteraction";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
 import { checkAdminEventTaskAuthority } from "@/lib/adminTaskAuthority";
@@ -700,6 +701,8 @@ function AdminAgendaPageInner() {
   // iPhone regression fix). No shared Disclosure/Collapsible primitive
   // exists yet in components/ui; this remains the smallest Agenda-local
   // implementation, still a future Central UI standardization candidate.
+  const saveInFlight = useRef(false);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [editorExpanded, setEditorExpanded] = useState(false);
   const editorReturnScrollRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -929,6 +932,7 @@ function AdminAgendaPageInner() {
 
   function selectAgendaItem(item: AgendaItem) {
     if (editorExpanded || recoverableDraft || loading || hasAgendaAccess !== true) {return;}
+    setSelectedItemId(item.id);
     const next = formFromItem(item);
     originalFormRef.current = next;
     setForm(next);
@@ -936,6 +940,7 @@ function AdminAgendaPageInner() {
 
   function openEditorForItem(item: AgendaItem) {
     editorReturnScrollRef.current = { x: window.scrollX, y: window.scrollY };
+    setSelectedItemId(item.id);
     const next = formFromItem(item);
     originalFormRef.current = next;
     setForm(next);
@@ -947,7 +952,7 @@ function AdminAgendaPageInner() {
   // surfaces route through this one function so switching items never
   // silently discards unsaved edits. Reuses the exact same
   // agendaItemFormsAreEqual()/originalFormRef dirty check and
-  // requestConfirmation()/ConfirmDialog as closeEditor(); when the editor
+  // requestConfirmation()/ConfirmDialog for switching; when the editor
   // is closed, form already equals originalFormRef (both emptyForm), so
   // the dirty check is trivially false and this opens immediately with no
   // extra casing needed for "editor closed".
@@ -973,26 +978,10 @@ function AdminAgendaPageInner() {
     openEditorForItem(item);
   }
 
-  // Cancel/Close. Reuses the same requestConfirmation()/ConfirmDialog
-  // already wired up for Delete -- no second confirmation mechanism.
-  // Backdrop dismissal is disabled; Escape and Cancel share this dirty check.
+  // Cancel/Close. Escape and Cancel discard the draft while preserving record selection.
   async function closeEditor() {
-    if (saving) {return;}
-    if (!agendaItemFormsAreEqual(form, originalFormRef.current)) {
-      const confirmed = await requestConfirmation({
-        title: "Discard Unsaved Changes?",
-        message:
-          "This agenda item has unsaved changes. Discard them and close the editor?",
-        confirmLabel: "Discard Changes",
-        cancelLabel: "Keep Editing",
-        danger: true,
-      });
-      if (!confirmed) {
-        return;
-      }
-    }
-    originalFormRef.current = emptyForm;
-    setForm(emptyForm);
+    if (saving || saveInFlight.current) {return;}
+    setForm(originalFormRef.current);
     setEditorExpanded(false);
   }
 
@@ -1419,6 +1408,7 @@ function AdminAgendaPageInner() {
   }
 
   async function saveItem() {
+    if (saveInFlight.current) {return;}
     if (loading || hasAgendaAccess !== true || !accountId || !activeEvent ||
         getCurrentAdminEvent()?.id !== activeEvent.id ||
         draftKeyRef.current !== agendaDraftKey(accountId, activeEvent.id)) {return;}
@@ -1482,6 +1472,7 @@ function AdminAgendaPageInner() {
       draftKeyRef.current === submittedDraftKey && formRef.current === submittedForm;
     const externalId = form.id ? undefined : buildExternalId(form);
 
+    saveInFlight.current = true;
     setSaving(true);
     showStatus(form.id ? "Updating agenda item..." : "Adding agenda item...");
 
@@ -1558,7 +1549,10 @@ function AdminAgendaPageInner() {
       setForm(emptyForm);
       setEditorExpanded(false);
       void refreshAgendaData();
+    } catch (err: unknown) {
+      showError(err instanceof Error ? err.message : "Could not save this agenda item.");
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   }
@@ -3097,6 +3091,7 @@ function AdminAgendaPageInner() {
           {agendaMode === "items" ? (
           <>
           <AgendaEditorSurface open={editorExpanded} onClose={() => void closeEditor()}>
+          <form onSubmit={(event) => { event.preventDefault(); void saveItem(); }} onKeyDown={recordEditorKeyDown}>
           <PageSection
             variant="section"
             style={{
@@ -3385,10 +3380,10 @@ function AdminAgendaPageInner() {
               </Field>
 
               {error ? <Alert tone="danger">{error}</Alert> : null}
-              <FormActions>
+              <FormActions className="record-editor-actions">
                 <AppButton
                   variant="primary"
-                  onClick={() => void saveItem()}
+                  type="submit"
                   disabled={saving}
                 >
                   {saving ? "Saving..." : form.id ? "Update Item" : "Add Item"}
@@ -3424,6 +3419,7 @@ function AdminAgendaPageInner() {
               ) : null}
             </div>
           </PageSection>
+          </form>
           </AgendaEditorSurface>
 
           <PageSection variant="section">
@@ -3857,7 +3853,7 @@ function AdminAgendaPageInner() {
 
                             {blocks.map((block) => {
                               const item = block.item;
-                              const isSelected = form.id === item.id;
+                              const isSelected = selectedItemId === item.id;
                               const laneWidth = 100 / block.laneCount;
                               const left = block.lane * laneWidth;
 
@@ -4046,10 +4042,11 @@ function AdminAgendaPageInner() {
             ) : (
               <div style={{ display: "grid" }}>
                 {printableAgendaItems.map((item) => {
-                  const isSelected = form.id === item.id;
+                  const isSelected = selectedItemId === item.id;
                   return (
                     <div
                       key={item.id}
+                      {...recordRowProps(item, selectAgendaItem, (record) => { void requestOpenEditorForItem(record); })}
                       onDragOver={!useButtonReorder ? handleDragOver : undefined}
                       onDrop={
                         !useButtonReorder ? () => handleDrop(item.id) : undefined
@@ -4376,7 +4373,7 @@ function AgendaEditorSurface({ open, onClose, children }: {
     <>
       {!open ? children : null}
       <Dialog open={open} onClose={onClose} title="Agenda item editor"
-        className="app-dialog-wide" dismissOnBackdrop={false}>
+        className="app-dialog-wide record-editor-dialog" dismissOnBackdrop={false}>
         {open ? children : null}
       </Dialog>
     </>

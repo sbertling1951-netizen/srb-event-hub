@@ -5,6 +5,7 @@ import {
   Suspense,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -18,6 +19,8 @@ import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
 import { LoadingState } from "@/components/ui/LoadingState";
+import { RecordEditorSurface } from "@/components/ui/RecordEditorSurface";
+import { recordEditorKeyDown, recordRowProps } from "@/components/ui/recordInteraction";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
 import {
@@ -183,6 +186,9 @@ function AdminValidationRulesPageInner() {
   const [rules, setRules] = useState<ValidationRule[]>([]);
   const [events, setEvents] = useState<EventOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const saveInFlight = useRef(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
   const [pendingDeleteRule, setPendingDeleteRule] = useState<ValidationRule | null>(null);
@@ -270,10 +276,15 @@ function AdminValidationRulesPageInner() {
   }
 
   function startNewRule() {
+    if (saveInFlight.current) {return;}
+    setEditorOpen(false);
     setForm(createEmptyForm());
   }
 
   function startEditRule(rule: ValidationRule) {
+    if (saveInFlight.current) {return;}
+    setSelectedId(rule.id);
+    setEditorOpen(true);
     setForm({
       id: rule.id,
       field_name: rule.field_name,
@@ -301,6 +312,7 @@ function AdminValidationRulesPageInner() {
   }
 
   async function handleSaveRule() {
+    if (saveInFlight.current) {return;}
     const priority = Number(form.priority);
     if (!form.field_name.trim()) {
       setError("Field name is required.");
@@ -324,6 +336,7 @@ function AdminValidationRulesPageInner() {
     }
 
     try {
+      saveInFlight.current = true;
       setSaving(true);
       setError(null);
       setStatus(form.id ? "Saving rule..." : "Creating rule...");
@@ -360,6 +373,7 @@ function AdminValidationRulesPageInner() {
         showFlash("Rule created.");
       }
 
+      setEditorOpen(false);
       setForm(createEmptyForm());
       if (admin) {
         await loadPage(admin);
@@ -369,6 +383,7 @@ function AdminValidationRulesPageInner() {
       setError(err?.message || "Could not save rule.");
       setStatus("Save failed.");
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   }
@@ -483,73 +498,9 @@ function AdminValidationRulesPageInner() {
 
   const statusOrFlash = flashMessage ?? status;
 
-  return (
-    <div style={{ display: "grid", gap: 18 }}>
-      <ConfirmDialog
-        open={!!pendingDeleteRule}
-        title="Delete Validation Rule"
-        message={
-          pendingDeleteRule
-            ? `Delete the ${fieldLabel(pendingDeleteRule.field_name)} rule "${pendingDeleteRule.message}"? This cannot be undone.`
-            : ""
-        }
-        confirmLabel="Delete"
-        danger
-        busy={!!pendingDeleteRule && deletingRuleId === pendingDeleteRule.id}
-        onCancel={() => setPendingDeleteRule(null)}
-        onConfirm={() => {
-          if (!pendingDeleteRule) {
-            return;
-          }
-          const ruleId = pendingDeleteRule.id;
-          setPendingDeleteRule(null);
-          void handleDeleteRule(ruleId);
-        }}
-      />
-
-      <div className="card" style={{ padding: 18 }}>
-          <div style={{ fontSize: 14, opacity: 0.8 }}>
-            Superadmin rule editor for Data Review and future validation checks.
-            {currentEvent?.name || currentEvent?.eventName
-              ? ` Current admin event: ${currentEvent.name || currentEvent.eventName}`
-              : ""}
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <Alert tone={validationRuleStatusTone(statusOrFlash)}>{statusOrFlash}</Alert>
-          </div>
-          {error ? (
-            <div style={{ marginTop: 12 }}>
-              <Alert tone="danger">{error}</Alert>
-            </div>
-          ) : null}
-      </div>
-
-        <div className="card" style={{ padding: 18 }}>
-          <div
-            style={{
-              display: "grid",
-              gap: 14,
-              gridTemplateColumns: "minmax(260px, 1fr) auto",
-              alignItems: "end",
-            }}
-          >
-            <Field label="Search Rules">
-              {(props) => (
-                <Input
-                  {...props}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search field, type, message..."
-                />
-              )}
-            </Field>
-            <AppButton variant="secondary" onClick={startNewRule}>
-              New Rule
-            </AppButton>
-          </div>
-        </div>
-
-        <div className="card" style={{ padding: 18 }}>
+  const ruleForm = (
+        <form className="card" style={{ padding: 18 }} onSubmit={(event) => { event.preventDefault(); void handleSaveRule(); }} onKeyDown={recordEditorKeyDown}>
+          {editorOpen && error ? <p role="alert">{error}</p> : null}
           <h2 style={{ marginTop: 0, marginBottom: 12 }}>
             {form.id ? "Edit Rule" : "Create Rule"}
           </h2>
@@ -679,7 +630,7 @@ function AdminValidationRulesPageInner() {
               label="Rule is active"
             />
           </div>
-          <div
+          <div className="record-editor-actions"
             style={{
               marginTop: 18,
               display: "flex",
@@ -689,17 +640,85 @@ function AdminValidationRulesPageInner() {
           >
             <AppButton
               variant="primary"
-              onClick={() => void handleSaveRule()}
+              type="submit"
               disabled={saving}
             >
               {saving ? "Saving..." : form.id ? "Update Rule" : "Create Rule"}
             </AppButton>
             <AppButton variant="secondary" onClick={startNewRule} disabled={saving}>
-              Clear Form
+              {editorOpen ? "Cancel" : "Clear Form"}
+            </AppButton>
+          </div>
+        </form>
+  );
+
+  return (
+    <div style={{ display: "grid", gap: 18 }}>
+      <ConfirmDialog
+        open={!!pendingDeleteRule}
+        title="Delete Validation Rule"
+        message={
+          pendingDeleteRule
+            ? `Delete the ${fieldLabel(pendingDeleteRule.field_name)} rule "${pendingDeleteRule.message}"? This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        danger
+        busy={!!pendingDeleteRule && deletingRuleId === pendingDeleteRule.id}
+        onCancel={() => setPendingDeleteRule(null)}
+        onConfirm={() => {
+          if (!pendingDeleteRule) {
+            return;
+          }
+          const ruleId = pendingDeleteRule.id;
+          setPendingDeleteRule(null);
+          void handleDeleteRule(ruleId);
+        }}
+      />
+
+      <div className="card" style={{ padding: 18 }}>
+          <div style={{ fontSize: 14, opacity: 0.8 }}>
+            Superadmin rule editor for Data Review and future validation checks.
+            {currentEvent?.name || currentEvent?.eventName
+              ? ` Current admin event: ${currentEvent.name || currentEvent.eventName}`
+              : ""}
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <Alert tone={validationRuleStatusTone(statusOrFlash)}>{statusOrFlash}</Alert>
+          </div>
+          {error ? (
+            <div style={{ marginTop: 12 }}>
+              <Alert tone="danger">{error}</Alert>
+            </div>
+          ) : null}
+      </div>
+
+        <div className="card" style={{ padding: 18 }}>
+          <div
+            style={{
+              display: "grid",
+              gap: 14,
+              gridTemplateColumns: "minmax(260px, 1fr) auto",
+              alignItems: "end",
+            }}
+          >
+            <Field label="Search Rules">
+              {(props) => (
+                <Input
+                  {...props}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search field, type, message..."
+                />
+              )}
+            </Field>
+            <AppButton variant="secondary" onClick={startNewRule}>
+              New Rule
             </AppButton>
           </div>
         </div>
 
+        <RecordEditorSurface open={editorOpen} onClose={startNewRule} title={"Edit Validation Rule"} className="app-dialog-wide record-editor-dialog" dismissOnBackdrop={false}>{ruleForm}</RecordEditorSurface>
         <div className="card" style={{ padding: 18 }}>
           <div style={{ marginBottom: 14 }}>
             <h2 style={{ marginTop: 0, marginBottom: 6 }}>Rules</h2>
@@ -715,7 +734,7 @@ function AdminValidationRulesPageInner() {
           ) : isCompact ? (
             <ResponsiveList aria-label="Validation rules">
               {filteredRules.map((rule) => (
-                <li key={rule.id} className="responsive-list-item">
+                <li key={rule.id} {...recordRowProps(rule, (item) => setSelectedId(item.id), startEditRule)} className={"responsive-list-item" + (selectedId === rule.id ? " responsive-list-item-selected" : "")}>
                   <div className="responsive-list-item-header">
                     <div className="responsive-list-item-title">
                       {fieldLabel(rule.field_name)}
@@ -759,7 +778,7 @@ function AdminValidationRulesPageInner() {
               </thead>
               <tbody>
                 {filteredRules.map((rule) => (
-                  <tr key={rule.id}>
+                  <tr key={rule.id} {...recordRowProps(rule, (item) => setSelectedId(item.id), startEditRule)} className={selectedId === rule.id ? "data-table-row-selected" : undefined}>
                     <td style={tdStyle}>{fieldLabel(rule.field_name)}</td>
                     <td style={tdStyle}>{ruleTypeLabel(rule.rule_type)}</td>
                     <td style={tdStyle}>{rule.rule_value || "—"}</td>

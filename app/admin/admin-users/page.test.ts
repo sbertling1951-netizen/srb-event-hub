@@ -207,7 +207,7 @@ test("no Dialog sentinel/handle is rendered from this page -- Dialog.tsx's own c
 test("the outer dialog body gap was tightened by one token step, not eliminated -- it remains a real, readable section separator", () => {
   assert.match(
     source,
-    /<div style=\{\{ display: "grid", gap: "var\(--space-5\)", minWidth: 0 \}\}>\s*\n\s*<div className="app-dialog-form-pair">/,
+    /<form[\s\S]*?style=\{\{ display: "grid", gap: "var\(--space-5\)", minWidth: 0 \}\}>\s*\n\s*<div className="app-dialog-form-pair">/,
   );
 });
 
@@ -295,7 +295,7 @@ test("no new RPC/API call was introduced for Event Access -- the same admin_even
 test("action hierarchy: Create/Save is primary, Send Reset Email is secondary, New and Cancel are the unset ghost default -- no status-color-as-action-color", () => {
   assert.match(
     source,
-    /<AppButton\s*\n\s*variant="primary"\s*\n\s*onClick=\{\(\) => void handleSave\(\)\}\s*\n\s*loading=\{saving\}/,
+    /<AppButton\s*\n\s*variant="primary"\s*\n\s*type="submit" form="admin-user-editor"\s*\n\s*loading=\{saving\}/,
   );
   assert.match(source, /<AppButton\s*\n\s*variant="secondary"\s*\n\s*onClick=\{\(\) => void handleSendPasswordReset\(\)\}\s*\n\s*loading=\{sendingReset\}/);
   assert.match(source, /<AppButton onClick=\{openNewAdminDialog\} aria-haspopup="dialog">\s*\n\s*New\s*\n\s*<\/AppButton>/);
@@ -333,11 +333,11 @@ test("the master list stays on the page; the Edit/Create form is the canonical D
   );
 });
 
-test("selecting a row or New opens the dialog (does not merely populate an inline panel); the dialog carries the same selectedAdminId-driven title/description as before", () => {
-  assert.match(source, /function openEditAdminDialog\(adminId: string\) \{\s*\n\s*setSelectedAdminId\(adminId\);\s*\n\s*setDialogOpen\(true\);/);
+test("the Edit action or New opens the dialog (does not merely populate an inline panel); the dialog carries the same selectedAdminId-driven title/description as before", () => {
+  assert.match(source, /function openEditAdminDialog\(adminId: string\) \{[\s\S]*?setSelectedAdminId\(adminId\);\s*\n\s*setDialogOpen\(true\);/);
   assert.match(source, /function openNewAdminDialog\(\) \{\s*\n\s*startNewAdmin\(\);/);
   assert.match(source, /function openNewAdminDialog\(\) \{[\s\S]*?setDialogOpen\(true\);\s*\n\s*\}/);
-  assert.match(source, /function closeAdminDialog\(\) \{\s*\n\s*setDialogOpen\(false\);/);
+  assert.match(source, /function closeAdminDialog\(\) \{[\s\S]*?setDialogOpen\(false\);/);
   assert.match(source, /onClick=\{\(\) => openEditAdminDialog\(row\.id\)\}/);
   assert.match(
     source,
@@ -354,7 +354,7 @@ test("Save/Create and Cancel are the dialog's own footer, not a page-level butto
   const footerEnd = source.indexOf("}\n      >", footerStart);
   const footerSource = source.slice(footerStart, footerEnd);
   assert.match(footerSource, /<AppButton onClick=\{closeAdminDialog\}>Cancel<\/AppButton>/);
-  assert.match(footerSource, /variant="primary"\s*\n\s*onClick=\{\(\) => void handleSave\(\)\}\s*\n\s*loading=\{saving\}/);
+  assert.match(footerSource, /variant="primary"\s*\n\s*type="submit" form="admin-user-editor"\s*\n\s*loading=\{saving\}/);
 });
 
 test("active/inactive renders through the canonical StatusBadge with the same success=active/neutral=inactive tone mapping used elsewhere (e.g. vendors' catalogStatusTone)", () => {
