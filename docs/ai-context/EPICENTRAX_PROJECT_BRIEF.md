@@ -431,8 +431,13 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### App-wide record editing interaction — 2026-10-08 (Release authorized 2026-10-09)
+### App-wide record editing interaction — 2026-10-08 (Committed locally; push authorized 2026-10-09)
 
+- **Substantive baseline:** `2c925f0` — Standardize record selection and modal
+  editing across workspaces — committed on main on 2026-10-09. Push is
+  authorized and invokes the existing deployment webhook. Deployment and
+  app-wide production acceptance remain unverified; no schema migration is
+  included in this refactor.
 - **Accepted standard:** Pap authorized the reasonably applicable app-wide
   rollout. The full agreement is recorded in the existing Central UI Standard
   Blueprint, Part 22: click selects; double-click or visible Edit opens a modal;
@@ -3945,16 +3950,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-10-09T06:49:49-07:00`
+**Generated at:** `2026-10-09T06:50:01-07:00`
 **Branch:** `main`
-**Commit:** `8250630 Record Mini agent setup and harden local Qwen reviews`
-**Commit date:** `2026-10-08T18:25:51-07:00`
+**Commit:** `2c925f0 Standardize record selection and modal editing across workspaces`
+**Commit date:** `2026-10-09T06:49:49-07:00`
 **origin/main:** `8250630`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `28`
+**Tracked modified:** `2`
 **Staged:** `0`
-**Untracked:** `3`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
