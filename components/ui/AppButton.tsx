@@ -25,11 +25,10 @@ import {
  * ConfirmDialog Confirm step when `danger` is set -- never a general
  * "stop/end this" action button (e.g. ending a running process), which
  * should use `"secondary"`/`"tertiary"` like any other ordinary action.
- * `app/admin/slideshow/page.tsx`'s own `variant="stop"` predates this
- * scoping and both it and its paired `variant="start"` sites are known,
- * unmigrated legacy consumers -- tracked for a future page migration,
- * not touched by this pass (see the Central UI Standard blueprint,
- * "Legacy debt intentionally not touched").
+ * Slideshow's former start/stop consumers have been migrated: affirmative
+ * actions use "primary", Pause uses "secondary", and Archive/End use
+ * ConfirmDialog. The Central UI Standard blueprint Part 20 preserves the
+ * historical debt record with its current-source resolution note.
  */
 type ButtonVariant =
   | "default"

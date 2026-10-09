@@ -106,6 +106,206 @@ For the authoritative current-state description of how registration/household re
 
 The repository itself is authoritative for current versions and paths. Do not assume this snapshot supersedes `package.json`, migrations, deployment configuration, or live infrastructure evidence.
 
+### Primary development platform — recorded 2026-10-08
+
+Pap confirmed the move from the MacBook Air to the Mac mini as
+EpicentraX's primary development platform. The MacBook Air is the previous
+primary development machine; this record does not establish a new role
+for it or claim that it has been retired or erased.
+
+The authoritative checkout on the Mini is
+`/Users/sbertling/Developer/srb-event-hub`, as specified in `AGENTS.md`.
+Read-only inspection on 2026-10-08 verified that this path is the Git
+checkout used for the current work. Pap reports 32 GB RAM on the Mini.
+
+This is a development-platform continuity record. It does not change the
+substantive product baseline, deployment target, production status, or
+migration-ledger evidence. The repository's existing architecture,
+validation, authority, and change-approval rules continue to apply.
+
+#### Coding-agent and local Qwen configuration — 2026-10-08
+
+The Mini now has an onboard local coding model, `qwen2.5-coder:14b`,
+served by Ollama. The connection-diagnosis session recorded Ollama
+`0.40.1`, VS Code `1.141.0`, Copilot Chat `0.69.0`, and the official
+Ollama extension `0.0.12`. These are the session's recorded versions,
+not a claim that later installations retain them. Pap also installed
+the Python extension during the test.
+
+- **Working VS Code path:** select the **Local** chat harness, **Agent**
+  mode, and `qwen2.5-coder:14b`. The default agent's tool selection was
+  reduced to the native file-read and file-edit tools (`readFile` and
+  `editFiles`); this selection applies to chats using that default agent.
+  Local **Ask** mode also passed the math and small Python correction
+  prompts before the native tool test.
+- **Ollama template correction:** the existing Qwen model's template was
+  adjusted to request bare function-call JSON and let Ollama parse it
+  into native tool calls. This replaced the template's XML tool-call
+  wrapper convention; the model weights were retained. A temporary
+  diagnostic model alias was tested and removed before applying the
+  correction to the installed model. Context metadata remained
+  **32,768 tokens**; no context increase beyond the advertised limit was
+  made.
+- **Observed validation:** a fresh Local Agent chat invoked the native
+  read and edit tools on a disposable Python file, reported its marker,
+  and corrected `total = number` to `total += number`. Exact file-content
+  verification and function checks passed: `[1, 2, 3]` returned `6`, an
+  empty list returned `0`, and `[-2, 5]` returned `3`. The edit used
+  **Allow Once**, and the disposable file was removed afterward. This
+  proves the bounded test, not general agent reliability or an app-wide
+  refactor.
+- **Remaining restriction:** the separate Copilot agent-host session
+  rejected requests before they reached Ollama because its static
+  system/tool context exceeded the model's usable context budget
+  (`compaction_static_context_blocked`). The working Local harness is
+  the recorded workaround; model discovery alone is not proof that the
+  Copilot agent-host path works. `chat.agentHost.byokModels.enabled` was
+  enabled during diagnosis.
+- **Permissions and cost:** preserve **Ask every time** approval behavior,
+  Local default permissions, and the **$0 overage budget**. No persistent
+  allow-all permission was granted for the test. Copilot logging was
+  restored from Trace to **Info**. No paid API call was initiated by the
+  diagnostic work.
+
+All coding agents continue to use `AGENTS.md`, this Project Brief,
+`AUTHORITATIVE_SOURCES.md`, the Constitution, and task-specific governing
+sources. The role division remains the one defined in `AGENTS.md`; adding
+Qwen does not grant independent scope, architectural, or release authority.
+This setup record does not approve a refactor, commit, push, deployment,
+or production action. No launcher or permanent diagnostic folder was
+created.
+
+#### Mel-directed coding-agent coordination — 2026-10-08
+
+Pap assigned this coordinating assistant the Mel role and authorized it
+to direct coding agents, reducing manual prompt/result copying. Pap retains
+product direction, priorities, material scope decisions, and approvals.
+Mel retains architectural interpretation, task definition, review,
+validation assessment, and authorized context reconciliation, as governed
+by `AGENTS.md`.
+
+- **Agent names:** Pap confirmed that **LEM = Claude**, **Dou = Codex**,
+  and **Lun = GitHub Copilot**. These are convenience aliases for the
+  coding agents, not separate providers or additional authority roles.
+  Mel will use the official names Claude, Codex, and Copilot when
+  coordinating new work; historical reports retain their original aliases.
+  Qwen is the additional onboard Ollama model and can be used through the
+  verified VS Code Local harness or direct local submission path.
+- **Qwen-first preference:** Pap directed Mel to use the local Qwen
+  model as much as practical to avoid paid inference. Prefer Qwen for
+  bounded inspection, coding proposals, implementation tasks, and focused
+  checks that fit its verified capabilities and context limit. Mel reviews
+  its output and remains responsible for architecture and validation
+  assessment. Local Ollama inference incurs no external model API charge;
+  it still uses the Mini's compute resources. If Qwen cannot complete a
+  task reliably, report the limitation and seek Pap's approval before
+  invoking Claude, Codex workers, or Copilot as an alternative. No automatic
+  cloud-model fallback, paid API call, or overage-budget increase is
+  authorized by this preference.
+- Mel may dispatch bounded work to execution/review agents and collect
+  their reports directly. Workers receive the governing sources, exact
+  scope, permitted files/actions, validation requirements, and stop
+  conditions. They may not independently expand scope or recruit agents.
+- Within approved scope, Mel manages routine task handoffs and review.
+  Changes outside that scope, unresolved architectural decisions, and
+  release/production actions return to Pap for direction or approval.
+  Permission prompts still follow the existing Ask-every-time behavior;
+  coordination is not permission to approve prompts on Pap's behalf.
+- A read-only Codex worker dispatch and returned report were verified in
+  this chat. These are native Codex workers, not proof that existing named
+  Claude or other-provider agents have been connected. Subagent work
+  consumes account usage; the $0 overage constraint remains in force.
+- Direct coordinator-to-Qwen submission was also verified against local
+  Ollama at `127.0.0.1:11434`: Qwen requested a fixed read-only diagnostic
+  tool, Mel supplied its result, and Qwen reported the correct marker.
+  This used an 8,192-token context within the advertised 32,768 limit.
+  No repository edit or paid API call was made by that test. Direct local
+  submission avoids VS Code prompt/result copy-and-paste; it is distinct
+  from the previously verified VS Code Local Agent file-edit workflow.
+- Codex CLI `0.161.0` and Claude Code `2.1.293` were found installed.
+  Claude's read-only authentication status reported a signed-in
+  `claude.ai` Max subscription. Claude Code inference and any extra-usage
+  behavior initially remained untested. Pap subsequently confirmed that
+  Claude Max extra usage is disabled. A subscription-only tool-less probe
+  reached the service but failed with an expired OAuth access token;
+  subscription re-authentication subsequently succeeded, and a tool-less
+  direct response passed. Copilot's direct CLI path was
+  subsequently installed and tested as recorded below. The alias mapping
+  alone does not establish working agent connections.
+
+**Communication and control verification — 2026-10-08:**
+
+- **Qwen:** direct local task/result and native-tool round trips passed.
+  A further read-only test used a coordinator-enforced allowlist for the
+  four startup authority files, rejected an out-of-scope path, read
+  `AGENTS.md`, and returned the correct Pap/Mel boundaries. This proves
+  the tested read-only dispatch, not an installed general-purpose runner.
+  Future file writes require a separately approved, bounded change;
+  model-provided paths and commands are not automatically executed.
+- **Codex:** native worker dispatch, report collection, and steering were
+  verified earlier in this chat. Existing parent sandbox/approval controls
+  remain in force. Qwen-first remains the default; further Codex work
+  requires Pap's approval as an alternative or explicit assignment.
+- **Claude:** a literal zero-dollar CLI cap was rejected at argument
+  validation (`--max-budget-usd` requires a positive number). After Pap
+  confirmed disabled Max extra usage, a subscription-only, tool-less probe
+  used restricted/safe mode, manual permissions, denied unattended prompts,
+  no MCP servers, no session persistence, and one turn. It failed with
+  `401 OAuth access token has expired`; no model report or file edit was
+  produced. `claude auth login --claudeai` is the subscription refresh path,
+  not Console/API billing. The CLI estimated-cost cap is not proof of zero
+  billing; no account spending setting or budget was increased. After Pap
+  completed browser sign-in, the same restricted, tool-less one-turn probe
+  passed with `mel-claude-communication-ok` (`is_error: false`). Max
+  subscription authentication remains selected; no tools ran or files
+  changed in the probe. Direct Claude task/result communication is verified;
+  coding permissions and approval forwarding remain separately governed.
+- **Copilot:** the VS Code shim initially required an installation. Pap
+  approved the official CLI. Homebrew's nested macOS sandbox failed, so the
+  official GitHub release `1.0.93` was installed directly at
+  `/Users/sbertling/.local/bin/copilot`. The downloaded ARM64 archive's
+  SHA-256 matched Homebrew's official cask metadata
+  (`a003408e5b0aaa91c108fe911f4ba2cd5f052bbe34dd20e31c08b12a21ba6627`).
+  A direct JSON-output prompt returned the expected diagnostic marker;
+  recorded session events showed no tool execution and no files modified.
+  The test consumed one included premium request. Built-in MCP servers,
+  custom instructions and remote export were disabled for the probe;
+  write/shell/URL/memory operations were denied. No allow-all, autopilot,
+  persistent approval, or overage-budget change was enabled. CLI receipt
+  of a report does not prove unattended approval forwarding or arbitrary
+  coding-task reliability.
+
+**Reusable local worker:** `scripts/local-qwen-worker.py` accepts one JSON
+object on stdin containing `prompt`, an exact relative-file allowlist
+(`files`), and optional Mel-supplied governing `context`. Mel invokes it and
+collects the JSON result; Pap does not need to copy prompts between apps.
+It uses only the local Qwen model, a direct localhost connection with proxy
+use disabled, a 16,384-token context, and bounded read/turn/output sizes.
+No write, shell, web, delegation, cloud fallback, or session-persistence
+capability is exposed. Findings and proposed code return to Mel for review
+and authorized application; the worker never applies its own proposals.
+
+Validation covered an allowed read, rejection of traversal and absolute
+paths and symlink escapes, rejection of unlisted reads and extra tool
+arguments, line-range limits, and refusal of a model-requested write tool.
+Its live native read
+of `AGENTS.md` returned the correct Pap/Mel boundaries with zero file
+changes. This is a bounded proposal/report worker, not a claim of a fully
+autonomous coding crew. It changes no application behavior or product
+baseline.
+
+The intended handoff is Pap direction/approved scope → Mel's bounded task
+→ worker proposal/report → Mel review and validation → Pap approval for
+new scope or permission-sensitive actions. Approval prompts that cannot
+be surfaced are a stop condition, never permission to bypass approval.
+No blanket write, shell, network, or release permissions are granted by
+this coordination record.
+
+No launcher, permanent orchestration folder, persistent background job,
+worktree, or release automation was created. The existing repository
+instructions remain the governing source; this record establishes the
+coordination mandate and its verified limits, not a new product baseline.
+
 ## 8. Folder map
 
 Expected high-level areas:
@@ -231,6 +431,19 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
+### Mini setup and UI records delivery — 2026-10-08 (Commit/push authorized)
+
+Pap approved committing the previously reviewed Mini/agent continuity
+records, local read-only Qwen worker and its reliability guards, UI
+Blueprint/shell corrections and AppButton comment. These are a separate
+setup/documentation commit from Vendor Contacts (`2fe012f`). The generated
+`next-env.d.ts` development-output path change is excluded. The approved
+push to main includes both commits and invokes the existing production
+webhook; deployment completion and device acceptance are not established
+by a successful Git push. No new account permissions, budget, model,
+context limit, schema, application UI or worker capability is introduced
+by this delivery. Earlier validation results remain recorded below.
+
 ### Vendor Contacts status presentation — 2026-10-08 (Validated; commit/push authorized)
 
 - **Approved scope:** only the Contacts page's loading, error and empty
@@ -254,11 +467,67 @@ state override this subsection whenever they disagree, per the
 - **Delivery boundary:** Pap authorized commit and push. This presentation
   change is the new local development baseline; remote delivery and
   production acceptance remain pending. The established push-to-main
-  webhook triggers production deployment, so the prior no-production
-  constraint requires Pap's direction before that push. No schema or
-  production operation was performed. Earlier unrelated edits, including
+  webhook triggers production deployment; Pap subsequently approved the
+  push after that effect was disclosed. Production acceptance remains
+  unverified. No schema or direct production operation was performed. Earlier unrelated edits, including
   `next-env.d.ts`, were preserved. Other pages require separate bounded
   approval. `npm run context:update` refreshed the repository snapshot.
+
+### Local baseline reconciliation — 2026-10-08 (Source verified)
+
+- **Latest integrated product baseline:** Agenda day-column sizing, committed
+  October 5, 2026 (`085d65d`), follows compact Agenda controls and modal item
+  editing (`e719e4d`). Current source provides per-day widths, Fit all days,
+  Reset widths, pointer/keyboard divider controls and touch width controls.
+  Widths are bounded to 180–720 px and reset when the Event changes; they
+  are local presentation state, not a second persisted domain authority.
+- **Intervening integrated work:** Git history after the former October 1
+  navigator records wake-lock recovery (`47d456d`), shared/presenter and
+  frequent Admin navigation controls (`663970d`, `3093df5`), device-local
+  Sidebar preference (`fa96ba6`), accessible presenter slide jumps
+  (`9552558`) and preview-dot stability (`00988b4`). These are existing
+  commits, not work implemented by this reconciliation.
+- **Evidence boundary:** local Git history and current source were inspected.
+  The local `origin/main` ref matches HEAD with no divergence; no fetch,
+  new behavioral test, production request or database query was performed.
+  Existing test sources are evidence of coverage intent, not a fresh pass.
+  Production deployment and migration-ledger status remain unverified here;
+  earlier pending device/release gates are not cleared by local source.
+- **UI-standard reconciliation:** Blueprint Part 19 remains the established
+  standard. Slideshow's former start/stop debt is resolved in source; its
+  Blueprint record and `AppButton` comment were reconciled. The canonical
+  shell record now acknowledges the shared DataTable/ResponsiveList and
+  Organizer adapter/mode while preserving its original baseline inventory.
+  Native document scrolling remains unchanged. No app-wide refactor is
+  authorized by this documentation update.
+- **Qwen coordination trial:** native file dispatch returned simulated tool
+  JSON with zero actual reads. A retry with Mel-supplied excerpts returned a
+  report but contradicted its own evidence by calling migrated controls
+  unmigrated. Mel rejected those conclusions and verified the source
+  independently. Local task/result communication works; this trial does not
+  establish reliable autonomous tool use or architecture review. Keep
+  Qwen-first bounded assignments under Mel review; no cloud fallback,
+  permission relaxation or context increase was made. A subsequent short,
+  single-file assignment read `AppButton.tsx` through one native tool call
+  and correctly reported its reconciled migration comment. This supports
+  smaller bounded tasks; one pass does not prove general reliability.
+  Inspection also found that the worker labeled any nonempty text as a
+  report, including simulated tool JSON. Pap approved a bounded correction:
+  file-based reports now require a successful nonempty native read, and
+  tool-shaped JSON in report text is rejected rather than executed.
+  Reports include the actual read file/line ranges; blocked results use a
+  nonzero exit code. Eleven focused deterministic checks passed, including
+  no-read and simulated-call rejection, empty reads, genuine native reads,
+  denied tools/paths and CLI failure status. An additional EOF-range check
+  passed. A live local Qwen assignment performed one native AppButton read
+  and correctly cited the migration comment. This guards false success,
+  not factual accuracy: Mel still reviews every conclusion. Read-only
+  tooling, allowlists, 16,384-token context and no cloud fallback remain
+  unchanged.
+- **Next safe step:** separately approve a bounded page-adoption inspection
+  or a local-worker reliability correction. No code refactor, commit, push,
+  deployment or production action was performed. The existing unrelated
+  `next-env.d.ts` edit is preserved.
 
 ### Browser keep-awake recovery — 2026-10-02 (Validated; commit and push authorized)
 
@@ -3606,14 +3875,14 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-10-08T16:56:37-07:00`
+**Generated at:** `2026-10-08T18:25:46-07:00`
 **Branch:** `main`
-**Commit:** `085d65d Add resizable and auto-fit Agenda day columns`
-**Commit date:** `2026-10-05T18:28:45-07:00`
+**Commit:** `2fe012f Standardize Vendor Contacts status presentation`
+**Commit date:** `2026-10-08T16:56:44-07:00`
 **origin/main:** `085d65d`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `6`
+**Tracked modified:** `5`
 **Staged:** `0`
 **Untracked:** `1`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._

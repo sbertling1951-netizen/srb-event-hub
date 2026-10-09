@@ -6,6 +6,21 @@
 
 ## Relationship to Prior Work
 
+**Current-source reconciliation — 2026-10-08:** the inventory below records
+baseline `27c25c1`; it is not an exhaustive current inventory. The shared
+`components/ui/DataTable.tsx` now provides `DataTable` and `ResponsiveList`,
+so section 11's "No shared DataTable/list primitive" item is resolved.
+The shell also serves the Organizer route family: `canonical-organizer`
+in `routeRegistry.ts` covers `/organize` and descendants, and
+`app/organize/layout.tsx` supplies `OrganizerShellAdapter`. That adapter
+uses the same presentation-only `AppShell`, a static platform brand and
+Organizer navigation, with no workspace identity or account actions. It
+resolves no tenant, Event, session or authority. The original three-role
+and five-mode inventories below describe the earlier baseline; the current
+source has four adapters and six modes. The native-document-scroll
+correction in section 7 remains controlling and matches the inspected
+shell CSS. This is source verification, not a new runtime or device test.
+
 This document is the missing architecture record identified by the *EpicentraX UI/UX Discovery and Design-System Blueprint* (2026-08-19): the Canonical Shell (`components/shell/**`) was built across ten commits (`cd7e2a4` → `960a616`) with extensive in-code documentation but no standalone accepted architecture document. This document closes that gap by describing the system exactly as implemented, verified by direct inspection at `27c25c1`.
 
 It builds on, and does not compete with, `docs/architecture/EPICENTRAX_ADAPTIVE_UI_ARCHITECTURE.md` (Proposed) — in particular its §18 (Architectural Boundaries: the UI layer presents governed output, never computes authority) and §3 (Workspace Ownership). Everything the Shell does is consistent with those principles; this document records the concrete implementation, not a competing set of rules.

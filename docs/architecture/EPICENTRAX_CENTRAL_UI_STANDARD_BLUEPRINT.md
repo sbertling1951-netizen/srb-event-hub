@@ -1006,6 +1006,17 @@ safely):**
 
 ## 20. Known Legacy Debt for a Future Page Migration
 
+**Status correction — 2026-10-08, source-verified:** the Slideshow debt
+recorded below is resolved in the current checkout. Its affirmative actions
+use `primary`, Pause uses `secondary`, and End Presentation initiates with
+`danger`; Archive and End confirm through the shared `ConfirmDialog`.
+There are no `start` or `stop` variant call sites in that page. The existing
+`app/admin/slideshow/page.test.ts` records this migration; those tests were
+inspected, not rerun in this documentation pass. Part 19's reference to the
+remaining Slideshow consumer and the original Part 20 record below are
+historical evidence, not outstanding migration work. This correction does
+not establish current production or real-device behavior.
+
 Recorded here, not touched by this pass, per its own "no page migration"
 boundary:
 
