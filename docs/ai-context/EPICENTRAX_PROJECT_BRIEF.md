@@ -421,8 +421,11 @@ Pap authorized committing and pushing the current batch to main. It includes
 Agenda slot creation/single-click editing, chronological enrolled Events and
 Create Event placement below the list, documentation coverage/deferred-work
 audit, README/source navigation, and the first Administrator guide draft.
+The substantive development baseline for this release is **`b6ac66107d763d0d1e15c43d598af24a5f4d7bfa`**.
 No migrations are required. Focused Agenda/Member tests pass 152/152,
-standard tests pass 107/107, TypeScript and full repository lint pass.
+standard tests pass 107/107 and TypeScript passes. Full repository lint
+exits successfully with 0 errors and 194 warnings; scoped changed-file lint
+is clean.
 Desktop/Safari/iPhone/iPad and screen-reader acceptance remain pending.
 Production deployment of this batch is not yet independently verified.
 
@@ -4513,16 +4516,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-10-10T20:06:26-07:00`
+**Generated at:** `2026-10-10T20:06:36-07:00`
 **Branch:** `main`
-**Commit:** `2089faa Record confirmed production deployment and resolved regressions`
-**Commit date:** `2026-10-10T18:48:39-07:00`
+**Commit:** `b6ac661 Improve Agenda creation and Member Event layout; start user guide`
+**Commit date:** `2026-10-10T20:06:26-07:00`
 **origin/main:** `2089faa`
-**HEAD vs origin/main:** 0 ahead, 0 behind
+**HEAD vs origin/main:** 1 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `7`
+**Tracked modified:** `1`
 **Staged:** `0`
-**Untracked:** `4`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
