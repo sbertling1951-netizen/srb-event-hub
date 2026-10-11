@@ -138,9 +138,11 @@ test("successful canonical submission retains the Google result state until its 
   assert.doesNotMatch(reset, /setGoogleResults|setMatchedGooglePlaceIds/);
 });
 
-test("Cancel remains the single explicit close path and preserves the existing dirty-discard confirmation", () => {
+test("Escape and Cancel discard the draft directly, preserve list selection, and remain blocked while saving", () => {
   const close = sourceBetween("async function closeNearbyEditor()", "function handleDestinationChange");
-  assert.match(close, /isNearbyEditorDirty\(\)/);
-  assert.match(close, /Discard Unsaved Changes\?/);
+  assert.match(close, /if \(editingBusy\) \{return;\}/);
+  assert.doesNotMatch(close, /requestConfirmation|setSelected/);
+  assert.match(PAGE_SOURCE, /onClose=\{\(\) => void closeNearbyEditor\(\)\}/);
+  assert.match(PAGE_SOURCE, /<AppButton onClick=\{\(\) => void closeNearbyEditor\(\)\} disabled=\{editingBusy\}>/);
   assert.match(close, /resetNearbyEditorToClosed\(\)/);
 });

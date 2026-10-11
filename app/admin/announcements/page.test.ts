@@ -218,14 +218,11 @@ test("the destructive action alone uses the danger button variant -- routine row
 
 // -- Central UI Standard migration -----------------------------------------
 
-test("the list ('Existing Announcements') is the first page section, the Add/Edit form second -- per the preferred Admin workflow hierarchy", () => {
-  const listIdx = PAGE_SOURCE.indexOf('title="Existing Announcements"');
-  const formIdx = PAGE_SOURCE.indexOf(
-    'title={editingId ? "Edit Announcement" : "New Announcement"}',
-  );
-  assert.notEqual(listIdx, -1);
-  assert.notEqual(formIdx, -1);
-  assert.ok(listIdx < formIdx, "the announcement list must render before the create/edit form");
+test("the announcement list stays on the page while editing uses the shared modal surface", () => {
+  assert.match(PAGE_SOURCE, /title="Existing Announcements"/);
+  assert.match(PAGE_SOURCE, /const announcementForm =/);
+  assert.equal((PAGE_SOURCE.match(/<RecordEditorSurface\b/g) || []).length, 1);
+  assert.match(PAGE_SOURCE, /<RecordEditorSurface open=\{editorOpen\} onClose=\{resetForm\}[^>]*>\{announcementForm\}<\/RecordEditorSurface>/);
 });
 
 test("page-context status/error surfaces above both sections, not nested inside the form -- visible immediately after a row action in the list", () => {
@@ -268,10 +265,15 @@ test("Title and Message required-field validation surfaces as a field-level erro
   assert.match(PAGE_SOURCE, /nextFieldErrors\.body = "Message is required\."/);
 });
 
-test("editing an announcement scrolls the form section into view, not the page top -- the form now renders below the list", () => {
-  assert.equal(/window\.scrollTo/.test(PAGE_SOURCE), false);
-  assert.match(PAGE_SOURCE, /formSectionRef\.current\?\.scrollIntoView\(\{ behavior: "smooth", block: "start" \}\)/);
-  assert.match(PAGE_SOURCE, /<section ref={formSectionRef}/);
+test("editing opens the selected announcement in place without scrolling the underlying page", () => {
+  const start = PAGE_SOURCE.indexOf("function startEdit(item: Announcement)");
+  const body = PAGE_SOURCE.slice(start, PAGE_SOURCE.indexOf("async function handleSave()", start));
+  assert.match(body, /if \(saving\) \{return;\}/);
+  assert.match(body, /setSelectedId\(item\.id\)/);
+  assert.match(body, /setEditorOpen\(true\)/);
+  assert.match(body, /setEditingId\(item\.id\)/);
+  assert.match(body, /setForm\(/);
+  assert.doesNotMatch(PAGE_SOURCE, /window\.scrollTo|scrollIntoView|formSectionRef/);
 });
 
 test("resetForm also clears any pending field-level errors", () => {
@@ -310,6 +312,8 @@ test("the create/edit form's Save/Cancel row uses the canonical FormActions wrap
     PAGE_SOURCE,
     /import\s*\{\s*FormActions\s*\}\s*from\s*["']@\/components\/ui\/FormActions["']/,
   );
-  assert.match(PAGE_SOURCE, /<FormActions>/);
-  assert.equal(/className="app-button-row"/.test(PAGE_SOURCE), false);
+  const actions = PAGE_SOURCE.match(/<FormActions className="record-editor-actions">([\s\S]*?)<\/FormActions>/)?.[1];
+  assert.ok(actions, "the editor must group its Save and Cancel controls");
+  assert.match(actions, /variant="primary"[\s\S]*?type="submit"[\s\S]*?disabled=\{saving \|\| !eventId\}/);
+  assert.match(actions, /onClick=\{resetForm\} disabled=\{saving\}/);
 });

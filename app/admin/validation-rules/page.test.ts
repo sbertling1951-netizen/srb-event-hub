@@ -126,12 +126,13 @@ test("legacy raw action buttons and their three hand-rolled style objects are go
   assert.match(PAGE_SOURCE, /<AppButton variant="secondary" onClick=\{startNewRule\}>\s*\n\s*New Rule/);
   assert.match(
     PAGE_SOURCE,
-    /<AppButton variant="secondary" onClick=\{startNewRule\} disabled=\{saving\}>\s*\n\s*Clear Form/,
+    /<AppButton variant="secondary" onClick=\{startNewRule\} disabled=\{saving\}>\s*\n\s*\{editorOpen \? "Cancel" : "Clear Form"\}/,
   );
-  // Update/Create Rule: primary, same handler/disabled/label logic.
+  // The form owns submission, so Enter and the primary button use one path.
+  assert.match(PAGE_SOURCE, /<form[^>]*onSubmit=\{\(event\) => \{ event\.preventDefault\(\); void handleSaveRule\(\); \}\}/);
   assert.match(
     PAGE_SOURCE,
-    /<AppButton\s*\n\s*variant="primary"\s*\n\s*onClick=\{\(\) => void handleSaveRule\(\)\}\s*\n\s*disabled=\{saving\}\s*\n\s*>\s*\n\s*\{saving \? "Saving\.\.\." : form\.id \? "Update Rule" : "Create Rule"\}/,
+    /<AppButton\s+variant="primary"\s+type="submit"\s+disabled=\{saving\}\s*>\s*\{saving \? "Saving\.\.\." : form\.id \? "Update Rule" : "Create Rule"\}/,
   );
 });
 

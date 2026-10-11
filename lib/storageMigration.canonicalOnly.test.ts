@@ -8,6 +8,7 @@ import {
   getCurrentAdminEvent,
   subscribeToAdminEvent,
 } from "@/lib/adminEventContext";
+import { subscribeToAdminWorkspace } from "@/lib/adminWorkspaceContext";
 import {
   clearAdminAccessCache,
   getCurrentAdminAccess,
@@ -23,7 +24,6 @@ import {
   clearMemberSession,
   getMemberSession,
 } from "@/lib/memberSession";
-import { subscribeToAdminWorkspace } from "@/lib/adminWorkspaceContext";
 import {
   readVendorAuthCookie,
   readVendorSelectedCookie,
@@ -201,9 +201,9 @@ test("6. getCurrentAdminEvent() succeeds from epicentrax-admin-event-context alo
 });
 
 // ---------------------------------------------------------------------------
-// 7. Admin access cache -- canonical cache + canonical cache-time only.
+// 7. Canonical-only cache reuses metadata and refreshes scoped Event reach.
 // ---------------------------------------------------------------------------
-test("7. a canonical-only admin-access cache is accepted normally (no DB hit, no legacy present)", async () => {
+test("7. canonical-only permission metadata is reused while Event reach refreshes through RLS", async () => {
   const cached = {
     cacheSchemaVersion: 2,
     adminUser: { id: "admin-row-1", user_id: "u1", email: "a@x.com" },
@@ -222,13 +222,26 @@ test("7. a canonical-only admin-access cache is accepted normally (no DB hit, no
     data: { session: { user: { id: "u1" } } },
     error: null,
   }));
-  mock.method(supabase, "from", () => {
-    throw new Error("DB must not be hit -- the canonical cache should short-circuit");
+  const queriedTables: string[] = [];
+  mock.method(supabase, "from", (table: string) => {
+    queriedTables.push(table);
+    assert.equal(table, "events", "cached permission metadata must not be reloaded");
+    return {
+      select(columns: string) {
+        assert.equal(columns, "id");
+        return Promise.resolve({ data: [{ id: "evt-current" }], error: null });
+      },
+    } as unknown as ReturnType<typeof supabase.from>;
   });
 
   const result = await getCurrentAdminAccess();
   assert.equal(result?.adminUser?.user_id, "u1");
-  assert.deepEqual(result?.eventIds, ["evt-1"]);
+  assert.deepEqual(queriedTables, ["events"]);
+  assert.deepEqual(result?.eventIds, ["evt-current"]);
+  assert.deepEqual(result?.event_ids, ["evt-current"]);
+  assert.deepEqual(result?.permissionMap, cached.permissionMap);
+  const refreshedCache = JSON.parse(memory.getItem(STORAGE_KEYS.adminAccessCache)!);
+  assert.deepEqual(refreshedCache.eventIds, ["evt-current"]);
 
   // the canonical cache was NOT dual-written into a legacy name
   assert.equal(memory.getItem(LEGACY_STORAGE_KEYS.adminAccessCache), null);

@@ -31,6 +31,11 @@ test("Agenda Categories and Print Settings return to their owning module", () =>
 test("Print Center exposes Reports and permission-aligned Print Settings links", () => {
   assert.match(printSource, /aria-label="Print Center navigation"/);
   assert.match(printSource, /href="\/admin\/reports"/);
-  assert.match(printSource, /hasPermission\(admin, "can_manage_print_settings"\)/);
+  assert.match(printSource, /checkAdminEventTaskAuthority\("event\.print\.manage", eventId\)/);
+  assert.match(printSource, /checkAdminEventTaskAuthority\("event\.reports\.view", eventId\)/);
+  assert.match(printSource, /\{canManagePrintSettings \? \([\s\S]*?href="\/admin\/print-settings"/);
+  assert.match(printSource, /\{canViewReports \? \([\s\S]*?href="\/admin\/reports"/);
+  assert.match(printSource, /setCanManagePrintSettings\(false\)/);
+  assert.match(printSource, /setCanViewReports\(false\)/);
   assert.match(printSource, /href="\/admin\/print-settings"/);
 });

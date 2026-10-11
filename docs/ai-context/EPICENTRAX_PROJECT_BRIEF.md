@@ -414,6 +414,35 @@ The handoff is a report, not a second project memory system. Durable decisions b
 
 ## Development checkpoint
 
+### Regression expectation reconciliation — 2026-10-10 (Test-only main follow-up)
+
+Pap requested investigating and fixing or eliminating the seven release-test
+failures. All seven were stale expectations against the accepted current
+contracts; no application behavior or database change was necessary.
+Announcement tests now verify one shared modal editor, selection-preserving
+activation without page scrolling, and its actual Save/Cancel action group.
+Nearby's obsolete discard-confirmation assertion was replaced with the
+accepted Part 20 Escape/Cancel contract: direct draft discard, no list
+selection changes, and closing blocked during saving. Print navigation tests
+now require scoped `event.print.manage` and `event.reports.view` authority
+rather than the retired permission key. Validation Rules tests cover the
+form submission path and modal Cancel label. The canonical cache behavior
+test reuses permission metadata while mocking only the RLS Event-ID refresh;
+it verifies stale Event IDs are replaced and the refreshed cache is saved.
+
+Validation: the same 68-file regression set passes all 1,546 tests (zero
+failures), the five affected test files pass 82 tests, and `tsc --noEmit`
+passes. The standard `npm test` also passes all 107 tests; changed-test lint
+has zero errors or warnings. The release-entry failures below are historical,
+now resolved by this follow-up.
+Pap explicitly authorized committing and pushing these corrections to main.
+This promotion changes five test files and this context record only; no
+application behavior, permissions, migrations or production data changed.
+The substantive product baseline remains `237942e`; Git and the Librarian
+block identify the test/context follow-up commit. Live activation remains
+unverified.
+
+
 ### Tenant and standard-layout release — 2026-10-10 (Promoted to main; production migrated)
 
 Pap requested committing and pushing the complete accepted local work to main,
@@ -4305,14 +4334,14 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-10-10T18:36:32-07:00`
+**Generated at:** `2026-10-10T18:42:50-07:00`
 **Branch:** `main`
-**Commit:** `237942e Standardize responsive actions and complete tenant workspace features`
-**Commit date:** `2026-10-10T18:35:47-07:00`
-**origin/main:** `237942e`
+**Commit:** `619f2b8 Record tenant and layout release promotion`
+**Commit date:** `2026-10-10T18:36:32-07:00`
+**origin/main:** `619f2b8`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `2`
+**Tracked modified:** `6`
 **Staged:** `0`
 **Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
