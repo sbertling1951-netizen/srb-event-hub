@@ -439,8 +439,12 @@ Pap explicitly authorized committing and pushing these corrections to main.
 This promotion changes five test files and this context record only; no
 application behavior, permissions, migrations or production data changed.
 The substantive product baseline remains `237942e`; Git and the Librarian
-block identify the test/context follow-up commit. Live activation remains
-unverified.
+block identify the test/context follow-up commit. Pap supplied the Production
+Status panel readback: Service Responding, Environment Production, Commit
+`2426d8c`, Working tree Not applicable, Last deployed October 10, 2026 at
+6:44:45 PM (America/Los_Angeles). This is operator-confirmed activation of
+the main test/context follow-up, including the substantive product baseline;
+it is not independent authenticated verification by Mel.
 
 
 ### Tenant and standard-layout release — 2026-10-10 (Promoted to main; production migrated)
@@ -467,7 +471,9 @@ The broad regression run covers 68 test files (1,539 pass / 7 fail); all seven f
 the old main baseline: three obsolete announcement inline-form assertions,
 Nearby dirty-cancel confirmation, Print Settings permission-source assertion,
 validation-rule action-source assertion, and canonical admin-cache acceptance.
-These remain recorded defects; they are not silently marked passing.
+These were recorded failures at release preparation. The regression
+reconciliation above subsequently established obsolete expectations and
+resolved all seven; the same set now passes all 1,546 tests.
 Representative responsive component checks at 320/390/768/1280px pass.
 
 Production project `lastlzlewonsmwtolpvh` was verified via the signed-in
@@ -482,7 +488,8 @@ are historical observations superseded by this release record.
 Product baseline `237942ee151d5e0ebf675cd39a98b6de67721858` was committed
 on main and pushed to `origin/main`. The GitHub CLI credential helper was
 used for this push; no credentials or authentication settings were changed.
-Live activation of this exact SHA is not yet independently verified. This
+Pap subsequently confirmed the Production Status panel reports `2426d8c`,
+which includes this product baseline and the test corrections above. This
 checkpoint and Librarian block were reconciled with `npm run context:update`;
 the following continuity commit records this promotion without changing
 the substantive product baseline.
@@ -4334,14 +4341,14 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-10-10T18:42:50-07:00`
+**Generated at:** `2026-10-10T18:48:08-07:00`
 **Branch:** `main`
-**Commit:** `619f2b8 Record tenant and layout release promotion`
-**Commit date:** `2026-10-10T18:36:32-07:00`
-**origin/main:** `619f2b8`
+**Commit:** `2426d8c Align regression tests with current editor and access contracts`
+**Commit date:** `2026-10-10T18:42:50-07:00`
+**origin/main:** `2426d8c`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `6`
+**Tracked modified:** `1`
 **Staged:** `0`
 **Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
