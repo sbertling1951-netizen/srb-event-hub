@@ -16,6 +16,17 @@ import {
 import { useMemberWorkspace } from "@/lib/memberWorkspace/useMemberWorkspace";
 import { supabase } from "@/lib/supabase";
 
+// ISO date-only values preserve calendar ordering without timezone conversion.
+// Events without a start date use their end date; undated Events appear last.
+export function compareRegistrationDates(
+  left: ResolvedRegistration,
+  right: ResolvedRegistration,
+) {
+  const leftDate = left.start_date || left.end_date || "9999-12-31";
+  const rightDate = right.start_date || right.end_date || "9999-12-31";
+  return leftDate.localeCompare(rightDate);
+}
+
 const PASSKEY_AUTH_ENABLED =
   process.env.NEXT_PUBLIC_PASSKEY_AUTH_ENABLED === "true";
 
@@ -392,6 +403,10 @@ export default function MemberAccountPage() {
       buckets[bucket].push(row);
     }
 
+    for (const rows of Object.values(buckets)) {
+      rows.sort(compareRegistrationDates);
+    }
+
     return buckets;
   }, [registrations]);
 
@@ -501,43 +516,6 @@ export default function MemberAccountPage() {
         </div>
       </div>
 
-      {/* Platform-level organizer entry point. Complements the public
-          LoginSelector's "Create an Event" for a signed-in account holder:
-          it is not FCOC-, tenant-, or member-event-specific, and it does not
-          touch this account's registrations, access, or session. */}
-      <div className="app-action-cluster"
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 12,
-          background: "white",
-          padding: 18,
-          marginBottom: 18,
-        }}
-      >
-        <div style={{ display: "grid", gap: 2 }}>
-          <div style={{ fontWeight: 700, fontSize: 16 }}>Create an Event</div>
-          <div style={{ color: "#475569", fontSize: 14 }}>
-            Planning an event? Start a private event draft.
-          </div>
-        </div>
-        <Link
-          href={"/organize" as Route}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 8,
-            border: "1px solid #cbd5e1",
-            background: "#0b5cff",
-            color: "#ffffff",
-            fontWeight: 700,
-            fontSize: 13,
-            textDecoration: "none",
-            whiteSpace: "nowrap",
-          }}
-        >
-          Create an Event
-        </Link>
-      </div>
-
       {contextInvalid ? (
         <div
           role="alert"
@@ -630,6 +608,43 @@ export default function MemberAccountPage() {
           view.
         </div>
       ) : null}
+
+      {/* Platform-level organizer entry point. Complements the public
+          LoginSelector's "Create an Event" for a signed-in account holder:
+          it is not FCOC-, tenant-, or member-event-specific, and it does not
+          touch this account's registrations, access, or session. */}
+      <div className="app-action-cluster"
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 12,
+          background: "white",
+          padding: 18,
+          marginBottom: 18,
+        }}
+      >
+        <div style={{ display: "grid", gap: 2 }}>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>Create an Event</div>
+          <div style={{ color: "#475569", fontSize: 14 }}>
+            Planning an event? Start a private event draft.
+          </div>
+        </div>
+        <Link
+          href={"/organize" as Route}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 8,
+            border: "1px solid #cbd5e1",
+            background: "#0b5cff",
+            color: "#ffffff",
+            fontWeight: 700,
+            fontSize: 13,
+            textDecoration: "none",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Create an Event
+        </Link>
+      </div>
 
       {process.env.NODE_ENV !== "production" && workspaceContextShadow ? (
         <details

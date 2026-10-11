@@ -11,6 +11,7 @@ import type { ResolvedRegistration } from "@/lib/memberAccountSession";
 import {
   AccountIdentityHeader,
   applyAccountProfileName,
+  compareRegistrationDates,
   EventCard,
   fetchAccountProfileName,
 } from "./pageContent";
@@ -112,7 +113,7 @@ test("Open Event refreshes the shared workspace after canonical session completi
   assert.equal(/contextInvalid/.test(openRegistration), false);
 });
 
-test("exposes a platform-level 'Create an Event' pathway linking to /organize, above the member-event list", () => {
+test("exposes a platform-level 'Create an Event' pathway linking to /organize, below the member-event list", () => {
   // the action + its supporting copy are present
   assert.match(SOURCE, /Create an Event/);
   assert.match(SOURCE, /Planning an event\? Start a private event draft\./);
@@ -120,14 +121,14 @@ test("exposes a platform-level 'Create an Event' pathway linking to /organize, a
   assert.match(SOURCE, /href=\{"\/organize" as Route\}/);
   assert.match(SOURCE, /import type \{ Route \} from "next"/);
 
-  // it sits immediately below the EpicentraX Account card and before the
-  // Upcoming Events section -- visually separate from the member-event cards
+  // It follows every enrolled Event group and remains separate from the cards.
   const accountCard = SOURCE.indexOf("<AccountIdentityHeader");
   const cta = SOURCE.indexOf('Planning an event? Start a private event draft.');
   const upcoming = SOURCE.indexOf('title="Upcoming Events"');
   const eventGroupComponent = SOURCE.indexOf("function EventGroup");
   assert.ok(accountCard >= 0 && cta > accountCard, "the CTA follows the EpicentraX Account card");
-  assert.ok(upcoming > cta, "the CTA precedes the Upcoming Events section");
+  assert.ok(cta > upcoming, "the CTA follows Upcoming Events");
+  assert.ok(cta > SOURCE.indexOf('title="Past Events"'), "the CTA follows Past Events");
   assert.ok(cta < eventGroupComponent, "the CTA is not part of the member-event card list");
 
   // it is a plain navigation link -- it does not touch registrations, session,
@@ -616,4 +617,16 @@ test("a same-account announcement retries only a load that could not obtain its 
     CODE_ONLY.indexOf("}, []);", CODE_ONLY.indexOf("const invalidateAccountLoad = useCallback")),
   );
   assert.ok(invalidate.includes("sessionUnresolvedRef.current = false;"));
+});
+
+
+test("enrolled Events sort chronologically, with end-date fallback and undated Events last", () => {
+  const rows = [
+    householdRegistration({ event_id: "undated", start_date: null, end_date: null }),
+    householdRegistration({ event_id: "later", start_date: "2026-11-01" }),
+    householdRegistration({ event_id: "end-only", start_date: null, end_date: "2026-10-15" }),
+    householdRegistration({ event_id: "earlier", start_date: "2026-10-01" }),
+  ];
+  assert.deepEqual(rows.sort(compareRegistrationDates).map(row => row.event_id),
+    ["earlier", "end-only", "later", "undated"]);
 });

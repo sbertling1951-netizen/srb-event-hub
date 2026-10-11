@@ -66,6 +66,8 @@ reciprocity rules only; field privacy and Event-access boundaries remain.
 | Claude/LEM entry instructions | `CLAUDE.md` |
 | VS Code/Copilot entry instructions | `.github/copilot-instructions.md` |
 | Shared current project summary | `docs/ai-context/EPICENTRAX_PROJECT_BRIEF.md` |
+| Administrator user guide | `docs/user-guide/ADMIN_TENANT_EVENT_GUIDE.md` (source-reviewed draft, not architecture authority) |
+| Documentation coverage and deferred-work evaluation | `docs/ai-context/EPICENTRAX_DOCUMENTATION_AUDIT.md` (audit/index, not architecture authority) |
 | Current application dependencies | `package.json` |
 | Current database schema changes | `supabase/migrations/` |
 | Current application behavior | `app/`, `components/`, and `lib/` |

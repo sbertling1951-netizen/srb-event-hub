@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import Papa from "papaparse";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import ts from "typescript";
 import * as XLSX from "xlsx";
 
 import {
@@ -14,6 +15,11 @@ import {
   isStaleAgendaVersionError,
   mapAgendaRpcError,
 } from "@/app/admin/agenda/pageContent";
+import {
+  agendaClickRange,
+  agendaDragRange,
+  exceedsAgendaCreateThreshold,
+} from "@/lib/agendaCreationGesture";
 import {
   findAgendaWorkbookHeaderRow,
   interpretAgendaImportRow,
@@ -714,7 +720,7 @@ test("the calendar's native HTML5 drag/resize engine is completely untouched -- 
     "async function resizeAgendaItemEndTime(",
     "async function moveAgendaItemToCalendarSlot(",
     "calendarResizeDragRef",
-    "onDragStart={(e) =>\n                                    handleCalendarDragStart(e, item.id)",
+    "onDragStart={(e) => handleCalendarDragStart(e, item.id)}",
   ]) {
     assert.ok(PAGE_SOURCE.includes(needle), `expected calendar mechanism "${needle}" to remain untouched`);
   }
@@ -824,11 +830,14 @@ test("no new page-local viewport-width listener was introduced, and the editor n
 });
 
 test("2. Add Item opens a blank editor", () => {
-  const fnStart = PAGE_SOURCE.indexOf("function openBlankEditor() {");
-  const fnEnd = PAGE_SOURCE.indexOf("\n  function openEditorForItem(");
+  // Add Item and Calendar slot drafts share one new-item opener.
+  assert.match(PAGE_SOURCE, /function openBlankEditor\(\) \{\s*openNewItemEditor\(\);\s*\}/);
+  const fnStart = PAGE_SOURCE.indexOf("function openNewItemEditor(");
+  const fnEnd = PAGE_SOURCE.indexOf("\n  function openBlankEditor(");
   assert.notEqual(fnStart, -1);
   assert.notEqual(fnEnd, -1);
   const body = PAGE_SOURCE.slice(fnStart, fnEnd);
+  assert.match(body, /if \(recoverableDraft \|\| loading \|\| hasAgendaAccess !== true\) \{return;\}/);
   assert.match(body, /originalFormRef\.current = next;/);
   assert.match(body, /setForm\(next\);/);
   assert.match(body, /setEditorExpanded\(true\);/);
@@ -850,14 +859,19 @@ test("3. Edit Item opens the editor with the selected item's existing values", (
   // row reach openEditorForItem exclusively through the dirty-guarded
   // requestOpenEditorForItem() wrapper -- see the switching-guard block
   // below -- preserving the existing item selection/data-sync behavior
-  // via a single code path.
-  const callSites = [
+  // via a single code path. The calendar opens on a single click/tap; the
+  // printable list keeps double-click.
+  const calendarClicks = [
+    ...PAGE_SOURCE.matchAll(/data-agenda-calendar-item\s*\n[\s\S]{0,400}?onClick=\{\(\) => \{[\s\S]{0,300}?if \(!calendarResizePreview\) \{void requestOpenEditorForItem\(item\);\}/g),
+  ];
+  assert.equal(calendarClicks.length, 1, "expected a calendar single click to use guarded editing");
+  const listDoubleClicks = [
     ...PAGE_SOURCE.matchAll(/onDoubleClick=\{\(\) => void requestOpenEditorForItem\(item\)\}/g),
   ];
   assert.equal(
-    callSites.length,
-    2,
-    "expected both calendar and list double-clicks to use guarded editing",
+    listDoubleClicks.length,
+    1,
+    "expected the list double-click to use guarded editing",
   );
   assert.equal(
     /onClick=\{\(\) => openEditorForItem\(item\)\}/.test(PAGE_SOURCE),
@@ -901,17 +915,21 @@ test("the modal uses the shared Dialog, disables backdrop dismissal, and routes 
   assert.match(PAGE_SOURCE, /async function closeEditor\(\) \{\s*if \(saving \|\| saveInFlight.current\) \{return;\}/);
 });
 
-test("single-click selects without expanding; keyboard and explicit Edit remain available", () => {
+test("list single-click selects without expanding; keyboard and explicit Edit remain available", () => {
   const start = PAGE_SOURCE.indexOf("function selectAgendaItem(item: AgendaItem)");
   const end = PAGE_SOURCE.indexOf("function openEditorForItem", start);
   const selection = PAGE_SOURCE.slice(start, end);
   assert.match(selection, /originalFormRef\.current = next/);
   assert.match(selection, /setForm\(next\)/);
   assert.doesNotMatch(selection, /setEditorExpanded/);
-  assert.equal([...PAGE_SOURCE.matchAll(/onClick=\{\(\) => selectAgendaItem\(item\)\}/g)].length, 2);
-  assert.equal([...PAGE_SOURCE.matchAll(/event\.key === "Enter" \|\| event\.key === " "/g)].length, 2);
+  // Printable list only; Calendar items open the editor on a single click.
+  assert.equal([...PAGE_SOURCE.matchAll(/onClick=\{\(\) => selectAgendaItem\(item\)\}/g)].length, 1);
+  assert.match(PAGE_SOURCE, /recordRowProps\(item, selectAgendaItem,/);
+  // The list button's own Enter/Space; Calendar item buttons use native
+  // button activation of their guarded onClick.
+  assert.equal([...PAGE_SOURCE.matchAll(/event\.key === "Enter" \|\| event\.key === " "/g)].length, 1);
   assert.match(PAGE_SOURCE, /Edit selected item/);
-  assert.equal([...PAGE_SOURCE.matchAll(/onDoubleClick=\{\(event\) => event\.stopPropagation\(\)\}/g)].length, 2, "resize handles must not open editing");
+  assert.equal([...PAGE_SOURCE.matchAll(/onDoubleClick=\{\(event\) => event\.stopPropagation\(\)\}/g)].length, 3, "resize and move handles must not open editing");
   assert.match(PAGE_SOURCE, /aria-label=\{`Edit \$\{item\.title/);
 });
 
@@ -1520,6 +1538,306 @@ test("day widths share one header/body track definition and remain display-only"
   assert.match(widths, /Math.min\(maximumDayWidth/);
 });
 
+// --- Calendar creation and item interaction (2026-10-10 accepted design) ---
+//
+// Executes the real page functions (types stripped) with synthetic pointer
+// events, working-Event generations and confirmation results. No RPC is
+// reachable: opening a draft only sets editor form state.
+
+const CREATION_FUNCTIONS = [
+  "minutesToTime",
+  "openNewItemEditor",
+  "requestOpenTimedDraft",
+  "handleCreationPointerDown",
+  "handleCreationPointerMove",
+  "handleCreationPointerUp",
+  "resetCreationGesture",
+  "handleCreationSlotKeyDown",
+  "handleCreationSlotClick",
+];
+
+const CREATION_CODE = (() => {
+  const source = ts.createSourceFile("pageContent.tsx", PAGE_SOURCE, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const bodies: string[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isFunctionDeclaration(node) && node.name && CREATION_FUNCTIONS.includes(node.name.text)) {
+      bodies.push(node.getText(source));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  assert.equal(bodies.length, CREATION_FUNCTIONS.length);
+  return ts.transpileModule(bodies.join("\n"), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+})();
+
+class FakeElement {
+  isItem: boolean;
+  constructor(isItem: boolean) {
+    this.isItem = isItem;
+  }
+  closest() {
+    return this.isItem ? this : null;
+  }
+}
+
+const DIRTY_FORM = { ...BASE_AGENDA_FORM, title: "Unsaved session" };
+
+function creationHarness(options: {
+  state?: Record<string, unknown>;
+  form?: AgendaFormLike;
+  confirm?: (control: { switchEvent: () => void }) => boolean;
+} = {}) {
+  let generation = 1;
+  const control = { switchEvent: () => { generation += 1; } };
+  const record = {
+    confirmations: 0,
+    opened: [] as AgendaFormLike[],
+    previews: [] as unknown[],
+    captures: [] as number[],
+    prevented: 0,
+  };
+  const formRef = { current: options.form ?? BASE_AGENDA_FORM };
+  const originalFormRef = { current: BASE_AGENDA_FORM };
+  const env: Record<string, unknown> = {
+    AGENDA_SLOT_MINUTES: 15,
+    AGENDA_SLOT_HEIGHT: 28,
+    Element: FakeElement,
+    emptyForm: BASE_AGENDA_FORM,
+    agendaCategories: [{ name: "General", color: "#2563eb", is_default: true, is_active: true }],
+    recoverableDraft: null,
+    loading: false,
+    hasAgendaAccess: true,
+    saving: false,
+    saveInFlight: { current: false },
+    formRef,
+    originalFormRef,
+    editorReturnScrollRef: { current: null },
+    window: { scrollX: 0, scrollY: 0 },
+    agendaItemFormsAreEqual,
+    requestConfirmation: async () => {
+      record.confirmations += 1;
+      return options.confirm ? options.confirm(control) : true;
+    },
+    setSelectedItemId: () => {},
+    setForm: (next: AgendaFormLike) => { formRef.current = next; },
+    setEditorExpanded: (open: boolean) => { if (open) {record.opened.push(formRef.current);} },
+    captureAgendaGeneration: () => generation,
+    isAgendaScopeCurrent: (captured: number) => captured === generation,
+    creationGestureRef: { current: null },
+    setCreationPreview: (preview: unknown) => { record.previews.push(preview); },
+    calendarRange: { start: 7 * 60, end: 22 * 60 },
+    calendarGeometry: { rangeStart: 7 * 60, rangeEnd: 22 * 60, slotMinutes: 15, slotHeight: 28 },
+    agendaClickRange,
+    agendaDragRange,
+    exceedsAgendaCreateThreshold,
+    ...options.state,
+  };
+  const fns = new Function(...Object.keys(env), `${CREATION_CODE}\nreturn { ${CREATION_FUNCTIONS.join(", ")} };`)(
+    ...Object.values(env),
+  ) as Record<string, (...args: unknown[]) => unknown>;
+
+  // Day column top is at clientY 100.
+  const column = {
+    getBoundingClientRect: () => ({ top: 100 }),
+    setPointerCapture: (id: number) => { record.captures.push(id); },
+  };
+  const pointer = (pointerType: string, offsetY: number, extra: Record<string, unknown> = {}) => ({
+    pointerType, pointerId: 7, isPrimary: true, button: 0, clientX: 50, clientY: 100 + offsetY,
+    target: new FakeElement(false), currentTarget: column,
+    preventDefault: () => { record.prevented += 1; },
+    ...extra,
+  });
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  return { fns, record, control, pointer, formRef, settle };
+}
+
+const slotY = (minutes: number) => ((minutes - 7 * 60) / 15) * 28;
+
+test("Calendar click opens a guarded 30-minute draft with date, start, end and default category", async () => {
+  const h = creationHarness();
+  h.fns.handleCreationPointerDown(h.pointer("mouse", slotY(8 * 60) + 5), "2026-11-01");
+  h.fns.handleCreationPointerUp(h.pointer("mouse", slotY(8 * 60) + 7));
+  await h.settle();
+  assert.equal(h.record.opened.length, 1);
+  assert.deepEqual(h.record.opened[0], {
+    ...BASE_AGENDA_FORM, category: "General", color: "#2563eb",
+    agenda_date: "2026-11-01", start_time: "08:00", end_time: "08:30",
+  });
+  assert.deepEqual(h.record.captures, [7], "mouse uses pointer capture for column drags");
+  assert.equal(h.record.prevented, 0);
+});
+
+test("primary mouse drag selects a snapped forward or backward range and opens on release", async () => {
+  for (const [from, to] of [[slotY(8 * 60) + 2, slotY(8 * 60 + 45) + 20], [slotY(8 * 60 + 45) + 20, slotY(8 * 60) + 2]]) {
+    const h = creationHarness();
+    h.fns.handleCreationPointerDown(h.pointer("mouse", from), "2026-11-01");
+    h.fns.handleCreationPointerMove(h.pointer("mouse", to));
+    assert.equal(h.record.opened.length, 0, "nothing opens before release");
+    assert.deepEqual(h.record.previews.at(-1), { day: "2026-11-01", start: 8 * 60, end: 9 * 60 });
+    h.fns.handleCreationPointerUp(h.pointer("mouse", to));
+    await h.settle();
+    assert.equal(h.record.opened.length, 1);
+    assert.equal(h.record.opened[0].start_time, "08:00");
+    assert.equal(h.record.opened[0].end_time, "09:00");
+    assert.equal(h.record.previews.at(-1), null, "preview clears on release");
+  }
+});
+
+test("secondary mouse buttons, non-primary pointers and Calendar item targets never start creation", async () => {
+  for (const extra of [{ button: 2 }, { isPrimary: false }, { target: new FakeElement(true) }]) {
+    const h = creationHarness();
+    h.fns.handleCreationPointerDown(h.pointer("mouse", 40, extra), "2026-11-01");
+    h.fns.handleCreationPointerUp(h.pointer("mouse", 40));
+    await h.settle();
+    assert.equal(h.record.opened.length, 0);
+    assert.deepEqual(h.record.captures, []);
+  }
+});
+
+test("touch tap opens a draft without capture or preventDefault; touch movement of 6px or more scrolls instead", async () => {
+  const tap = creationHarness();
+  tap.fns.handleCreationPointerDown(tap.pointer("touch", slotY(9 * 60)), "2026-11-01");
+  tap.fns.handleCreationPointerUp(tap.pointer("touch", slotY(9 * 60) + 3));
+  await tap.settle();
+  assert.equal(tap.record.opened[0].start_time, "09:00");
+  assert.equal(tap.record.opened[0].end_time, "09:30");
+
+  const scrolled = creationHarness();
+  scrolled.fns.handleCreationPointerDown(scrolled.pointer("touch", slotY(9 * 60)), "2026-11-01");
+  scrolled.fns.handleCreationPointerMove(scrolled.pointer("touch", slotY(9 * 60) + 6));
+  scrolled.fns.handleCreationPointerUp(scrolled.pointer("touch", slotY(9 * 60) + 6));
+  const unreported = creationHarness();
+  unreported.fns.handleCreationPointerDown(unreported.pointer("touch", slotY(9 * 60)), "2026-11-01");
+  unreported.fns.handleCreationPointerUp(unreported.pointer("touch", slotY(9 * 60) + 40));
+  await scrolled.settle();
+  for (const h of [tap, scrolled, unreported]) {
+    assert.deepEqual(h.record.captures, []);
+    assert.equal(h.record.prevented, 0);
+  }
+  assert.equal(scrolled.record.opened.length, 0);
+  assert.equal(scrolled.record.previews.length, 0, "touch never draws a drag preview");
+  assert.equal(unreported.record.opened.length, 0);
+});
+
+test("pointercancel clears the gesture and preview so a later release opens nothing", async () => {
+  const h = creationHarness();
+  h.fns.handleCreationPointerDown(h.pointer("mouse", 40), "2026-11-01");
+  h.fns.handleCreationPointerMove(h.pointer("mouse", 120));
+  h.fns.resetCreationGesture();
+  h.fns.handleCreationPointerUp(h.pointer("mouse", 120));
+  await h.settle();
+  assert.equal(h.record.opened.length, 0);
+  assert.equal(h.record.previews.at(-1), null);
+});
+
+test("a gesture begun under one working Event cannot open a draft after an Event switch", async () => {
+  const h = creationHarness();
+  h.fns.handleCreationPointerDown(h.pointer("mouse", 40), "2026-11-01");
+  h.control.switchEvent();
+  h.fns.handleCreationPointerUp(h.pointer("mouse", 42));
+  await h.settle();
+  assert.equal(h.record.opened.length, 0);
+  assert.equal(h.record.confirmations, 0);
+});
+
+test("unauthorized, loading, recovering or saving states never open a timed draft", async () => {
+  for (const state of [
+    { hasAgendaAccess: false }, { hasAgendaAccess: null }, { loading: true },
+    { recoverableDraft: { form: BASE_AGENDA_FORM } }, { saving: true }, { saveInFlight: { current: true } },
+  ]) {
+    const h = creationHarness({ state });
+    h.fns.handleCreationPointerDown(h.pointer("touch", 40), "2026-11-01");
+    h.fns.handleCreationPointerUp(h.pointer("touch", 40));
+    await h.fns.requestOpenTimedDraft("2026-11-01", { start: 8 * 60, end: 8 * 60 + 30 }, 1);
+    h.fns.handleCreationSlotKeyDown({ key: "Enter", preventDefault() {} }, "2026-11-01", 8 * 60);
+    await h.settle();
+    assert.equal(h.record.opened.length, 0, JSON.stringify(state));
+    assert.equal(h.record.confirmations, 0);
+  }
+});
+
+test("a dirty draft asks through requestConfirmation and survives Keep Editing", async () => {
+  const declined = creationHarness({ form: DIRTY_FORM, confirm: () => false });
+  await declined.fns.requestOpenTimedDraft("2026-11-01", { start: 8 * 60, end: 8 * 60 + 30 }, 1);
+  assert.equal(declined.record.confirmations, 1);
+  assert.equal(declined.record.opened.length, 0);
+  assert.equal(declined.formRef.current, DIRTY_FORM, "unsaved values are untouched");
+
+  const accepted = creationHarness({ form: DIRTY_FORM, confirm: () => true });
+  await accepted.fns.requestOpenTimedDraft("2026-11-01", { start: 8 * 60, end: 8 * 60 + 30 }, 1);
+  assert.equal(accepted.record.opened.length, 1);
+  assert.equal(accepted.record.opened[0].title, "");
+
+  const switched = creationHarness({
+    form: DIRTY_FORM,
+    confirm: (control) => { control.switchEvent(); return true; },
+  });
+  await switched.fns.requestOpenTimedDraft("2026-11-01", { start: 8 * 60, end: 8 * 60 + 30 }, 1);
+  assert.equal(switched.record.opened.length, 0, "an awaited discard is rejected after an Event switch");
+  assert.equal(switched.formRef.current, DIRTY_FORM);
+});
+
+test("Enter or Space on an hour slot opens the same guarded draft; other keys do nothing", async () => {
+  const h = creationHarness();
+  let prevented = 0;
+  h.fns.handleCreationSlotKeyDown({ key: "Tab", preventDefault: () => { prevented += 1; } }, "2026-11-01", 10 * 60);
+  h.fns.handleCreationSlotKeyDown({ key: " ", preventDefault: () => { prevented += 1; } }, "2026-11-01", 10 * 60);
+  await h.settle();
+  assert.equal(prevented, 1);
+  assert.equal(h.record.opened.length, 1);
+  assert.equal(h.record.opened[0].start_time, "10:00");
+  assert.equal(h.record.opened[0].end_time, "10:30");
+  assert.match(PAGE_SOURCE, /role="button"\s*tabIndex=\{slot % 60 === 0 \? 0 : -1\}/);
+});
+
+test("the Calendar column wires creation without suppressing touch, and the preview ignores pointers", () => {
+  for (const needle of [
+    "onPointerDown={(e) => handleCreationPointerDown(e, day)}",
+    "onPointerMove={handleCreationPointerMove}",
+    "onPointerUp={handleCreationPointerUp}",
+    "onPointerCancel={resetCreationGesture}",
+    "onLostPointerCapture={resetCreationGesture}",
+  ]) {
+    assert.ok(PAGE_SOURCE.includes(needle), needle);
+  }
+  const handlers = PAGE_SOURCE.slice(
+    PAGE_SOURCE.indexOf("  function handleCreationPointerDown("),
+    PAGE_SOURCE.indexOf("  function handleCreationSlotKeyDown("),
+  );
+  assert.doesNotMatch(handlers, /preventDefault|touchAction|supabase/);
+  assert.match(handlers, /if \(isMouse\) \{\s*e\.currentTarget\.setPointerCapture\(e\.pointerId\);/);
+  const preview = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("{creationPreview?.day === day ? ("), PAGE_SOURCE.indexOf("{calendarDropPreview?.day === day ? ("));
+  assert.match(preview, /pointerEvents: "none"/);
+  assert.match(PAGE_SOURCE, /useAdminWorkingEventScope\(\(\) => \{\s*creationGestureRef\.current = null;\s*setCreationPreview\(null\);/);
+});
+
+test("existing items move only by a draggable span handle inside the item button, with no nested button", () => {
+  const start = PAGE_SOURCE.indexOf("data-agenda-calendar-item\n");
+  const end = PAGE_SOURCE.indexOf("</button>", start);
+  const itemButton = PAGE_SOURCE.slice(start, end);
+  assert.doesNotMatch(itemButton, /<button|<AppButton/);
+  assert.equal((itemButton.match(/\bdraggable\b(?!=\{false\})/g) || []).length, 1, "only the move handle is draggable");
+  assert.match(itemButton, /<span\s*\n\s*aria-hidden="true"\s*\n\s*draggable\s*\n\s*onDragStart=\{\(e\) => handleCalendarDragStart\(e, item\.id\)\}/);
+  assert.match(itemButton, /onPointerDown=\{\(e\) => e\.stopPropagation\(\)\}/);
+  assert.match(itemButton, /cursor: "grab"/);
+  // The drop offset is measured against the whole item, not the handle.
+  const dragStart = PAGE_SOURCE.slice(PAGE_SOURCE.indexOf("function handleCalendarDragStart("), PAGE_SOURCE.indexOf("function handleCalendarDragOver("));
+  assert.match(dragStart, /e: React\.DragEvent<HTMLSpanElement>/);
+  assert.match(dragStart, /closest<HTMLElement>\("\[data-agenda-calendar-item\]"\)/);
+  assert.match(dragStart, /const rect = itemElement\.getBoundingClientRect\(\);/);
+  // Resize handles remain.
+  assert.equal((itemButton.match(/beginCalendar(Start|End)Resize\(e, item\)/g) || []).length, 2);
+});
+
+test("item editing rejects an awaited discard after a working-Event switch", () => {
+  const guardBody = requestOpenEditorForItemSource();
+  assert.match(guardBody, /const generation = captureAgendaGeneration\(\);/);
+  const declineIdx = guardBody.indexOf("if (!confirmed) {");
+  const staleIdx = guardBody.indexOf("if (!isAgendaScopeCurrent(generation)) {");
+  assert.ok(declineIdx !== -1 && staleIdx > declineIdx);
+  assert.ok(staleIdx < guardBody.indexOf("openEditorForItem(item);"));
+});
+
 test("day divider controls expose bounded keyboard and native touch alternatives", () => {
   assert.match(PAGE_SOURCE, /role="separator" aria-orientation="vertical"/);
   assert.match(PAGE_SOURCE, /aria-valuenow=\{calendarDayWidth\(day\)\}/);
@@ -1528,4 +1846,15 @@ test("day divider controls expose bounded keyboard and native touch alternatives
   assert.match(PAGE_SOURCE, /touchAction: "pan-y pinch-zoom"/);
   assert.match(PAGE_SOURCE, /Fit all days/);
   assert.match(PAGE_SOURCE, /Reset widths/);
+});
+
+
+test("screen-reader activation opens a slot once; pointer click does not duplicate pointerup", async () => {
+  const h = creationHarness();
+  h.fns.handleCreationSlotClick({ detail: 1 }, "2026-11-01", 10 * 60 + 15);
+  assert.equal(h.record.opened.length, 0);
+  h.fns.handleCreationSlotClick({ detail: 0 }, "2026-11-01", 10 * 60 + 15);
+  await h.settle();
+  assert.equal(h.record.opened.length, 1);
+  assert.equal(h.record.opened[0].start_time, "10:15");
 });

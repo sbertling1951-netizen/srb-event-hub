@@ -36,6 +36,12 @@ import {
 } from "@/lib/adminWorkspaceContext";
 import { getAgendaColor } from "@/lib/agendaColors";
 import {
+  agendaClickRange,
+  agendaDragRange,
+  type AgendaMinuteRange,
+  exceedsAgendaCreateThreshold,
+} from "@/lib/agendaCreationGesture";
+import {
   parseAgendaWorkbookWorksheet,
   type RawAgendaImportRow,
 } from "@/lib/agendaImportContract";
@@ -92,6 +98,19 @@ type AgendaResizeDrag = {
   startMinutes: number;
   endMinutes: number;
   previewMinutes: number;
+};
+
+// Pointer on empty Calendar time. The working-Event generation is captured
+// at pointerdown so a release after an Event switch cannot open a draft.
+type AgendaCreationGesture = {
+  pointerId: number;
+  isMouse: boolean;
+  day: string;
+  originX: number;
+  originY: number;
+  originOffsetY: number;
+  dragging: boolean;
+  generation: number;
 };
 
 type ActiveEvent = {
@@ -634,6 +653,10 @@ function AdminAgendaPageInner() {
     minutes: number;
   } | null>(null);
   const calendarResizeDragRef = useRef<AgendaResizeDrag | null>(null);
+  const creationGestureRef = useRef<AgendaCreationGesture | null>(null);
+  const [creationPreview, setCreationPreview] = useState<
+    ({ day: string } & AgendaMinuteRange) | null
+  >(null);
   const itemsRef = useRef<AgendaItem[]>([]);
   const activeEventRef = useRef<ActiveEvent | null>(null);
   // Authoritative event_agenda_state.version for the current working
@@ -671,6 +694,8 @@ function AdminAgendaPageInner() {
     captureGeneration: captureAgendaGeneration,
     isCurrent: isAgendaScopeCurrent,
   } = useAdminWorkingEventScope(() => {
+    creationGestureRef.current = null;
+    setCreationPreview(null);
     draftKeyRef.current = null;
     formRef.current = emptyForm;
     originalFormRef.current = emptyForm;
@@ -921,17 +946,26 @@ function AdminAgendaPageInner() {
   // The three entry/exit points for the on-demand item editor. Each keeps
   // originalFormRef in sync with whatever the editor now holds, so the
   // discard check in closeEditor() always compares against the right
-  // baseline (blank, or the selected item's persisted values).
-  function openBlankEditor() {
+  // baseline (blank, or the selected item's persisted values). A new item
+  // starts from the default category; a Calendar slot also supplies its date
+  // and times. The prefilled form is the baseline, so opening and cancelling
+  // leaves nothing to recover or persist.
+  function openNewItemEditor(slot?: Pick<AgendaForm, "agenda_date" | "start_time" | "end_time">) {
     if (recoverableDraft || loading || hasAgendaAccess !== true) {return;}
     editorReturnScrollRef.current = { x: window.scrollX, y: window.scrollY };
     const defaultCat = agendaCategories.find((cat) => cat.is_default);
-    const next = defaultCat
-      ? { ...emptyForm, category: defaultCat.name, color: defaultCat.color }
-      : emptyForm;
+    const next = {
+      ...emptyForm,
+      ...(defaultCat ? { category: defaultCat.name, color: defaultCat.color } : {}),
+      ...slot,
+    };
     originalFormRef.current = next;
     setForm(next);
     setEditorExpanded(true);
+  }
+
+  function openBlankEditor() {
+    openNewItemEditor();
   }
 
   function selectAgendaItem(item: AgendaItem) {
@@ -951,6 +985,37 @@ function AdminAgendaPageInner() {
     setEditorExpanded(true);
   }
 
+  // Empty Calendar time (click, tap, mouse drag or keyboard) opens a new-item
+  // draft through the same guards and discard confirmation as switching
+  // items. `generation` is captured when the gesture began.
+  async function requestOpenTimedDraft(
+    day: string,
+    range: AgendaMinuteRange,
+    generation: number,
+  ) {
+    if (!isAgendaScopeCurrent(generation) || recoverableDraft || loading ||
+        hasAgendaAccess !== true || saving || saveInFlight.current) {return;}
+    if (!agendaItemFormsAreEqual(formRef.current, originalFormRef.current)) {
+      const confirmed = await requestConfirmation({
+        title: "Discard Unsaved Changes?",
+        message:
+          "This agenda item has unsaved changes. Discard them and start a new item at the selected time?",
+        confirmLabel: "Discard Changes",
+        cancelLabel: "Keep Editing",
+        danger: true,
+      });
+      if (!confirmed || !isAgendaScopeCurrent(generation) || saveInFlight.current) {
+        return;
+      }
+    }
+    setSelectedItemId(null);
+    openNewItemEditor({
+      agenda_date: day,
+      start_time: minutesToTime(range.start),
+      end_time: minutesToTime(range.end),
+    });
+  }
+
   // Guarded item-selection entry point, shared by the agenda list row and
   // the Visual Agenda Editor calendar block -- both item-selection
   // surfaces route through this one function so switching items never
@@ -961,7 +1026,8 @@ function AdminAgendaPageInner() {
   // the dirty check is trivially false and this opens immediately with no
   // extra casing needed for "editor closed".
   async function requestOpenEditorForItem(item: AgendaItem) {
-    if (recoverableDraft || loading || hasAgendaAccess !== true) {return;}
+    if (recoverableDraft || loading || hasAgendaAccess !== true || saving || saveInFlight.current) {return;}
+    const generation = captureAgendaGeneration();
     if (editorExpanded && form.id === item.id) {
       // Already open on this exact item -- nothing to switch.
       return;
@@ -976,6 +1042,10 @@ function AdminAgendaPageInner() {
         danger: true,
       });
       if (!confirmed) {
+        return;
+      }
+      // The working Event may have changed while the dialog was open.
+      if (!isAgendaScopeCurrent(generation)) {
         return;
       }
     }
@@ -1988,6 +2058,12 @@ function AdminAgendaPageInner() {
 
   const calendarGridHeight =
     Math.max(1, calendarTimeSlots.length - 1) * AGENDA_SLOT_HEIGHT;
+  const calendarGeometry = {
+    rangeStart: calendarRange.start,
+    rangeEnd: calendarRange.end,
+    slotMinutes: AGENDA_SLOT_MINUTES,
+    slotHeight: AGENDA_SLOT_HEIGHT,
+  };
 
   useEffect(() => {
     function handleWindowResizeMove(e: MouseEvent) {
@@ -2186,13 +2262,19 @@ function AdminAgendaPageInner() {
     }
   }
 
+  // Started from the item's move handle; the drop offset is measured against
+  // the whole item so the item keeps its position under the pointer.
   function handleCalendarDragStart(
-    e: React.DragEvent<HTMLButtonElement>,
+    e: React.DragEvent<HTMLSpanElement>,
     id: string,
   ) {
+    e.stopPropagation();
     setCalendarDraggingId(id);
 
-    const rect = e.currentTarget.getBoundingClientRect();
+    const itemElement =
+      e.currentTarget.closest<HTMLElement>("[data-agenda-calendar-item]") ??
+      e.currentTarget;
+    const rect = itemElement.getBoundingClientRect();
     const offsetY = Math.max(0, e.clientY - rect.top);
 
     setCalendarDragOffsetSlots(Math.floor(offsetY / AGENDA_SLOT_HEIGHT));
@@ -2204,6 +2286,7 @@ function AdminAgendaPageInner() {
     try {
       e.dataTransfer.setData("text/plain", id);
       e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setDragImage(itemElement, e.clientX - rect.left, offsetY);
     } catch (err) {
       // Some mobile/Safari drag events do not fully support dataTransfer.
       // Safe to ignore because local component drag state still works.
@@ -2437,6 +2520,93 @@ function AdminAgendaPageInner() {
     );
 
     void moveAgendaItemToCalendarSlot(itemId, day, nextStartMinutes);
+  }
+
+  // Empty Calendar time: a click/tap opens a default-length draft and a
+  // primary mouse drag selects a range, opening on release. Touch is never
+  // prevented or captured, so moving a finger scrolls natively and abandons
+  // the tap. Items, their move handle and resize handles are skipped.
+  function handleCreationPointerDown(
+    e: React.PointerEvent<HTMLDivElement>,
+    day: string,
+  ) {
+    const isMouse = e.pointerType === "mouse";
+    if (!e.isPrimary || (isMouse && e.button !== 0) ||
+        (e.target instanceof Element && e.target.closest("[data-agenda-calendar-item]"))) {return;}
+    if (recoverableDraft || loading || hasAgendaAccess !== true || saving) {return;}
+    creationGestureRef.current = {
+      pointerId: e.pointerId,
+      isMouse,
+      day,
+      originX: e.clientX,
+      originY: e.clientY,
+      originOffsetY: e.clientY - e.currentTarget.getBoundingClientRect().top,
+      dragging: false,
+      generation: captureAgendaGeneration(),
+    };
+    if (isMouse) {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+  }
+
+  function handleCreationPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const gesture = creationGestureRef.current;
+    if (!gesture || gesture.pointerId !== e.pointerId) {return;}
+    if (!gesture.dragging) {
+      if (!exceedsAgendaCreateThreshold(e.clientX - gesture.originX, e.clientY - gesture.originY)) {return;}
+      if (!gesture.isMouse) {
+        creationGestureRef.current = null;
+        return;
+      }
+      gesture.dragging = true;
+    }
+    const y = e.clientY - e.currentTarget.getBoundingClientRect().top;
+    setCreationPreview({
+      day: gesture.day,
+      ...agendaDragRange(gesture.originOffsetY, y, calendarGeometry),
+    });
+  }
+
+  function handleCreationPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    const gesture = creationGestureRef.current;
+    if (!gesture || gesture.pointerId !== e.pointerId) {return;}
+    resetCreationGesture();
+    const moved = gesture.dragging ||
+      exceedsAgendaCreateThreshold(e.clientX - gesture.originX, e.clientY - gesture.originY);
+    if (moved && !gesture.isMouse) {return;}
+    const y = e.clientY - e.currentTarget.getBoundingClientRect().top;
+    const range = moved
+      ? agendaDragRange(gesture.originOffsetY, y, calendarGeometry)
+      : agendaClickRange(gesture.originOffsetY, calendarGeometry);
+    void requestOpenTimedDraft(gesture.day, range, gesture.generation);
+  }
+
+  function resetCreationGesture() {
+    creationGestureRef.current = null;
+    setCreationPreview(null);
+  }
+
+  // Assistive technology can activate a role=button with a synthetic click.
+  // Pointer clicks are already handled on pointerup, so ignore their detail.
+  function handleCreationSlotClick(
+    e: React.MouseEvent<HTMLDivElement>,
+    day: string,
+    slot: number,
+  ) {
+    if (e.detail !== 0) {return;}
+    const y = ((slot - calendarRange.start) / AGENDA_SLOT_MINUTES) * AGENDA_SLOT_HEIGHT;
+    void requestOpenTimedDraft(day, agendaClickRange(y, calendarGeometry), captureAgendaGeneration());
+  }
+
+  function handleCreationSlotKeyDown(
+    e: React.KeyboardEvent<HTMLDivElement>,
+    day: string,
+    slot: number,
+  ) {
+    if (e.key !== "Enter" && e.key !== " ") {return;}
+    e.preventDefault();
+    const y = ((slot - calendarRange.start) / AGENDA_SLOT_MINUTES) * AGENDA_SLOT_HEIGHT;
+    void requestOpenTimedDraft(day, agendaClickRange(y, calendarGeometry), captureAgendaGeneration());
   }
 
   function handleDrop(targetId: string) {
@@ -3560,9 +3730,10 @@ function AdminAgendaPageInner() {
           <PageSection title="Visual Agenda Editor" titleStyle={{ margin: 0 }}>
             <div style={{ display: "grid", gap: "var(--space-3)" }}>
               <p className="app-subtle-text" style={{ margin: 0 }}>
-                Select an item, then choose Edit or double-click it. Drag and resize
-                items visually; changes are synchronized with the properties panel
-                and the agenda list below.
+                Click or tap an item to edit it. Click or tap empty time to add an
+                item there; on desktop, drag across empty time to set its length.
+                Move an item with its ⠿ handle and change its times with the top and
+                bottom handles; changes are synchronized with the agenda list below.
               </p>
               <FormActions>
                 <AppButton variant="secondary" disabled={!form.id || loading}
@@ -3772,16 +3943,27 @@ function AdminAgendaPageInner() {
                             onDragOver={(e) => handleCalendarDragOver(e, day)}
                             onDragLeave={() => setCalendarDropPreview(null)}
                             onDrop={(e) => handleCalendarColumnDrop(e, day)}
+                            onPointerDown={(e) => handleCreationPointerDown(e, day)}
+                            onPointerMove={handleCreationPointerMove}
+                            onPointerUp={handleCreationPointerUp}
+                            onPointerCancel={resetCreationGesture}
+                            onLostPointerCapture={resetCreationGesture}
                             style={{
                               position: "relative",
                               height: calendarGridHeight,
                               borderLeft: "1px solid #e5e7eb",
                               background: columnBg,
+                              userSelect: "none",
                             }}
                           >
                             {calendarTimeSlots.slice(0, -1).map((slot) => (
                               <div
                                 key={`${day}-${slot}`}
+                                role="button"
+                                tabIndex={slot % 60 === 0 ? 0 : -1}
+                                aria-label={`Add item on ${formatAgendaDate(day)} at ${formatCalendarSlot(slot)}`}
+                                onKeyDown={(e) => handleCreationSlotKeyDown(e, day, slot)}
+                                onClick={(e) => handleCreationSlotClick(e, day, slot)}
                                 style={{
                                   height: AGENDA_SLOT_HEIGHT,
                                   borderTop:
@@ -3793,6 +3975,36 @@ function AdminAgendaPageInner() {
                                 }}
                               />
                             ))}
+
+                            {creationPreview?.day === day ? (
+                              <div
+                                aria-hidden="true"
+                                style={{
+                                  position: "absolute",
+                                  top:
+                                    ((creationPreview.start - calendarRange.start) /
+                                      AGENDA_SLOT_MINUTES) *
+                                    AGENDA_SLOT_HEIGHT,
+                                  height:
+                                    ((creationPreview.end - creationPreview.start) /
+                                      AGENDA_SLOT_MINUTES) *
+                                    AGENDA_SLOT_HEIGHT,
+                                  left: 4,
+                                  right: 4,
+                                  border: "2px dashed #2563eb",
+                                  borderRadius: 10,
+                                  background: "rgba(37,99,235,0.12)",
+                                  color: "#1d4ed8",
+                                  fontSize: 11,
+                                  fontWeight: 900,
+                                  padding: "2px 6px",
+                                  pointerEvents: "none",
+                                  zIndex: 5,
+                                }}
+                              >
+                                {minutesToTime(creationPreview.start)} – {minutesToTime(creationPreview.end)}
+                              </div>
+                            ) : null}
 
                             {calendarDropPreview?.day === day ? (
                               <div
@@ -3882,23 +4094,12 @@ function AdminAgendaPageInner() {
                               return (
                                 <button
                                   key={item.id}
+                                  data-agenda-calendar-item
                                   data-agenda-lanes={block.laneCount}
                                   type="button"
-                                  draggable
-                                  onDragStart={(e) =>
-                                    handleCalendarDragStart(e, item.id)
-                                  }
-                                  onDragEnd={() => {
-                                    setCalendarDraggingId(null);
-                                    setCalendarDropPreview(null);
-                                  }}
-                                  onClick={() => selectAgendaItem(item)}
-                                  onDoubleClick={() => void requestOpenEditorForItem(item)}
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter" || event.key === " ") {
-                                      event.preventDefault();
-                                      void requestOpenEditorForItem(item);
-                                    }
+                                  onClick={() => {
+                                    // A resize released over the item body also clicks it.
+                                    if (!calendarResizePreview) {void requestOpenEditorForItem(item);}
                                   }}
                                   style={{
                                     position: "absolute",
@@ -3928,7 +4129,7 @@ function AdminAgendaPageInner() {
                                     background: isSelected ? "#eff6ff" : "#ffffff",
                                     color: "#111827",
                                     textAlign: "left",
-                                    padding: "16px 8px 16px",
+                                    padding: "16px 24px 16px 8px",
                                     cursor: "pointer",
                                     overflow: "hidden",
                                     overflowWrap: "anywhere",
@@ -3947,8 +4148,43 @@ function AdminAgendaPageInner() {
 
                                     zIndex: isSelected ? 20 : block.lane + 1,
                                   }}
-                                  title="Click to select. Double-click or press Enter to edit. Drag to move; drag top/bottom handles to change time."
+                                  title="Click or press Enter to edit. Drag ⠿ to move; drag top/bottom handles to change time."
                                 >
+                                  <span
+                                    aria-hidden="true"
+                                    draggable
+                                    onDragStart={(e) => handleCalendarDragStart(e, item.id)}
+                                    onDragEnd={() => {
+                                      setCalendarDraggingId(null);
+                                      setCalendarDropPreview(null);
+                                    }}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                    }}
+                                    onDoubleClick={(event) => event.stopPropagation()}
+                                    style={{
+                                      position: "absolute",
+                                      top: 12,
+                                      right: 2,
+                                      width: 18,
+                                      height: 18,
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      borderRadius: 4,
+                                      background: "rgba(15,23,42,0.08)",
+                                      color: "#334155",
+                                      fontSize: 14,
+                                      lineHeight: 1,
+                                      cursor: "grab",
+                                      zIndex: 8,
+                                    }}
+                                    title="Drag to move"
+                                  >
+                                    ⠿
+                                  </span>
                                   <span
                                     onMouseDown={(e) => {
                                       e.preventDefault();

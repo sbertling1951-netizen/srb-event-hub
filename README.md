@@ -1,192 +1,122 @@
 # EpicentraX Event Hub
 
-Starter MVP for a cross-device event PWA.
+EpicentraX is an Event management application with Member, administrative,
+Vendor and private Organizer workspaces. It uses Next.js App Router, React,
+TypeScript and Supabase authentication, PostgreSQL/RLS and Storage. It is an
+existing deployed application; this repository is not a starter scaffold.
 
-## Included in this starter
+## Start with the governing records
 
-- Member home dashboard
-- Agenda page
-- Attendee locator and parking overview
-- Activities page with cutoff logic
-- Nearby page with Apple Maps and Google Maps links
-- Announcements page
-- Admin event creation page
-- Admin CSV/XLSX registration import preview
-- PostgreSQL / Supabase-ready schema
-- Basic PWA manifest and service worker registration
+Read [AGENTS.md](AGENTS.md), the
+[Project Brief](docs/ai-context/EPICENTRAX_PROJECT_BRIEF.md) and its current
+Development checkpoint, then the
+[authoritative source index](docs/ai-context/AUTHORITATIVE_SOURCES.md).
+The [Constitution](docs/architecture/ADR-000%20EpicentraX%20Constitution.md),
+accepted contracts and database/runtime evidence take precedence over
+summaries. Historical checkpoint entries do not override newer closeouts.
 
-## Stack
+The [documentation audit](docs/ai-context/EPICENTRAX_DOCUMENTATION_AUDIT.md)
+indexes all page and API routes, defines the detailed user-guide worksheets,
+identifies developer-handover gaps and links deferred work for evaluation.
+It is a coverage plan, not a finished or fully device-verified user guide.
 
-- Next.js App Router
-- TypeScript
-- Client-side CSV import with Papa Parse
-- Client-side Excel import with xlsx
+The [first Administrator guide chapter](docs/user-guide/ADMIN_TENANT_EVENT_GUIDE.md)
+covers Tenant/Event context, Tenant settings and types, and Event creation.
+It is source-reviewed; authenticated walkthroughs and device screenshots remain pending.
 
-## How to run
+## Local development
 
-1. Install Node.js 20 or newer.
-2. In a terminal, go to this folder.
-3. Run `npm install`.
-4. Run `npm run dev`.
-5. Open `http://localhost:3000`.
-
-## Suggested next production steps
-
-1. Add Supabase and replace mock data with real tables.
-2. Add authentication and admin/member roles.
-3. Add real activity registration and payment flow.
-4. Add map image upload and clickable site assignment tools.
-5. Add nearby auto-populate using a Places API plus admin review.
-6. Add push notifications and offline caching strategy.
-
-## Notes
-
-This is a solid starter scaffold, not a finished production deployment. The structure is designed so you can extend it into a full event platform for multiple events.
-
-# SRB Event Hub
-
-SRB Event Hub is a cross-device event management platform designed for rallies, clubs, and multi-day events. It provides both admin tools and a member-facing experience in a single Progressive Web App (PWA).
-
----
-
-## Core Features
-
-### Member Experience
-
-- Event dashboard and home base
-- Agenda with time-based grouping
-- Attendee directory and coach locator
-- Nearby places with map and directions
-- Announcements and updates
-- Activities and event participation
-
-### Admin Experience
-
-- Event creation and management
-- Attendee import (CSV / Excel)
-- Attendee management and check-in
-- Parking and site assignment tools
-- Agenda builder and scheduling
-- Announcements publishing
-- Nearby location management
-- Reports and exports
-- Print support (name tags, coach plates)
-
-### Platform Features
-
-- Supabase-ready database structure
-- Progressive Web App (PWA) support
-- Mobile-friendly UI
-- Offline-ready foundation (service worker)
-
----
-
-## Technology Stack
-
-- Next.js (App Router)
-- TypeScript
-- Supabase (PostgreSQL + Auth + Storage)
-- Papa Parse (CSV import)
-- SheetJS (XLSX import)
-- React + React Leaflet (maps)
-
----
-
-## Getting Started (Local Development)
-
-### 1. Requirements
-
-- Node.js 20+
-- npm 10+
-
-### 2. Install dependencies
+Use Node.js 20 or newer and the checked-in lockfile. Runtime dependencies and
+scripts are authoritative in [package.json](package.json).
 
 ```bash
-npm install
-```
-
-### 3. Configure environment
-
-Create a `.env.local` file in the root:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=your_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-```
-
-### 4. Run development server
-
-```bash
+npm ci
 npm run dev
 ```
 
-Open in browser:
+Before starting the app, configure an approved development Supabase target
+in local `.env.local` using `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`. Do not commit credentials or substitute a
+production database merely to get a page to load. Provider features require
+additional server configuration; inspect their actual server adapters and
+obtain approved values through the deployment/support owner.
 
-```
-http://localhost:3000
-```
+`GOOGLE_MAPS_API_KEY` is server-only; its empty example is in `.env.example`.
+Other server integrations include Stripe, mail/SMS and privileged Supabase
+commands. Their keys must remain server-side. This README intentionally does
+not contain credential values or instructions to enable unapproved features.
 
----
+Open `http://localhost:3000`. Pages depend on real account, Tenant, Event,
+permission and database state; a successful build does not create those
+records or grant administrative access.
 
-## Production Build
+## Source map
+
+- `app/`: route entries, page implementations and API routes. Some Next
+  `page.tsx`, layout and route entries are thin re-exports into sibling
+  implementation modules; helpers belong outside framework route exports.
+- `components/`: shared shell, UI primitives and feature components.
+- `lib/`: contexts, workflow adapters, authorization and server integrations.
+- `supabase/migrations/`: ordered authoritative schema/policy/RPC history.
+- `supabase/integration-tests/`: governed rollback fixtures.
+- `docs/architecture/`: accepted architecture, proposals and specifications;
+  always check each document's status.
+- `docs/operations/`: specialized operational runbooks.
+- `scripts/deployment/`: release construction, verification and rollback.
+- `public/`: assets and import templates. The present service worker does not
+  establish offline operational readiness or queued mutations.
+
+## Validation
 
 ```bash
+npm test
+npm run test:member-workspace
+npx tsc --noEmit
 npm run build
-npm run start
 ```
 
----
+`npm test` is a selected regression set, not every repository test. Run
+feature-specific route/helper tests for the work being changed; route tests
+are indexed in the documentation audit's source inventory. Run ESLint on
+changed source/test files and required repository checks. Existing warnings
+or previously failing checks must be reported accurately rather than hidden.
 
-## Database Setup
+## Database development
 
-This project is designed to run on Supabase.
+Follow [Database History](docs/DATABASE_HISTORY.md). Build new databases from
+the ordered migration chain, not `supabase_schema.sql` or `db/schema.sql`
+snapshots. Do not replay historical reconciliation DDL against established
+production; the history contract identifies ledger-only reconciliations.
 
-Use one of the included schema files:
+Every new migration requires a full clean replay and applicable integration
+fixtures. `npm run db:verify-replay` requires Docker, the Supabase CLI and a
+local `supabase/config.toml`; it resets the targeted local stack. Use a
+disposable isolated checkout with a distinct project ID and ports so working
+local data is preserved. A linked/production target is not authorized by a
+local validation command. Production writes and migration-ledger changes
+require explicit approval and verified target/starting-ledger evidence.
 
-- `supabase_schema.sql`
-- `db/schema.sql`
+## Deployment and support
 
-Apply the schema to your Supabase project before running in production.
+The production release process builds a candidate separately from the serving
+release and activates it after validation. Start with
+[First Install](scripts/deployment/FIRST_INSTALL.md),
+[release lifecycle](scripts/deployment/release-lib.sh),
+[verification](scripts/deployment/verify-release.mjs) and
+[rollback](scripts/deployment/rollback.sh). Do not replace that process with
+an in-place production build. Commit/push may trigger deployment and requires
+Pap's explicit authorization under `AGENTS.md`.
 
----
+For extraordinary data repairs, use the relevant accepted contract and the
+[governed parking repair runbook](docs/operations/EPICENTRAX_GOVERNED_PARKING_REPAIR_RUNBOOK.md).
+An ordinary support request does not authorize identity merges, destructive
+repairs, database resets or broader sharing.
 
-## Deployment Notes
+## Maintaining documentation
 
-Before deploying, confirm:
-
-- Environment variables are configured
-- Supabase project is connected
-- Database schema is applied
-- Storage buckets exist
-- Build completes without errors
-
----
-
-## Branding Note
-
-This release is branded as **SRB Event Hub**.
-
-Some internal references may still reflect earlier naming. These do not impact functionality and can be updated in a later branding pass.
-
----
-
-## Project Status
-
-This application has evolved beyond a simple starter and now represents a functional event management system. Additional polish, security (RLS), and documentation are recommended for production-scale deployments.
-
----
-
-## Suggested Next Steps
-
-- Implement Supabase Row Level Security (RLS)
-- Finalize admin permission model
-- Complete branding standardization
-- Expand reporting and exports
-- Add notification and communication tools
-- Harden deployment and backup strategy
-
----
-
-## Summary
-
-SRB Event Hub is a flexible foundation for managing events, attendees, logistics, and communication in a unified system. It is designed to scale from small rallies to large multi-event organizations.
+Update the relevant workflow documentation and existing Project Brief
+checkpoint when behavior, validation, deployment or a deferral changes.
+Keep policy in accepted architecture and operations in their runbooks; link
+rather than duplicate them. Run `npm run context:update` for authorized
+context reconciliation. User-guide publication requires verified workflows,
+sanitized examples and Safari/iPhone/iPad acceptance, not source intent alone.

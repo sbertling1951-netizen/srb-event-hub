@@ -197,11 +197,12 @@ by `AGENTS.md`.
   checks that fit its verified capabilities and context limit. Mel reviews
   its output and remains responsible for architecture and validation
   assessment. Local Ollama inference incurs no external model API charge;
-  it still uses the Mini's compute resources. If Qwen cannot complete a
-  task reliably, report the limitation and seek Pap's approval before
-  invoking Claude, Codex workers, or Copilot as an alternative. No automatic
-  cloud-model fallback, paid API call, or overage-budget increase is
-  authorized by this preference.
+  it still uses the Mini's compute resources. On October 10, Pap gave Mel
+  standing discretion to assign small, suitable tasks to Qwen and delegate
+  tougher work or unreliable Qwen output to Claude/LEM without asking again.
+  This supersedes the earlier per-task fallback approval requirement for
+  Claude. Mel owns scope, architecture, review and validation; it does not
+  authorize paid API/overage-budget increases or automatic provider fallback.
 - Mel may dispatch bounded work to execution/review agents and collect
   their reports directly. Workers receive the governing sources, exact
   scope, permitted files/actions, validation requirements, and stop
@@ -414,6 +415,176 @@ The handoff is a report, not a second project memory system. Durable decisions b
 
 ## Development checkpoint
 
+### Agenda, Member Events and documentation promotion — 2026-10-10
+
+Pap authorized committing and pushing the current batch to main. It includes
+Agenda slot creation/single-click editing, chronological enrolled Events and
+Create Event placement below the list, documentation coverage/deferred-work
+audit, README/source navigation, and the first Administrator guide draft.
+No migrations are required. Focused Agenda/Member tests pass 152/152,
+standard tests pass 107/107, TypeScript and full repository lint pass.
+Desktop/Safari/iPhone/iPad and screen-reader acceptance remain pending.
+Production deployment of this batch is not yet independently verified.
+
+
+### Agenda calendar creation and editing — 2026-10-10 (Local implementation)
+
+Pap authorized the accepted Agenda gesture implementation and Claude fallback.
+Local Qwen `qwen2.5-coder:14b` was tried first: its broad patch referenced
+nonexistent functions and suppressed touch scrolling; a smaller geometry
+attempt still mishandled bounds. Neither output was applied. Claude/LEM
+implemented the bounded calendar change; Mel reviewed, added assistive-click
+activation and save guards, and validated the resulting code.
+
+- Calendar item click/tap opens the existing guarded editor. Movement uses
+  a visible separate handle; existing HTML5 movement and resize/save paths
+  remain. Printable list selection/double-click remains unchanged.
+- Empty time click/tap prepares a date/start/end draft with a 30-minute default.
+  Primary mouse drag uses a 6-pixel threshold and 15-minute slots in either
+  direction, displays a preview, then opens the editor on release.
+- Touch movement abandons creation without preventing/capturing the pointer,
+  preserving native scrolling. Canceled gestures and Event changes clear it;
+  awaited discard confirmations cannot open a stale Event draft.
+- Hour slots are keyboard tab stops; every slot supports assistive synthetic
+  click activation. Add Item remains available. Prefill uses existing category
+  defaults; opening/canceling does not persist an item. Save is unchanged.
+- Selection stays within one day's displayed range. If the range reaches
+  midnight, end is capped at 23:59; the final quarter-hour can be 14 minutes.
+
+Focused Agenda tests pass **133/133**. TypeScript and scoped ESLint pass;
+`git diff --check` passes. Actual desktop/Safari/iPhone/iPad gesture and
+screen-reader acceptance remain pending, including HTML5 drag initiation
+from the move handle. No database change, commit, push or deployment was
+performed. Existing unrelated documentation and Member Event changes were
+preserved. Local code is ahead of deployed behavior; it is not yet a verified
+published guide workflow.
+
+
+### Agenda interaction decision — 2026-10-10 (Accepted design; local implementation above)
+
+Pap accepted the following interaction after discussing how creation and
+editing are distinguished:
+
+- Click/tap an existing Agenda item to open its editor.
+- Click/tap an empty time slot to open a new-item editor with that start time
+  and an editable default duration.
+- On desktop, drag across empty time slots to prefill start and duration/end,
+  then open the new-item editor on release.
+- Distinguish click from drag using movement beyond a small threshold before
+  release; the exact threshold remains an implementation detail to validate.
+- Use a visible drag handle to move an existing item, keeping its ordinary
+  click/tap dedicated to editing.
+- On phones, dragging empty space preserves normal scrolling; tap creates
+  through the editor. Retain explicit Add Item and keyboard access.
+
+The editor completes remaining fields; opening or canceling it does not
+persist an incomplete item. Existing Event context, authority and governed
+save behavior remain controlling. Duration defaults, time snapping, cross-day
+selection and device acceptance still need implementation-level resolution.
+This decision was subsequently implemented locally as recorded above; device
+acceptance and promotion remain pending.
+
+
+### Member enrolled-Event list — 2026-10-10 (Local implementation)
+
+Pap authorized chronological enrolled-Event ordering and moving Create Event
+below the list. `app/member/account/pageContent.tsx` retains Current, Upcoming
+and Past groups and sorts each ascending by start date, falling back to end
+date, with undated Events last. The private organizer entry action follows
+all groups and the empty/loading state in normal document flow on every
+screen size. Eligibility, session context and creation authority are unchanged.
+The account page suite passes 19 tests; TypeScript checking passes. Browser
+and device acceptance remain pending; this is local work, not committed,
+pushed or deployed. Agenda gesture design was subsequently accepted and implemented locally above;
+device acceptance and promotion remain pending.
+
+
+### Product development notes — 2026-10-10 (Recorded intent; not implemented)
+
+Pap requested these ideas be retained for future evaluation:
+
+- **Agenda creation from the timeline:** selecting a time slot or dragging a
+  range should prefill the new item's start time and duration/end time, then
+  open the editor panel to complete the remaining fields. The exact gesture
+  is undecided; Pap mentioned click/drag or double-click/drag and welcomes
+  suggestions. Mel recommends dragging an empty range on desktop for duration,
+  with click/tap opening the editor using a visible, editable default duration.
+  Retain an explicit Add Item action and keyboard entry path. Double-click
+  should be optional, not the only way to create an item. Touch scrolling,
+  existing-item selection/movement, time snapping, minimum duration and
+  cross-day behavior need design and device validation before implementation.
+  Opening or canceling the editor must not persist an incomplete item; use
+  the existing governed save path and current Event context/authority.
+- **Member enrolled-Event list:** list the Events in which the Member is
+  enrolled chronologically and place **Create Event** after that list, including
+  on small screens. This concerns authenticated My Events, not public Event
+  discovery. Chronological direction, grouping of past/current/upcoming Events,
+  and placement of Events without dates remain to be settled. Mel suggests
+  upcoming Events in ascending start-date order (nearest first), with past
+  Events in a separate group. Preserve enrollment/visibility boundaries and
+  the existing private Event creation authority; moving the action does not
+  grant administrative Event creation rights.
+
+The Agenda proposal was subsequently resolved by the accepted interaction decision above. Pap also authorized the
+Member Event list change; its implementation and validation are recorded above.
+
+
+### First Administrator guide chapter — 2026-10-10 (Local draft)
+
+Pap authorized starting the user guide. The
+[Administrator Tenant/Event chapter](../user-guide/ADMIN_TENANT_EVENT_GUIDE.md)
+documents working context versus settings inspection, Tenant creation/metadata,
+activation, shared Tenant types and Event creation, including field limits and
+independent save/cancel behavior. Local Qwen `qwen2.5-coder:14b` supplied a bounded
+read-only draft; Mel corrected unsupported navigation/labels against source.
+This is source-reviewed documentation, not completed runtime/device acceptance.
+Authenticated role walkthroughs, Safari/iPhone/iPad checks and sanitized
+screenshots remain pending. No application or database change, commit or push
+was performed for this draft. Documentation links and whitespace are checked;
+context is refreshed with `npm run context:update`.
+
+
+### Documentation coverage audit — 2026-10-10 (Local documentation only)
+
+Pap requested a documentation audit to support a detailed user guide and
+future developer handover, followed by a deferred-work list for evaluation.
+[Documentation coverage and deferred work](EPICENTRAX_DOCUMENTATION_AUDIT.md)
+records the source inventory: 102 page entries across seven route families,
+43 API entries and 84 pre-audit documentation files. It defines workflow
+worksheets, guide chapters, developer-handover coverage, eight empty primary
+ADR placeholders and supersession gaps. The README was corrected from
+starter/snapshot-schema instructions to the existing application, migration
+chain, validation and release/runbook entry points. The source index links
+the audit explicitly as an index rather than new architectural authority.
+
+Two bounded local Qwen read-only reviews assisted the inventory/deferral
+classification. Mel checked the output and excluded unsupported routes and
+absence claims; no Claude fallback or paid worker was used. The deferred
+triage links its governing evidence and distinguishes unavailable recurrence,
+type-based setup suggestions, proposed branding,
+deferred offline/P3 work, identity review/design, documentation and runtime
+acceptance gaps. Legacy read-boundary findings remain source-only concerns,
+not a confirmed breach; the existing sharing-expansion gate is preserved.
+Pap clarified that Google Nearby works in the live app on main; the earlier
+missing-credential message was from the test-database environment. Google
+credential setup was removed from the deferred list, leaving 11 evaluation
+topics. This operator-confirmed functionality does not change the separate
+source-only authority-review gate.
+Older email/SMS/domain/tooling concerns need current evidence before being
+promoted to active defects. Completed release migrations and resolved test
+expectations are excluded from unfinished implementation.
+
+This is a source/documentation audit, not authenticated all-page runtime or
+full-device acceptance and not the completed user guide. No application,
+authority, database, production configuration or release change was made.
+Documentation link/route inventory checks and `git diff --check` validate
+this follow-up; no runtime test rerun is needed for documentation-only edits.
+Work remains local and uncommitted. The substantive product baseline remains
+`237942e`, with latest main documentation commit `2089faa`; Pap's last supplied
+production panel confirmed `2426d8c`. The next product step is Pap's selection
+from the audited deferred-work list, not automatic implementation.
+
+
 ### Regression expectation reconciliation — 2026-10-10 (Test-only main follow-up)
 
 Pap requested investigating and fixing or eliminating the seven release-test
@@ -454,9 +625,10 @@ and explicitly authorized applying the three production migrations first.
 The pending cohort includes Tenant context and full-card selection, governed
 Tenant type creation and field help, shared permission baselines, Agenda
 category creation, Event Location Code and schedule hints, and the common
-responsive action layout described below. Google credential configuration
-is deferred at Pap's request; no Google key was supplied or configured.
-The missing-key response is displayed without raising the development overlay.
+responsive action layout described below. The missing-key response is
+displayed without raising the development overlay. Pap subsequently clarified
+that this credential error came from the test-database environment and Google
+Nearby works in the live app on main; credential setup is not deferred work.
 
 Release validation uncovered unsupported helper exports in 25 existing Next
 page entries, one API route and the organizer layout. Their implementations
@@ -4341,16 +4513,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-10-10T18:48:08-07:00`
+**Generated at:** `2026-10-10T20:06:26-07:00`
 **Branch:** `main`
-**Commit:** `2426d8c Align regression tests with current editor and access contracts`
-**Commit date:** `2026-10-10T18:42:50-07:00`
-**origin/main:** `2426d8c`
+**Commit:** `2089faa Record confirmed production deployment and resolved regressions`
+**Commit date:** `2026-10-10T18:48:39-07:00`
+**origin/main:** `2089faa`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `7`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `4`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
