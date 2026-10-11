@@ -1391,7 +1391,7 @@ function AdminAgendaPageInner() {
     showStatus('Order changed. Click "Save Order" to keep it.');
   }
 
-  
+
 
   function moveItemDown(id: string) {
     setItems((prev) => {

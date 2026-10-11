@@ -414,7 +414,7 @@ The handoff is a report, not a second project memory system. Durable decisions b
 
 ## Development checkpoint
 
-### Tenant and standard-layout release — 2026-10-10 (Approved release preparation)
+### Tenant and standard-layout release — 2026-10-10 (Promoted to main; production migrated)
 
 Pap requested committing and pushing the complete accepted local work to main,
 and explicitly authorized applying the three production migrations first.
@@ -450,7 +450,13 @@ column, six creation defaults and three edit defaults preserving old callers,
 and anonymous Tenant type execution denied. The transaction contained no
 business-record mutation. Earlier local-only and pending-gate notes below
 are historical observations superseded by this release record.
-Commit, push and live activation verification are the remaining steps.
+Product baseline `237942ee151d5e0ebf675cd39a98b6de67721858` was committed
+on main and pushed to `origin/main`. The GitHub CLI credential helper was
+used for this push; no credentials or authentication settings were changed.
+Live activation of this exact SHA is not yet independently verified. This
+checkpoint and Librarian block were reconciled with `npm run context:update`;
+the following continuity commit records this promotion without changing
+the substantive product baseline.
 
 
 ### Standard page action layout — 2026-10-10 (Local implementation)
@@ -4299,16 +4305,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-10-10T18:35:30-07:00`
+**Generated at:** `2026-10-10T18:36:32-07:00`
 **Branch:** `main`
-**Commit:** `1cb2547 Record tenant logo delivery baseline and migration gate`
-**Commit date:** `2026-10-09T08:02:10-07:00`
-**origin/main:** `1cb2547`
+**Commit:** `237942e Standardize responsive actions and complete tenant workspace features`
+**Commit date:** `2026-10-10T18:35:47-07:00`
+**origin/main:** `237942e`
 **HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `152`
+**Tracked modified:** `2`
 **Staged:** `0`
-**Untracked:** `43`
+**Untracked:** `0`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
