@@ -244,7 +244,7 @@ export default function OrganizerBudgetPage({ params }: BudgetPageProps) {
                     <Amount label="Estimated" value={line.estimatedAmount} currency={line.currency} />
                     <Amount label="Actual" value={line.actualAmount} currency={line.currency} />
                     {line.organizerNote ? <p style={{ margin: 0 }}>Note: {line.organizerNote}</p> : null}
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <div className="app-button-row">
                       <AppButton onClick={() => startEdit(line)}>Edit</AppButton>
                       <AppButton
                         variant="danger"
@@ -266,7 +266,7 @@ export default function OrganizerBudgetPage({ params }: BudgetPageProps) {
           <form onSubmit={submitAdd} style={{ display: "grid", gap: 12 }}>
             {addError ? <Alert tone="danger">{addError}</Alert> : null}
             <OrganizerBudgetFields values={addForm} onChange={setAddForm} />
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div className="app-button-row">
               <AppButton type="submit" variant="primary" loading={adding}>Add budget line</AppButton>
               <AppButton
                 type="button"

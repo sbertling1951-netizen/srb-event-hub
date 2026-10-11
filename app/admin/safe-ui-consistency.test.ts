@@ -8,8 +8,8 @@ function source(relativePath: string) {
 }
 
 const agendaCategoriesSource = source("./agenda/categories/page.tsx");
-const mapAdminSource = source("./map-admin/page.tsx");
-const printSource = source("./print/page.tsx");
+const mapAdminSource = source("./map-admin/pageContent.tsx");
+const printSource = source("./print/pageContent.tsx");
 const printSettingsSource = source("./print-settings/page.tsx");
 
 test("canonical shell owns page titles on safe Admin hub and subordinate routes", () => {

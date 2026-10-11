@@ -27,7 +27,7 @@ test("creation uses only the governed RPC adapter and never a raw Event INSERT",
 });
 
 test("Create resolves Event coordinates through the shared /api/geocode contract", () => {
-  assert.match(SOURCE, /resolveEventCoordinates\(form, \(\{ address \}\) =>\s*\n?\s*geocodeLocation\(\{ address \}\)/);
+  assert.match(SOURCE, /resolveEventCoordinates\(form, \(\{ address, location_code \}\) =>\s*\n?\s*geocodeLocation\(\{ address, location_code \}\)/);
   assert.match(SOURCE, /planCoordinatePersistence\([\s\S]*?"create"/);
   assert.doesNotMatch(SOURCE, /nominatim/);
 });

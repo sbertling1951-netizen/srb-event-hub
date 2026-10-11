@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { importsStatusTone } from "./page";
+import { importsStatusTone } from "./pageContent";
 
 // Regression coverage for the membership-number-format consolidation
 // (docs/architecture/EPICENTRAX_ATTENDEES_MODULE_REFACTOR_AUDIT.md,
@@ -19,7 +19,7 @@ import { importsStatusTone } from "./page";
 // Run with: npx tsx --test app/admin/imports/page.test.ts
 
 function readSource() {
-  return readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  return readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
 }
 
 test("imports page: no hardcoded membership-number F/C prefix check remains anywhere in the file", () => {

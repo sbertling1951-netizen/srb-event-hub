@@ -295,7 +295,7 @@ test("8b. every key-filtered storage listener routes the canonical STORAGE_KEYS.
     ["app/announcements/page.tsx", ["memberEventChanged"]],
     ["app/coach-map/public/page.tsx", ["memberEventChanged"]],
     [
-      "app/admin/announcements/page.tsx",
+      "app/admin/announcements/pageContent.tsx",
       ["adminEventContext", "adminEventChanged", "userMode", "userModeChanged"],
     ],
   ];

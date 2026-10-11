@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const SQL = readFileSync(fileURLToPath(new URL("./20260829000000_govern_atomic_stored_area_event_nearby_replacement.sql", import.meta.url)), "utf8");
-const PAGE = readFileSync(fileURLToPath(new URL("../../app/admin/nearby/page.tsx", import.meta.url)), "utf8");
+const PAGE = readFileSync(fileURLToPath(new URL("../../app/admin/nearby/pageContent.tsx", import.meta.url)), "utf8");
 
 test("replacement is one authenticated governed transaction with event serialization", () => {
   assert.match(SQL, /CREATE OR REPLACE FUNCTION public\.replace_event_nearby_from_stored_area\(/);

@@ -8,7 +8,7 @@ import {
   lastDeployedLabel,
   visibleAdminSummaryLinks,
   workingTreeLabel,
-} from "@/app/admin/dashboard/page";
+} from "@/app/admin/dashboard/pageContent";
 import type { AdminAccessResult } from "@/lib/getCurrentAdminAccess";
 
 // Focused tests for the Stage 3 Admin Dashboard simplification
@@ -144,7 +144,7 @@ test("a null admin (access not yet resolved) fails closed to no visible links", 
 });
 
 test("no local operational statistics or JS breakpoint state remain in the page source", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   for (const forbidden of [
@@ -163,7 +163,7 @@ test("no local operational statistics or JS breakpoint state remain in the page 
 });
 
 test("Production Status is isolated to the canonical Super Admin path and existing API", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   assert.match(source, /adminAccess\?\.isSuperAdmin/);
   assert.match(source, /fetch\("\/api\/admin\/system-status"/);
   assert.match(source, /Production Status/);
@@ -175,7 +175,7 @@ test("Production Status is isolated to the canonical Super Admin path and existi
 });
 
 test("the page still queries only the events table directly -- no attendees table read remains", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.ok(source.includes('.from("events")'));
@@ -190,7 +190,7 @@ test("the page still queries only the events table directly -- no attendees tabl
 // resolveAdminWorkingEvent() instead of reimplementing that fallback.
 
 test("loadPage resolves the working Event through the shared resolveAdminWorkingEvent(), not a page-local fallback", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(
@@ -210,7 +210,7 @@ test("loadPage resolves the working Event through the shared resolveAdminWorking
 });
 
 test("the retired 'fall back to the first active event when the current one is not active' pattern is gone", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.equal(
@@ -223,7 +223,7 @@ test("the retired 'fall back to the first active event when the current one is n
 });
 
 test("an invalid stored context (Event no longer exists) surfaces its own explicit message distinct from 'no events at all'", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(source, /invalidStoredContext/);
@@ -231,7 +231,7 @@ test("an invalid stored context (Event no longer exists) surfaces its own explic
 });
 
 test("loadPage persists the resolved working Event only when it differs from the stored one (self-trigger guard)", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   // the guard helper is imported from the canonical module
@@ -263,7 +263,7 @@ test("loadPage persists the resolved working Event only when it differs from the
 });
 
 test("explicit user selection (handleSwitchEvent) is unconditional and unaffected by the resolver", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const fnIdx = source.indexOf("async function handleSwitchEvent(");
@@ -287,7 +287,7 @@ test("explicit user selection (handleSwitchEvent) is unconditional and unaffecte
 // -- these tests hold the Dashboard to the same standard.
 
 test("loadEvents (the accessible-Event source for context resolution) does not filter by lifecycle status", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const fnIdx = source.indexOf("async function loadEvents(");
@@ -311,7 +311,7 @@ test("loadEvents (the accessible-Event source for context resolution) does not f
 });
 
 test("archived-status filtering exists only as a separate, display-only picker list, never as resolveAdminWorkingEvent's input", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const resolveCallMatch = source.match(
@@ -343,7 +343,7 @@ test("archived-status filtering exists only as a separate, display-only picker l
 });
 
 test("the working Event always renders visibly, even when archived, independent of the picker's own filtered list", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(source, /Working Event:/);
@@ -363,7 +363,7 @@ test("the working Event always renders visibly, even when archived, independent 
 // ---------------------------------------------------------------------------
 
 const dashboardSource = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 

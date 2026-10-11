@@ -614,7 +614,7 @@ export function NearbyAreaListManager({
                           className="app-card-section"
                           style={{ display: "grid", gap: "var(--space-2)" }}
                         >
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: "var(--space-2)", flexWrap: "wrap", alignItems: "center" }}>
+                          <div style={{ display: "flex", justifyContent: "flex-start", gap: "var(--space-2)", flexWrap: "wrap", alignItems: "center" }}>
                             <strong>{areaGroup.label}</strong>
                             <div style={{ display: "flex", gap: "var(--space-1)", alignItems: "center", flexWrap: "wrap" }}>
                               {areaGroup.isUnassigned ? (
@@ -645,7 +645,7 @@ export function NearbyAreaListManager({
                               {typeGroup.places.map((candidate) => (
                                 <div
                                   key={candidate.nearby_master_id}
-                                  style={{ display: "flex", justifyContent: "space-between", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap", paddingLeft: "var(--space-2)" }}
+                                  style={{ display: "flex", justifyContent: "flex-start", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap", paddingLeft: "var(--space-2)" }}
                                 >
                                   <Checkbox
                                     label={candidate.name}

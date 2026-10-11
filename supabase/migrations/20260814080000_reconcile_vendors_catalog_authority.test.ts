@@ -39,7 +39,8 @@ test("the helper is SECURITY DEFINER (required: admin_privilege_group_permission
 });
 
 test("the helper checks super_admin unconditionally before any override lookup", () => {
-  const fnMatch = executableSql.match(/CREATE OR REPLACE FUNCTION public\.has_vendor_catalog_admin_authority[\s\S]*?\$\$;/)[0];
+  const fnMatch = executableSql.match(/CREATE OR REPLACE FUNCTION public\.has_vendor_catalog_admin_authority[\s\S]*?\$\$;/)?.[0];
+  assert.ok(fnMatch, "function definition not found");
   const superAdminIdx = fnMatch.indexOf("v_privilege_group = 'super_admin'");
   const overrideIdx = fnMatch.indexOf("admin_privilege_group_permissions");
   assert.ok(superAdminIdx > -1, "super_admin branch not found");
@@ -48,14 +49,16 @@ test("the helper checks super_admin unconditionally before any override lookup",
 });
 
 test("the helper reads only the can_manage_vendors permission_key -- no other key, no full preset table", () => {
-  const fnMatch = executableSql.match(/CREATE OR REPLACE FUNCTION public\.has_vendor_catalog_admin_authority[\s\S]*?\$\$;/)[0];
+  const fnMatch = executableSql.match(/CREATE OR REPLACE FUNCTION public\.has_vendor_catalog_admin_authority[\s\S]*?\$\$;/)?.[0];
+  assert.ok(fnMatch, "function definition not found");
   assert.match(fnMatch, /permission_key = 'can_manage_vendors'/);
   const permissionKeyLiterals = fnMatch.match(/permission_key = '([^']*)'/g) || [];
   assert.equal(permissionKeyLiterals.length, 1, "expected exactly one permission_key comparison");
 });
 
 test("the helper defaults to event_admin=true, everything else false, when no override row exists", () => {
-  const fnMatch = executableSql.match(/CREATE OR REPLACE FUNCTION public\.has_vendor_catalog_admin_authority[\s\S]*?\$\$;/)[0];
+  const fnMatch = executableSql.match(/CREATE OR REPLACE FUNCTION public\.has_vendor_catalog_admin_authority[\s\S]*?\$\$;/)?.[0];
+  assert.ok(fnMatch, "function definition not found");
   assert.match(fnMatch, /RETURN v_privilege_group = 'event_admin';/);
 });
 

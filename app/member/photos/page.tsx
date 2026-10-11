@@ -835,14 +835,7 @@ function MemberPhotosPageInner() {
 
         {error ? <Alert tone="danger">{error}</Alert> : null}
         <div style={{ marginTop: 20 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: 8,
-            }}
+          <div className="app-action-cluster"
           >
             <div>
               <h3 style={{ margin: 0 }}>My Uploads</h3>
@@ -1065,12 +1058,8 @@ function MemberPhotosPageInner() {
                 background: "white",
               }}
             >
-              <div
+              <div className="app-action-cluster"
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 12,
                   marginBottom: 12,
                 }}
               >

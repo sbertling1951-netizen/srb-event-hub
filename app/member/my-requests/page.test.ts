@@ -7,10 +7,10 @@ import {
   buildStatusChangeBody,
   parseStatusChangeResponseData,
   toRequestRow,
-} from "@/app/member/my-requests/page";
+} from "@/app/member/my-requests/pageContent";
 
 const SOURCE = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 

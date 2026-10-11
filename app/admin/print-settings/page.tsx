@@ -11,6 +11,7 @@ import {
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { useAdmin } from "@/lib/adminContext";
+import { getAdminTenantFilterId } from "@/lib/adminTenantContext";
 import {
   getCurrentAdminEvent,
   useAdminWorkingEventScope,
@@ -145,7 +146,7 @@ function AdminPrintSettingsPageInner() {
       ] = await Promise.all([
         supabase
           .from("events")
-          .select("id,name,location,venue_name,start_date,end_date")
+          .select("id,name,location,venue_name,start_date,end_date").eq("tenant_id", getAdminTenantFilterId())
           .eq("id", eventId)
           .single(),
         supabase

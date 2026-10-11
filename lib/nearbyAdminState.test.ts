@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 // @ts-ignore Node's strip-types test runner requires the source extension.
-import { isCurrentNearbyEventRequest, resolveStoredAreaSelection } from "./nearbyAdminState.ts";
+import { isCurrentNearbyEventRequest, resolveStoredAreaSelection } from "./nearbyAdminState";
 
 const areas = [
   { id: "gulf", name: "Gulf Shores" },

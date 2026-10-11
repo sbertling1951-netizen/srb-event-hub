@@ -12,23 +12,26 @@ import { FormActions } from "@/components/ui/FormActions";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { Page } from "@/components/ui/Page";
 import { PageSection } from "@/components/ui/PageSection";
+import { useAdmin } from "@/lib/adminContext";
 import { setCurrentAdminEvent } from "@/lib/adminEventContext";
 import {
   listMyTenantAdminAccess,
   type MyTenantAdminAccessRow,
 } from "@/lib/adminTenantAuthority";
+import { getAdminTenantFilterId } from "@/lib/adminTenantContext";
 import {
   planCoordinatePersistence,
   resolveEventCoordinates,
 } from "@/lib/eventCoordinates";
 import { createEventForTenant } from "@/lib/eventProvisioning";
+import { endAfterStartChange } from "@/lib/eventScheduleHints";
 import { geocodeLocation } from "@/lib/geocodeLocation";
-import { useAdmin } from "@/lib/adminContext";
 
 type EventFormState = {
   tenantId: string;
   name: string;
   location: string;
+  locationCode: string;
   startDate: string;
   endDate: string;
   timezone: string;
@@ -41,6 +44,7 @@ const EMPTY_FORM: EventFormState = {
   tenantId: "",
   name: "",
   location: "",
+  locationCode: "",
   startDate: "",
   endDate: "",
   timezone: "",
@@ -100,7 +104,8 @@ function NewEventPageInner() {
     let active = true;
 
     void listMyTenantAdminAccess()
-      .then((rows) => {
+      .then((accessibleRows) => {
+        const rows = accessibleRows.filter((row) => row.tenant_id === getAdminTenantFilterId());
         if (!active) {
           return;
         }
@@ -161,8 +166,8 @@ function NewEventPageInner() {
       // geocoded; an unresolved location creates the Event with NULL
       // coordinates and a non-blocking notice.
       const coordinatePlan = planCoordinatePersistence(
-        await resolveEventCoordinates(form, ({ address }) =>
-          geocodeLocation({ address }),
+        await resolveEventCoordinates(form, ({ address, location_code }) =>
+          geocodeLocation({ address, location_code }),
         ),
         "create",
       );
@@ -174,6 +179,7 @@ function NewEventPageInner() {
         timezone: form.timezone,
         startDate: form.startDate,
         location: form.location,
+        locationCode: form.locationCode,
         eventCode: form.eventCode,
         lat: coordinatePlan.kind === "write" ? coordinatePlan.lat : null,
         lng: coordinatePlan.kind === "write" ? coordinatePlan.lng : null,
@@ -300,6 +306,14 @@ function NewEventPageInner() {
                 )}
               </Field>
 
+              <Field label="Location Code" help="Optional map location code, such as a Plus Code. Used for coordinate lookup; manual latitude/longitude takes precedence.">
+                {(controlProps) => (
+                  <Input {...controlProps} value={form.locationCode}
+                    onChange={(event) => updateField("locationCode", event.target.value)}
+                    disabled={saving} />
+                )}
+              </Field>
+
               <Field label="Start Date">
                 {(controlProps) => (
                   <Input
@@ -307,7 +321,11 @@ function NewEventPageInner() {
                     type="date"
                     value={form.startDate}
                     onChange={(event) =>
-                      updateField("startDate", event.target.value)
+                      setForm((current) => ({
+                        ...current,
+                        startDate: event.target.value,
+                        endDate: endAfterStartChange(current.endDate, event.target.value, current.startDate),
+                      }))
                     }
                     disabled={saving}
                   />
@@ -320,6 +338,10 @@ function NewEventPageInner() {
                     {...controlProps}
                     type="date"
                     value={form.endDate}
+                    min={form.startDate || undefined}
+                    onFocus={() => {
+                      if (!form.endDate && form.startDate) {updateField("endDate", form.startDate);}
+                    }}
                     onChange={(event) =>
                       updateField("endDate", event.target.value)
                     }

@@ -217,7 +217,7 @@ export default function VendorWorkspaceProfilePage() {
 
           <label>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>Organization Logo</div>
-            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
               {logoUrl ? (
                 <img
                   src={logoUrl}

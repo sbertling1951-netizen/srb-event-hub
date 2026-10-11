@@ -11,6 +11,7 @@ import { Page } from "@/components/ui/Page";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useAdmin } from "@/lib/adminContext";
 import { listMyTenantAdminAccess } from "@/lib/adminTenantAuthority";
+import { getAdminTenantFilterId } from "@/lib/adminTenantContext";
 import { supabase } from "@/lib/supabase";
 
 /**
@@ -100,7 +101,7 @@ function NearbySettingsPageInner() {
       ]);
 
       setTenants(
-        accessRows.map((row) => ({ id: row.tenant_id, display_name: row.display_name })),
+        accessRows.filter((row) => row.tenant_id === getAdminTenantFilterId()).map((row) => ({ id: row.tenant_id, display_name: row.display_name })),
       );
       setCategories((categoryRows || []) as PlaceCategory[]);
     })();
@@ -352,7 +353,7 @@ function NearbySettingsPageInner() {
           <select
             value={selectedTenantId}
             onChange={(e) => setSelectedTenantId(e.target.value)}
-            style={{ minWidth: 280, padding: 8 }}
+            style={{ width: "100%", maxWidth: 280, padding: 8 }}
           >
             <option value="">Select a Tenant...</option>
             {tenants.map((tenant) => (
@@ -401,14 +402,9 @@ function NearbySettingsPageInner() {
           {categories.map((category) => {
             const current = overrideByCategoryId.get(category.id) ?? null;
             return (
-              <div
+              <div className="app-action-cluster"
                 key={category.id}
                 style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
                   padding: "8px 0",
                   borderBottom: "1px solid #eee",
                 }}
@@ -480,13 +476,9 @@ function NearbySettingsPageInner() {
             {searchResults.length > 0 ? (
               <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
                 {searchResults.map((place) => (
-                  <div
+                  <div className="app-action-cluster"
                     key={place.id}
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
                       padding: 8,
                       border: "1px solid #eee",
                       borderRadius: 8,
@@ -565,7 +557,7 @@ function NearbySettingsPageInner() {
                   use (submits for review as shared knowledge, rather than
                   staying Tenant-specific).
                 </label>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div className="app-button-row">
                   <AppButton onClick={() => void handleCreateNewPlace()} disabled={savingNewPlace}>
                     {savingNewPlace ? "Saving..." : "Save Place"}
                   </AppButton>

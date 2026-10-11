@@ -275,8 +275,8 @@ test("statement is wrapped in a single transaction", () => {
 
 test("rename_place_category/InlineEdit adoption stayed scoped to app/admin/nearby-settings/page.tsx -- Admin Nearby and Member Nearby remain untouched", () => {
   const untouchedPages = [
-    ["../../app/admin/nearby/page.tsx", "app/admin/nearby/page.tsx"],
-    ["../../app/member/nearby/page.tsx", "app/member/nearby/page.tsx"],
+    ["../../app/admin/nearby/pageContent.tsx", "app/admin/nearby/pageContent.tsx"],
+    ["../../app/member/nearby/pageContent.tsx", "app/member/nearby/pageContent.tsx"],
   ] as const;
 
   for (const [relativePath, label] of untouchedPages) {

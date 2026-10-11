@@ -7,6 +7,7 @@ export type EventProvisioningInput = {
   timezone: string;
   startDate?: string | null;
   location?: string | null;
+  locationCode?: string | null;
   eventCode?: string | null;
   lat?: number | null;
   lng?: number | null;
@@ -17,6 +18,7 @@ export type ProvisionedEvent = {
   tenant_id: string;
   name: string;
   location: string | null;
+  location_code?: string | null;
   start_date: string | null;
   end_date: string;
   timezone: string;
@@ -56,6 +58,7 @@ export async function createEventForTenant(
     p_timezone: input.timezone.trim(),
     p_start_date: optionalText(input.startDate),
     p_location: optionalText(input.location),
+    p_location_code: optionalText(input.locationCode),
     p_event_code: optionalText(input.eventCode),
     p_lat: input.lat ?? null,
     p_lng: input.lng ?? null,

@@ -21,7 +21,7 @@ import {
   AttendeeOperationalNeedControl,
   AttendeeParkingNeedControl,
   QuickActionBar,
-} from "@/app/admin/attendees/page";
+} from "@/app/admin/attendees/pageContent";
 
 // Focused tests for the Stage 6 Attendees Module First Simplification Pass
 // (docs/architecture/EPICENTRAX_ATTENDEES_MODULE_REFACTOR_AUDIT.md,
@@ -57,7 +57,7 @@ function noop() {}
 async function asyncNoop() {}
 
 test("manual create defers universal onboarding needs to database defaults while existing-record need changes use governed commands", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   const payload = source.slice(
     source.indexOf("const payload = {"),
     source.indexOf("const createPayload ="),
@@ -91,7 +91,7 @@ test("manual create defers universal onboarding needs to database defaults while
 });
 
 test("attendee detail renders accessible governed Name Tag and Coach Plate controls independently", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   const nameTagNeeded = renderToStaticMarkup(
     <AttendeeOperationalNeedControl
       attendeeName="Jane Doe"
@@ -149,7 +149,7 @@ test("attendee detail renders accessible governed Name Tag and Coach Plate contr
 });
 
 test("Name Tag and Coach Plate controls preserve authoritative state until their governed RPC succeeds and block duplicate writes", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   const start = source.indexOf("async function setAttendeeOperationalNeed(");
   const body = source.slice(start, source.indexOf("async function onCancelRegistration", start));
 
@@ -167,7 +167,7 @@ test("Name Tag and Coach Plate controls preserve authoritative state until their
 // -- Parking intent control: Attendees owns intent, Parking owns placement --
 
 test("Arrival remains read-only while the roster parking-need control uses the governed command only", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   const arrivalFn = source.slice(
     source.indexOf("function attendeeArrivalPresentation("),
     source.indexOf("function attendeeOwnerHrefs("),
@@ -184,7 +184,7 @@ test("Arrival remains read-only while the roster parking-need control uses the g
 });
 
 test("the roster list never reads or displays attendees.assigned_site directly -- Placement is sourced only from the canonical placements map", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   const attendeeListSource = source.slice(
     source.indexOf("function AttendeeList("),
     source.indexOf("export function AttendeeRecordWorkspace("),
@@ -195,7 +195,7 @@ test("the roster list never reads or displays attendees.assigned_site directly -
 });
 
 test("the roster surfaces Arrival as a link to its owner workspace (Check-In) and renders an accessible governed parking-need control", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   const attendeeListSource = source.slice(
     source.indexOf("function AttendeeList("),
     source.indexOf("export function AttendeeRecordWorkspace("),
@@ -256,7 +256,7 @@ test("unplaced parking intent is a real keyboard/touch button plus a link to Par
 });
 
 test("saveMembershipNumber: the quick-correction path defers to the governed validateField check, not a second hardcoded F/C copy (Refactor Audit Q7)", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   const start = source.indexOf("async function saveMembershipNumber");
   const body = source.slice(start, source.indexOf("async function updateDataStatus", start));
 
@@ -364,7 +364,7 @@ test("buildHouseholdRemovalConfirmMessage: names both people when two removals a
 });
 
 test("no I/O: the household-removal decision logic is pure -- it issues no fetch, Supabase, or RPC call, so cancelling never touches the deletion path", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   // The confirmation gate must run, and be able to return early, strictly
@@ -388,7 +388,7 @@ test("no I/O: the household-removal decision logic is pure -- it issues no fetch
 // manage_attendee_household_member; no direct table upsert/delete remains.
 
 test("syncHouseholdMembers: no direct attendee_household_members upsert or delete remains -- every write goes through the governed RPC", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   const start = source.indexOf("async function syncHouseholdMembers(");
   const end = source.indexOf("\n  }\n\n  function openCreateAttendeeEditor", start);
   assert.ok(start > -1 && end > start, "syncHouseholdMembers body must be found");
@@ -399,7 +399,7 @@ test("syncHouseholdMembers: no direct attendee_household_members upsert or delet
 });
 
 function syncHouseholdBody(): string {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   const start = source.indexOf("async function syncHouseholdMembers(");
   const end = source.indexOf("\n  }\n\n  function openCreateAttendeeEditor", start);
   assert.ok(start > -1 && end > start, "syncHouseholdMembers body must be found");
@@ -570,7 +570,7 @@ test("QuickActionBar: the duplicate 'Flagged Active' / 'All Registrations' quick
 });
 
 test("QuickActionBar no longer accepts onSetReviewMode/onSetAllMode -- the View select in FilterBar is the one owner of that decision", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.ok(!source.includes("onSetReviewMode"));
@@ -584,7 +584,7 @@ test("QuickActionBar no longer accepts onSetReviewMode/onSetAllMode -- the View 
 });
 
 test("secondary filters (Rows to Show, Sort, Data Status, Participant Type) are progressively disclosed via the shared TableToolbarDisclosure, not competing with Search/View", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const filterBarSource = source.slice(
@@ -615,7 +615,7 @@ test("secondary filters (Rows to Show, Sort, Data Status, Participant Type) are 
 });
 
 test("Clear Search & Filters resets search, Data Status, and Participant Type -- never View, Rows to Show, or Sort, which are display preferences, not filters", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
   const fn = source.slice(source.indexOf("function clearFilters()"), source.indexOf("function clearFilters()") + 200);
 
@@ -626,7 +626,7 @@ test("Clear Search & Filters resets search, Data Status, and Participant Type --
 });
 
 test("the Clear Search & Filters control only appears once there is something to clear", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(source, /const hasClearableState = activeFilterCount > 0 \|\| search\.trim\(\) !== "";/);
@@ -636,7 +636,7 @@ test("the Clear Search & Filters control only appears once there is something to
 // --- Stage B: consolidated summary hierarchy --------------------------------
 
 test("the former duplicate 'Attendee Management' and 'Data Review' summary cards are gone -- one Roster Summary card remains", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.ok(!source.includes(">Attendee Management<"));
@@ -645,7 +645,7 @@ test("the former duplicate 'Attendee Management' and 'Data Review' summary cards
 });
 
 test("secondary roster stats (Vendors, First Timers, Volunteers, Membership Corrected, Fully Valid) are progressively disclosed under 'More stats'", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(source, /More stats/);
@@ -658,7 +658,7 @@ test("secondary roster stats (Vendors, First Timers, Volunteers, Membership Corr
 });
 
 test("Review Queue's own data-status breakdown replaces the old always-visible Data Review tiles, only rendering while expanded", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const reviewQueueHeaderIndex = source.indexOf(">Review Queue<");
@@ -675,7 +675,7 @@ test("Review Queue's own data-status breakdown replaces the old always-visible D
 // --- Stage B: City/State moved out of the collapsed browse row -------------
 
 test("City/State no longer appears in the collapsed Review Queue / Attendee List header rows", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const reviewQueueSource = source.slice(
@@ -712,7 +712,7 @@ test("City/State no longer appears in the collapsed Review Queue / Attendee List
 // exactly like this file's other structural tests already do.
 
 test("AttendeeRecordWorkspace: Save/Create respects canEdit in both editor modes", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const primaryActionsSource = source.slice(
@@ -727,7 +727,7 @@ test("AttendeeRecordWorkspace: Save/Create respects canEdit in both editor modes
 // (Attendees Admin Workflow Stages B-D, Test Expectations B/C.)
 
 test("AttendeeRecordWorkspace: the view body renders no <input>/<textarea> form fields -- nothing is mutable until Edit is deliberately chosen", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const viewBodySource = source.slice(
@@ -740,7 +740,7 @@ test("AttendeeRecordWorkspace: the view body renders no <input>/<textarea> form 
 });
 
 test("AttendeeRecordWorkspace: view mode's primary action is an explicit Edit control, not an already-open form", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const primaryActionsSource = source.slice(
@@ -757,7 +757,7 @@ test("AttendeeRecordWorkspace: view mode's primary action is an explicit Edit co
 });
 
 test("AttendeeRecordWorkspace: edit mode renders the mutable form (editBody) and a Save control", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const editBodySource = source.slice(
@@ -778,7 +778,7 @@ test("AttendeeRecordWorkspace: edit mode renders the mutable form (editBody) and
 });
 
 test("openCreateAttendeeEditor: creating a new record has nothing to view yet and starts directly in edit mode", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const fnSource = source.slice(
@@ -790,7 +790,7 @@ test("openCreateAttendeeEditor: creating a new record has nothing to view yet an
 });
 
 test("selectAttendee -- the one entry point for choosing an existing attendee -- always sets viewState to 'view', never 'edit'", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const fnSource = source.slice(
@@ -803,7 +803,7 @@ test("selectAttendee -- the one entry point for choosing an existing attendee --
 });
 
 test("exactly one AttendeeRecordWorkspace instance is mounted, owning the selected attendee for the whole page", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.equal(
@@ -815,18 +815,18 @@ test("exactly one AttendeeRecordWorkspace instance is mounted, owning the select
 // --- Test Expectation M: responsive structure ------------------------------
 
 test("Additional Participant fields use a responsive auto-fit grid, not the former fixed 5-column layout", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.ok(!source.includes("repeat(5, minmax"));
   assert.match(
     source,
-    /Participant First Name[\s\S]{0,400}?repeat\(auto-fit, minmax\(180px, 1fr\)\)|repeat\(auto-fit, minmax\(180px, 1fr\)\)[\s\S]{0,400}?Participant First Name/,
+    /Participant First Name[\s\S]{0,400}?repeat\(auto-fit, minmax\(min\(180px, 100%\), 1fr\)\)|repeat\(auto-fit, minmax\(min\(180px, 100%\), 1fr\)\)[\s\S]{0,400}?Participant First Name/,
   );
 });
 
 test("permission gating is UI defense-in-depth only -- the page never claims it replaces backend authorization", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.ok(source.includes("hasPermission(admin, \"can_edit_attendees\")"));
@@ -836,7 +836,7 @@ test("permission gating is UI defense-in-depth only -- the page never claims it 
 // --- 3. Dead / duplicate UI removed ---------------------------------------
 
 test("only one canonical Add Attendee control remains -- the summary card's duplicate button is gone, the modal's own create-mode title is untouched", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.ok(source.includes("+ Add Attendee"));
@@ -852,7 +852,7 @@ test("only one canonical Add Attendee control remains -- the summary card's dupl
 });
 
 test("the three unreferenced *EmbedPanel components and the dead top-banner nav buttons are removed", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   for (const removed of [
@@ -875,7 +875,7 @@ test("the three unreferenced *EmbedPanel components and the dead top-banner nav 
 // --- 4. Duplicated action rows normalized ---------------------------------
 
 test("the shared action row is now referenced only by ReviewQueue -- the roster row itself carries no per-row action cluster", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const reviewQueueSource = source.slice(
@@ -915,7 +915,7 @@ test("the shared action row is now referenced only by ReviewQueue -- the roster 
 // --- 5. ResponsiveList accessible naming (Central UI Standard) -----------
 
 test("both ResponsiveList instances are named via aria-labelledby against their section's visible PageHeader", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(source, /<ResponsiveList aria-labelledby="attendees-review-queue-heading">/);
@@ -962,7 +962,7 @@ test("AttendeeActionRow: showBackToPending governs exactly the one legitimate di
 });
 
 test("AttendeeRecordWorkspace: Mark Reviewed is retained only for an explicit Review Queue context", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   const workspaceSource = source.slice(
     source.indexOf("export function AttendeeRecordWorkspace("),
     source.indexOf("function AdminAttendeesPageInner()"),
@@ -1000,14 +1000,14 @@ test("a cancelled registration cannot be cancelled again to overwrite its date",
       onUpdateDataStatus={asyncNoop} onCancelRegistration={asyncNoop} />,
   );
   assert.match(html, /<button[^>]*disabled=""[^>]*aria-label="Cancel/);
-  const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+  const source = readFileSync(new URL("./pageContent.tsx", import.meta.url), "utf8");
   const cancel = source.slice(source.indexOf("async function onCancelRegistration("), source.indexOf("async function reconcileCapacityToMaterializedRoster("));
   assert.ok(cancel.includes('.neq("registration_status", "cancelled")'));
   assert.ok(cancel.includes('.eq("event_id", attendee.event_id)'));
 });
 
 test("cancellation reports success only when a row changed; a zero-row result refreshes and says nothing changed", () => {
-  const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+  const source = readFileSync(new URL("./pageContent.tsx", import.meta.url), "utf8");
   const cancel = source.slice(source.indexOf("async function onCancelRegistration("), source.indexOf("async function reconcileCapacityToMaterializedRoster("));
   assert.match(cancel, /\.neq\("registration_status", "cancelled"\)\s*\.select\("id"\);/);
   const refresh = cancel.indexOf("await loadQueue(currentEvent.id)");
@@ -1055,7 +1055,7 @@ test("formatCancellationDetail: still identifies the record as cancelled even if
 });
 
 test("cancelled records expose their cancellation date and an authorized edit control", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.ok(source.includes('<AttendeeCancellationDate key='));
@@ -1072,7 +1072,7 @@ test("cancelled records expose their cancellation date and an authorized edit co
 // --- 6. Deferred areas were not touched -----------------------------------
 
 test("Stage A removes Assigned Site / Has Arrived from the generic payload while retaining the capacity-increase RPC", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.ok(!source.includes("assigned_site: editorState.assigned_site.trim() || null,"));
@@ -1081,7 +1081,7 @@ test("Stage A removes Assigned Site / Has Arrived from the generic payload while
 });
 
 test("no parking_sites write was introduced by this pass", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.ok(!source.includes("parking_sites"));
@@ -1095,7 +1095,7 @@ test("no parking_sites write was introduced by this pass", () => {
 // resolveAdminWorkingEvent() instead of reimplementing that fallback.
 
 test("loadEventAndData resolves the working Event through the shared resolveAdminWorkingEvent(), not a page-local fallback", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(
@@ -1125,7 +1125,7 @@ test("loadEventAndData resolves the working Event through the shared resolveAdmi
 });
 
 test("the retired 'stored Event only counts if it is active' branch is gone", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.equal(
@@ -1141,7 +1141,7 @@ test("the retired 'stored Event only counts if it is active' branch is gone", ()
 });
 
 test("an invalid stored context (Event no longer exists) surfaces its own explicit message distinct from 'no active event'", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(source, /invalidStoredContext/);
@@ -1149,7 +1149,7 @@ test("an invalid stored context (Event no longer exists) surfaces its own explic
 });
 
 test("authorization (canAccessEvent) remains a separate gate after Event-context resolution, unaffected by the resolver", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(
@@ -1167,7 +1167,7 @@ test("authorization (canAccessEvent) remains a separate gate after Event-context
 // explicit reconciliation code (guarded by the *same* attendee's id) may.
 
 test("loadQueue's realtime reconciliation only ever touches the open workspace for the SAME attendee id, never a different one", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const loadQueueSource = source.slice(
@@ -1185,7 +1185,7 @@ test("loadQueue's realtime reconciliation only ever touches the open workspace f
 // Test Expectation H: same-attendee remote change while dirty blocks Save.
 
 test("Save is disabled while a conflict is present, and handleSaveAttendeeRecord re-checks it defensively", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(source, /disabled=\{saving \|\| !canEdit \|\| !!conflict\}/);
@@ -1198,7 +1198,7 @@ test("Save is disabled while a conflict is present, and handleSaveAttendeeRecord
 });
 
 test("a conflict offers an explicit 'Reload Current Record' recovery action, never an automatic overwrite", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(source, /Reload Current Record/);
@@ -1209,7 +1209,7 @@ test("a conflict offers an explicit 'Reload Current Record' recovery action, nev
 // open record.
 
 test("an unavailable selected record (deleted, or the admin working Event changed underneath it) closes the workspace with an explicit message, never silently", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(source, /function closeAttendeeEditorForUnavailableRecord/);
@@ -1230,7 +1230,7 @@ test("an unavailable selected record (deleted, or the admin working Event change
 // discoverable action (not only a consequence discovered at Save time).
 
 test("removeHouseholdMember: Co-Pilot-only, confirmed by name via the canonical confirm dialog", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const fnSource = source.slice(
@@ -1244,7 +1244,7 @@ test("removeHouseholdMember: Co-Pilot-only, confirmed by name via the canonical 
 });
 
 test("each non-pilot person card carries Edit + Remove; the Pilot card carries neither and says so", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const cardSource = source.slice(
@@ -1266,7 +1266,7 @@ test("each non-pilot person card carries Edit + Remove; the Pilot card carries n
 // pattern, never a new window.confirm().
 
 test("no window.confirm() usage exists anywhere in the Attendees page -- every consequential action uses the canonical ConfirmDialog pattern", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   // No actual window.confirm(...) call site remains; the string may still
@@ -1277,7 +1277,7 @@ test("no window.confirm() usage exists anywhere in the Attendees page -- every c
 });
 
 test("Cancel Registration and record deactivation both route through confirmViaDialog", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const cancelFnSource = source.slice(
@@ -1297,7 +1297,7 @@ test("Cancel Registration and record deactivation both route through confirmViaD
 // with the record -- not only a page-level banner.
 
 test("the workspace carries its own aria-live saving/saved/conflict feedback, distinct from the page-level status/error banners", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const editBodySource = source.slice(
@@ -1313,7 +1313,7 @@ test("the workspace carries its own aria-live saving/saved/conflict feedback, di
 // regress -- it must still genuinely advance to the next flagged record.
 
 test("the post-save review-queue advance genuinely opens the next flagged record instead of immediately closing it again", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const advanceIndex = source.indexOf("if (nextReviewItem) {");
@@ -1334,7 +1334,7 @@ test("the post-save review-queue advance genuinely opens the next flagged record
 // wrapper, never a page-local recomputation over `attendees`.
 
 test("Attendees consumes the existing canonical operational-summary wrapper, not a page-local RPC or a second helper", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(
@@ -1346,7 +1346,7 @@ test("Attendees consumes the existing canonical operational-summary wrapper, not
 });
 
 test("Total Registrations, Active, and Arrived are copied verbatim from the canonical summary", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const itemsSource = source.slice(
@@ -1373,7 +1373,7 @@ test("Total Registrations, Active, and Arrived are copied verbatim from the cano
 });
 
 test("Flagged remains Attendees-owned, sourced from reviewItems, not the canonical summary", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const itemsSource = source.slice(
@@ -1385,7 +1385,7 @@ test("Flagged remains Attendees-owned, sourced from reviewItems, not the canonic
 });
 
 test("canonical-summary failure clears the summary and surfaces an error, never a locally recomputed Event aggregate", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const okIndex = source.indexOf("if (summaryResult.ok)");
@@ -1398,7 +1398,7 @@ test("canonical-summary failure clears the summary and surfaces an error, never 
 });
 
 test("a failed/denied summary renders visibly as error text rather than silently as a plain count", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const itemsSource = source.slice(
@@ -1413,7 +1413,7 @@ test("a failed/denied summary renders visibly as error text rather than silently
 });
 
 test("Attendees-owned validation/flag/detail metrics (correctedCount, fullyValidCount, vendors, first timers, volunteers) remain locally sourced from `attendees`, unchanged", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(
@@ -1443,7 +1443,7 @@ test("Attendees-owned validation/flag/detail metrics (correctedCount, fullyValid
 // established for Reports' canExport/runExportAuthorityCheck. -------------
 
 test("canEditAttendees is checked through the shared helper, never a direct RPC call or has_event_task_authority reference in the page", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(
@@ -1459,7 +1459,7 @@ test("canEditAttendees is checked through the shared helper, never a direct RPC 
 });
 
 test("canEditAttendees fails closed: starts false and is only set true from an exact allowed result", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(source, /const \[canEditAttendees, setCanEditAttendees\] = useState\(false\);/);
@@ -1473,7 +1473,7 @@ test("canEditAttendees fails closed: starts false and is only set true from an e
 });
 
 test("canEditAttendees resets before the async check resolves, and discards a stale response from an abandoned Event's check", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const fn = source.slice(
@@ -1491,7 +1491,7 @@ test("canEditAttendees resets before the async check resolves, and discards a st
 });
 
 test("the authority check re-runs on every Admin working-Event change via the canonical subscription, not only once on mount", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(
@@ -1501,7 +1501,7 @@ test("the authority check re-runs on every Admin working-Event change via the ca
 });
 
 test("no second, competing canEditAttendees setter exists -- setCanEditAttendees is called only from within runAttendeeManageAuthorityCheck's own generation-guarded paths", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const setterCalls = (source.match(/setCanEditAttendees\(/g) || []).length;
@@ -1510,7 +1510,7 @@ test("no second, competing canEditAttendees setter exists -- setCanEditAttendees
 });
 
 test("every mutation control (Save/Create, household sync, membership-number correction, data-status changes, Cancel Registration) remains wired to the same canEditAttendees value -- no control was silently ungated by this change", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const consumers = (source.match(/canEdit=\{canEditAttendees\}/g) || []).length;
@@ -1518,7 +1518,7 @@ test("every mutation control (Save/Create, household sync, membership-number cor
 });
 
 test("the Review Queue membership-number correction input and Save button are both gated by canEdit", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   const reviewQueueBlock = source.slice(
@@ -1533,7 +1533,7 @@ test("the Review Queue membership-number correction input and Save button are bo
 });
 
 test("the page-wide can_edit_attendees read/navigation gate is untouched -- only mutation capability moved to the canonical task", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(
@@ -1543,7 +1543,7 @@ test("the page-wide can_edit_attendees read/navigation gate is untouched -- only
 });
 
 test("Check-In/Parking ownership remains intact: no Arrival or placement mutation was reintroduced by this change", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
   const payload = source.slice(
     source.indexOf("const payload = {"),
@@ -1564,7 +1564,7 @@ test("Check-In/Parking ownership remains intact: no Arrival or placement mutatio
 // -- Admin Batch 2: Central UI Standard migration ---------------------------
 
 test("the record editor's genuine form fields (household/contact/location/coach/registration/notes) route through Field/Input/Select/Textarea/Checkbox -- toolbar filters and the row-select button stay their own established, tested exceptions", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(
@@ -1592,7 +1592,7 @@ test("the record editor's genuine form fields (household/contact/location/coach/
 });
 
 test("QuickActionBar's Add Attendee/Refresh row uses the canonical FormActions wrapper, not a raw app-button-row div", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(
@@ -1604,7 +1604,7 @@ test("QuickActionBar's Add Attendee/Refresh row uses the canonical FormActions w
 });
 
 test("loading/empty presentation in the roster list and review queue uses the canonical LoadingState/EmptyState primitives, except the deliberately-preserved success-toned empty review queue", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(
@@ -1627,7 +1627,7 @@ test("loading/empty presentation in the roster list and review queue uses the ca
 });
 
 test("the hand-rolled per-participant-type badge colors remain page-local -- a second real category-badge consumer, still not promoted to a shared primitive (no shared tone vocabulary fits arbitrary-cardinality type coloring)", () => {
-  const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+  const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
   const source = readFileSync(sourcePath, "utf8");
 
   assert.match(source, /function participantTypeBadgeStyle\(/);
@@ -1642,7 +1642,7 @@ test("the hand-rolled per-participant-type badge colors remain page-local -- a s
 // stage, so the contract is fixed here.
 
 test("reads ?view=review via next/navigation's useSearchParams, not localStorage, to decide the Review Queue's initial state", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   assert.match(source, /import\s*\{\s*useSearchParams\s*\}\s*from\s*"next\/navigation"/);
   assert.match(source, /const searchParams = useSearchParams\(\);/);
   assert.match(source, /const openReviewQueueFromDeepLink = searchParams\.get\("view"\) === "review";/);
@@ -1650,7 +1650,7 @@ test("reads ?view=review via next/navigation's useSearchParams, not localStorage
 });
 
 test("an unrecognized or missing ?view value falls back to the ordinary default (Review Queue closed) -- no throw, no workaround", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   // openReviewQueueFromDeepLink is a plain strict-equality check against
   // the literal "review" -- any other string (or null, for a missing
   // param) is structurally false, never a special-cased branch.
@@ -1659,7 +1659,7 @@ test("an unrecognized or missing ?view value falls back to the ordinary default 
 });
 
 test("the deep-link fix carries no authority of its own -- Attendees' own authority gate is unchanged", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   assert.match(source, /<AdminRouteGuard>/);
   assert.equal(/checkAdminEventTaskAuthority\(.*view/.test(source), false);
 });
@@ -1669,7 +1669,7 @@ test("the deep-link fix carries no authority of its own -- Attendees' own author
 // ---------------------------------------------------------------------------
 
 function pageSource(): string {
-  return readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  return readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
 }
 
 function reconcileBody(source: string): string {
@@ -2181,7 +2181,7 @@ test("Authorized Party Size preserves null semantics and does not auto-derive ca
 // ---- Central Navigation Batch 2A: the Attendees Workspace entry area. ----
 
 test("the Attendees Workspace entry area derives its links from getAdminNavItemChildren('attendees') -- never a second hardcoded href list", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   assert.match(source, /import \{ getAdminNavItemChildren \} from "@\/components\/shell\/navigation\/adminNav";/);
   assert.match(source, /const attendeesWorkspaceLinks = getAdminNavItemChildren\(admin, tenantAuthority, "attendees"\);/);
   assert.match(source, /\{attendeesWorkspaceLinks\.map\(\(link\) => \(/);
@@ -2189,7 +2189,7 @@ test("the Attendees Workspace entry area derives its links from getAdminNavItemC
 });
 
 test("the Attendees Workspace section renders only when at least one link is visible -- never an empty dead section", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   assert.match(
     source,
     /\{attendeesWorkspaceLinks\.length > 0 \? \(\s*\n\s*<PageSection variant="card" title="Attendees Workspace">/,
@@ -2197,7 +2197,7 @@ test("the Attendees Workspace section renders only when at least one link is vis
 });
 
 test("the Attendees Workspace entry area is not a second roster summary/dashboard -- it renders no stats, no data reads of its own", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   const start = source.indexOf('title="Attendees Workspace"');
   const end = source.indexOf("</PageSection>", start) + "</PageSection>".length;
   const workspaceSection = source.slice(start, end);
@@ -2209,7 +2209,7 @@ test("the Attendees Workspace entry area is not a second roster summary/dashboar
 });
 
 test("the Attendees Workspace entry area does not duplicate the existing Roster Summary section -- it appears exactly once, before it", () => {
-  const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
   const workspaceIndex = source.indexOf('title="Attendees Workspace"');
   const rosterSummaryIndex = source.indexOf('title="Roster Summary"');
   assert.notEqual(workspaceIndex, -1);

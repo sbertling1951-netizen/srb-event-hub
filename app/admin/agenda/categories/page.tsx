@@ -215,7 +215,7 @@ function AgendaCategoriesPageInner() {
       )}
 
       {isSuperAdmin && (
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+        <div className="app-action-cluster" style={{    marginBottom: 16 }}>
           <button
             onClick={() => {
               setEditingCategoryId(null);
@@ -334,7 +334,7 @@ function AgendaCategoriesPageInner() {
                 label="Default Category"
               />
             </div>
-            <div className="record-editor-actions" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <div className="record-editor-actions" style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-start", gap: 8 }}>
               <button
                 type="button"
                 onClick={() => { setShowDialog(false); setEditingCategoryId(null); setFormName(""); }}

@@ -124,3 +124,15 @@ test("Checkbox/Radio accept an explicit id from the caller instead of generating
   assert.match(html, /<label for="announcement-pinned"/);
   assert.match(html, /id="announcement-pinned"/);
 });
+
+
+test("Field help actions are keyboard-accessible siblings of the label, preserving control association", () => {
+  const html = renderToStaticMarkup(
+    <Field label="Organization code" required labelAction={<button type="button" aria-label="Help: Organization code">Info</button>}>
+      {(props) => <Input {...props} />}
+    </Field>,
+  );
+  assert.doesNotMatch(html, /<label[^>]*>[\s\S]*?<button[\s\S]*?<\/label>/);
+  assert.match(html, /<\/label><button type="button" aria-label="Help: Organization code"/);
+  assert.equal(html.match(/<label for="([^"]+)"/)?.[1], html.match(/<input[^>]*id="([^"]+)"/)?.[1]);
+});

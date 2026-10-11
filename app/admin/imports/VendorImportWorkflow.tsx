@@ -21,6 +21,7 @@ import { FormActions } from "@/components/ui/FormActions";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
 import { useAdmin } from "@/lib/adminContext";
+import { getAdminTenantFilterId } from "@/lib/adminTenantContext";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
@@ -178,7 +179,7 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
       try {
         const { data, error: eventsError } = await supabase
           .from("events")
-          .select("id, name, location, start_date")
+          .select("id, name, location, start_date").eq("tenant_id", getAdminTenantFilterId())
           .order("start_date", { ascending: false });
         if (eventsError) {
           throw eventsError;
@@ -492,7 +493,7 @@ export function VendorImportWorkflow({ templateFiles }: { templateFiles: Templat
   return (
     <div style={{ display: "grid", gap: "var(--space-5)" }}>
       <div className="card app-card-section">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 12, flexWrap: "wrap" }}>
+        <div className="app-action-cluster">
           <div>
             <h2 className="app-section-title" style={{ margin: 0 }}>Vendor Import</h2>
             <p className="app-subtle-text" style={{ margin: "4px 0 0" }}>

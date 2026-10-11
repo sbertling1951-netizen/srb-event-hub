@@ -8,14 +8,14 @@ import {
   eventStaffStatusTone,
   filterAvailableAdmins,
   resolveAssignableProfile,
-} from "@/app/admin/event-staff/page";
+} from "@/app/admin/event-staff/pageContent";
 
 // Focused tests for the Admin Batch 2 Central UI Standard migration of
 // Event Staff. Run with:
 //   npx tsx --test app/admin/event-staff/page.test.ts
 
 const PAGE_SOURCE = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 

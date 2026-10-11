@@ -91,7 +91,7 @@ export default function VendorWorkspaceHomePage() {
             className="app-card-section-muted"
             style={{
               display: "flex",
-              justifyContent: "space-between",
+              justifyContent: "flex-start",
               alignItems: "center",
               gap: 8,
               flexWrap: "wrap",
@@ -109,7 +109,7 @@ export default function VendorWorkspaceHomePage() {
             className="app-card-section-muted"
             style={{
               display: "flex",
-              justifyContent: "space-between",
+              justifyContent: "flex-start",
               alignItems: "center",
               gap: 8,
               flexWrap: "wrap",

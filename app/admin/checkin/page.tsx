@@ -20,6 +20,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { DataTable, ResponsiveList } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Checkbox } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { PageSection } from "@/components/ui/PageSection";
 import { StatusBadge, type StatusBadgeTone } from "@/components/ui/StatusBadge";
@@ -35,6 +36,7 @@ import {
 } from "@/lib/adminAttendeeTarget";
 import { getSharingBulkAction } from "@/lib/adminCheckinSharing";
 import { useAdmin } from "@/lib/adminContext";
+import { getAdminTenantFilterId } from "@/lib/adminTenantContext";
 import {
   getCurrentAdminEvent,
   useAdminWorkingEventScope,
@@ -380,7 +382,7 @@ function AdminCheckinPageInner() {
 
       const { data: eventRow, error: eventError } = await supabase
         .from("events")
-        .select("id,name,location,start_date,end_date")
+        .select("id,name,location,start_date,end_date").eq("tenant_id", getAdminTenantFilterId())
         .eq("id", adminEvent.id)
         .single();
 
@@ -1119,15 +1121,8 @@ function AdminCheckinPageInner() {
 
         return (
           <PageSection key={attendee.id} variant="card">
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: "var(--space-3)",
-                flexWrap: "wrap",
-                marginBottom: "var(--space-4)",
-              }}
+            <div className="app-action-cluster"
+              style={{ marginBottom: "var(--space-4)" }}
             >
               <strong>Selected attendee</strong>
               <AppButton variant="secondary" onClick={closeSelectedAttendee}>
@@ -1226,17 +1221,7 @@ function AdminCheckinPageInner() {
                 </div>
               </details>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isCompact
-                    ? "minmax(0, 1fr)"
-                    : "minmax(220px, 1.2fr) auto",
-                  gap: "var(--space-4)",
-                  alignItems: isCompact ? "stretch" : "center",
-                  minWidth: 0,
-                }}
-              >
+              <div style={{ display: "grid", gap: "var(--space-3)", minWidth: 0 }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 700, marginBottom: "var(--space-2)" }}>
                     Placement
@@ -1250,6 +1235,35 @@ function AdminCheckinPageInner() {
                       <StatusBadge tone="info">Handicap parking needed</StatusBadge>
                     ) : null}
                   </div>
+                </div>
+                <FormActions>
+                  {attendee.has_arrived ? (
+                    <AppButton
+                      variant="danger"
+                      onClick={() => setUndoAttendee(attendee)}
+                      disabled={savingId === attendee.id}
+                      style={{
+                        minHeight: 48,
+                        width: isCompact ? "100%" : "auto",
+                      }}
+                    >
+                      Undo Check-In
+                    </AppButton>
+                  ) : (
+                    <AppButton
+                      variant="primary"
+                      onClick={() => void saveCheckin(attendee, true)}
+                      disabled={savingId === attendee.id || !!selectedConflict}
+                      style={{
+                        minHeight: 52,
+                        minWidth: 150,
+                        width: isCompact ? "100%" : "auto",
+                        fontSize: 16,
+                      }}
+                    >
+                      {savingId === attendee.id ? "Checking In..." : "Check In"}
+                    </AppButton>
+                  )}
                   {attendee.has_arrived && !attendee.assigned_site ? (
                     <AppLinkButton
                       variant="secondary"
@@ -1261,34 +1275,7 @@ function AdminCheckinPageInner() {
                       Place in Parking
                     </AppLinkButton>
                   ) : null}
-                </div>
-                {attendee.has_arrived ? (
-                  <AppButton
-                    variant="danger"
-                    onClick={() => setUndoAttendee(attendee)}
-                    disabled={savingId === attendee.id}
-                    style={{
-                      minHeight: 48,
-                      width: isCompact ? "100%" : "auto",
-                    }}
-                  >
-                    Undo Check-In
-                  </AppButton>
-                ) : (
-                  <AppButton
-                    variant="primary"
-                    onClick={() => void saveCheckin(attendee, true)}
-                    disabled={savingId === attendee.id || !!selectedConflict}
-                    style={{
-                      minHeight: 52,
-                      minWidth: 150,
-                      width: isCompact ? "100%" : "auto",
-                      fontSize: 16,
-                    }}
-                  >
-                    {savingId === attendee.id ? "Checking In..." : "Check In"}
-                  </AppButton>
-                )}
+                </FormActions>
               </div>
 
               <details className="app-card-section">

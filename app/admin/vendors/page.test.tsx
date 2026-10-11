@@ -11,7 +11,7 @@ import {
   StatusBadge,
   vendorPageStatusTone,
   VendorWorkspaceSection,
-} from "@/app/admin/vendors/page";
+} from "@/app/admin/vendors/pageContent";
 import type { AdminAccessResult } from "@/lib/getCurrentAdminAccess";
 import type { VendorEventDisplayStatus } from "@/lib/vendorEventLifecycle";
 
@@ -29,7 +29,7 @@ const ALL_STATUSES: VendorEventDisplayStatus[] = [
 ];
 
 const PAGE_SOURCE = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 

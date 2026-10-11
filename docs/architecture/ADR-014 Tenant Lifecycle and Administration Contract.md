@@ -261,6 +261,21 @@ classification/configuration, and `post_event_edit_window_days` remains an
 Event-lifecycle configuration value. Neither may be overloaded into a plan or
 entitlement system.
 
+### 12.1 Tenant type as onboarding guidance — Pap direction, October 10, 2026
+
+Pap clarified that a Tenant type should eventually suggest setup defaults
+based on commonalities with existing Tenants of that type. This is an
+onboarding aid, not a tool entitlement or authority boundary: type must not
+hide tools or grant/revoke permissions. Ordinary role and scope authorization
+continues to govern access independently.
+
+Future defaults must be presented as suggestions for the new Tenant to
+review, accept, or change. Their evidence and configuration require a
+separately defined implementation; selecting or creating a type today does
+not copy another Tenant's settings, expose another Tenant's data, or rewrite
+existing Tenants. This direction authorizes no automatic cross-Tenant
+learning, data sharing, or onboarding-default implementation.
+
 ## 13. Deployed enforcement status
 
 This ADR established the target contract in Tenant T1. Tenant T2 migration

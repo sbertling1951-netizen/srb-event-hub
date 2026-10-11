@@ -417,7 +417,7 @@ export default function CoachMapPage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))",
           gap: 12,
           marginBottom: 16,
         }}
@@ -467,7 +467,7 @@ export default function CoachMapPage() {
           padding: 12,
           marginBottom: 16,
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))",
           gap: 12,
           alignItems: "end",
         }}

@@ -13,6 +13,7 @@
 
   --color-border-default: #dddddd;
   --color-border-strong: #cbd5e1;
+  --color-border-action: #94a3b8;
 
   /* Tier 2 runtime tenant-branding bridge (docs/architecture/
      EPICENTRAX_RUNTIME_TENANT_BRANDING_TOKEN_CONTRACT.md): --color-action-
@@ -28,8 +29,8 @@
   --color-action-primary: var(--tenant-brand-primary, #2563eb);
   --color-action-primary-hover: #1d4ed8;
   --color-action-primary-active: #1e40af;
-  --color-action-secondary: #f8fafc;
-  --color-action-secondary-hover: #eff6ff;
+  --color-action-secondary: #eff6ff;
+  --color-action-secondary-hover: #dbeafe;
   --color-action-destructive: #dc2626;
   --color-action-destructive-hover: #b91c1c;
 
@@ -618,12 +619,15 @@ button.app-button-secondary,
 button.app-button-muted,
 a.app-button-secondary,
 a.app-button-muted {
-  border-color: var(--color-border-strong);
+  border-color: var(--color-border-action);
   background: var(--color-action-secondary);
   background-image: none;
   color: var(--color-text-secondary) !important;
   -webkit-text-fill-color: var(--color-text-secondary) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
 }
+
+
 
 .app-button-warning,
 button.app-button-warning,
@@ -759,13 +763,6 @@ button.app-button-stop:active:not(:disabled) {
     grid-template-columns: 1fr;
   }
 
-  .app-button-row {
-    align-items: stretch;
-  }
-
-  .app-button-row .app-button {
-    width: 100%;
-  }
 }
 
 .app-card-section {
@@ -1072,7 +1069,7 @@ textarea.app-control,
 
 .app-row-between-wrap {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-3);
   flex-wrap: wrap;
   align-items: center;
@@ -1101,6 +1098,33 @@ textarea.app-control,
   gap: var(--space-5);
   align-items: start;
   min-width: 0;
+}
+
+.tenant-selection-card-button {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tenant-selection-card-button .responsive-list-item-title,
+.tenant-selection-card-button .app-subtle-text {
+  display: block;
+}
+
+.tenant-selection-card-button:hover,
+.tenant-selection-card-button[aria-pressed="true"] {
+  border-color: var(--color-action-primary);
+}
+
+.tenant-selection-card-button:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.tenant-selection-card-button:disabled {
+  cursor: wait;
 }
 
 .tenant-admin-identity-grid {
@@ -1260,7 +1284,8 @@ textarea.app-control,
     align-items: center;
   }
 
-  .tenant-create-form .tenant-operational-window-field > .app-field-label {
+  .tenant-create-form .tenant-operational-window-field > .app-field-label,
+  .tenant-create-form .tenant-operational-window-field > .app-field-label-row {
     grid-area: label;
   }
 
@@ -1645,7 +1670,7 @@ a.app-status-pill-link:focus-visible {
 
 .app-dialog-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: var(--space-3);
   margin-top: var(--space-8);
   flex-wrap: wrap;
@@ -1716,7 +1741,7 @@ a.app-status-pill-link:focus-visible {
    read as clearly separated. */
 .app-permission-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: var(--space-2) var(--space-4);
 }
 
@@ -2052,7 +2077,7 @@ a.app-status-pill-link:focus-visible {
 .table-toolbar-row {
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
   align-items: end;
 }
 
@@ -4008,7 +4033,7 @@ body.slideshow-view-mode .app-header-card {
   min-height: var(--touch-target-min);
   width: 100%;
   min-width: 0;
-  border: var(--border-width-default) solid var(--color-border-strong);
+  border: var(--border-width-default) solid var(--color-border-action);
   background: var(--color-action-secondary);
   overflow-wrap: anywhere;
   align-items: center;
@@ -4053,7 +4078,7 @@ body.slideshow-view-mode .app-header-card {
   width: var(--touch-target-min);
   min-height: var(--touch-target-min);
   flex-shrink: 0;
-  border: var(--border-width-default) solid var(--color-border-strong);
+  border: var(--border-width-default) solid var(--color-border-action);
   border-radius: var(--radius-medium);
   background: var(--color-action-secondary);
   color: var(--color-text-muted);
@@ -4088,7 +4113,7 @@ body.slideshow-view-mode .app-header-card {
   display: flex;
   min-height: var(--touch-target-min);
   min-width: 0;
-  border: var(--border-width-default) solid var(--color-border-strong);
+  border: var(--border-width-default) solid var(--color-border-action);
   background: var(--color-action-secondary);
   overflow-wrap: anywhere;
   align-items: center;
@@ -4693,4 +4718,85 @@ a.ui-ref-legacy-danger {
 [data-record-row]:focus-visible {
   outline: 2px solid var(--color-accent-primary, #2563eb);
   outline-offset: -2px;
+}
+
+.shell-nav-item,
+.shell-nav-subitem,
+.shell-nav-item-toggle {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1);
+}
+
+
+/* Standard page/section action layout: related controls stay together,
+   following the heading in DOM and keyboard order. */
+.app-page-header {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+.app-page-header-copy,
+.app-page-header-actions {
+  min-width: 0;
+  max-width: 100%;
+}
+.app-page-header-copy {
+  overflow-wrap: anywhere;
+}
+.app-page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+.app-action-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  max-width: 100%;
+}
+.app-action-cluster > *,
+.app-button-row > * {
+  min-width: 0;
+  max-width: 100%;
+}
+/* A toolbar select should stay with its actions rather than consume a row. */
+.app-action-cluster > .app-control {
+  width: auto;
+  flex: 0 1 240px;
+}
+@media (max-width: 599px) {
+  .app-button-row {
+    align-items: stretch;
+  }
+
+  .app-button-row .app-button {
+    width: 100%;
+  }
+  .app-dialog-footer > .app-button {
+    width: 100%;
+  }
+  .app-action-cluster > .app-control {
+    flex-basis: auto;
+  }
+  .app-page-header,
+  .app-action-cluster,
+  .app-row-between-wrap {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .app-page-header-actions,
+  .app-page-header-actions > .app-button-row {
+    width: 100%;
+  }
+  .app-row-between-wrap > .app-button,
+  .app-page-header-actions > .app-button,
+  .app-action-cluster > .app-button,
+  .app-action-cluster > .app-control {
+    width: 100%;
+  }
 }

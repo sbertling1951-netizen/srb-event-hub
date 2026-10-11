@@ -3,14 +3,14 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { masterMapStatusTone } from "@/app/admin/master-maps/page";
+import { masterMapStatusTone } from "@/app/admin/master-maps/pageContent";
 
 // Focused tests for the Admin Batch 1 Central UI Standard migration of
 // Master Maps. Run with:
 //   npx tsx --test app/admin/master-maps/page.test.ts
 
 const PAGE_SOURCE = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 

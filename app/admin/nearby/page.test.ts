@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 //   npx tsx --test app/admin/nearby/page.test.ts
 
 const PAGE_SOURCE = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 
@@ -228,7 +228,7 @@ test("Google Nearby results render and preload coordinates only when both values
   assert.equal(PAGE_SOURCE.includes("Number(place.lat).toFixed(5)"), true);
   const coordinatesDisplay = PAGE_SOURCE.slice(
     PAGE_SOURCE.indexOf("Number(place.lat).toFixed(5)"),
-    PAGE_SOURCE.indexOf("Number(place.lat).toFixed(5)") + 250,
+    PAGE_SOURCE.indexOf("Number(place.lat).toFixed(5)") + 650,
   );
   assert.match(coordinatesDisplay, /hasGoogleResultCoordinates\(place\)/);
   assert.equal(/place\.lat !== null && place\.lng !== null/.test(PAGE_SOURCE), false);
@@ -374,7 +374,7 @@ test("loadStoredPlaces and loadEventPlaces both select category_id", () => {
 
 test("Stage B's category state/helpers are local to this page -- neither app/member/nearby/page.tsx nor app/admin/nearby-settings/page.tsx picked up any of this stage's logic", () => {
   const memberSource = readFileSync(
-    fileURLToPath(new URL("../../member/nearby/page.tsx", import.meta.url)),
+    fileURLToPath(new URL("../../member/nearby/pageContent.tsx", import.meta.url)),
     "utf8",
   );
   const settingsSource = readFileSync(

@@ -5,10 +5,10 @@ import { fileURLToPath } from "node:url";
 
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { MapsWorkspaceSection } from "@/app/admin/map-admin/page";
+import { MapsWorkspaceSection } from "@/app/admin/map-admin/pageContent";
 import type { AdminAccessResult } from "@/lib/getCurrentAdminAccess";
 
-const PAGE_SOURCE = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+const PAGE_SOURCE = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
 
 // Central Navigation Batch 2B repair: this file's primary proof is now a
 // real render of the actual production `MapsWorkspaceSection` component

@@ -1154,3 +1154,30 @@ editing contract. It preserves governed actions, permissions and business
 behavior. Audit acceptance requires verifying the appropriate next action,
 confirmed-success transition and protection against repeated activation;
 shared styling alone does not establish compliance.
+
+
+## Standard action placement — Pap direction, 2026-10-10
+
+All page families follow the same action-placement standard. Keep a page or
+section heading and its related actions together at the left, using
+`PageHeader`. Keep related filters and operations in one wrapping toolbar;
+keep Save/Cancel and other form actions together at the end of their form,
+using `FormActions`. Do not distribute ordinary actions across opposite
+edges of a section or push them away with auto margins. Reading and keyboard
+order follow the rendered source order; responsive layout must not reorder
+controls. Primary and destructive action semantics remain governed separately.
+
+At narrow widths, headers stack their action group beneath the heading.
+Action rows wrap at tablet widths, and form buttons use full-width
+presentation at phone widths (up to 599px). Existing workflow-specific
+touch-target requirements still apply. Grid controls must be able to shrink below their preferred
+width without overflowing the available container. Long headings wrap.
+Status-only rows, navigation-card arrows, and spatial map/presenter controls
+retain their meaningful arrangement; their surrounding page and form actions
+still follow this standard. Changing layout does not change authority,
+handlers, stored data, or workflow order.
+
+Implementation uses `PageHeader`, `.app-row-between-wrap`, `FormActions`,
+`.app-action-cluster`, and `TableToolbar` rather than page-specific alignment
+rules. Verify representative narrow, medium, and wide layouts; authenticated
+page/device acceptance is separate from component layout checks.

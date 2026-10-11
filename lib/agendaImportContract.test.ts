@@ -22,7 +22,7 @@ import {
 import { AGENDA_IMPORT_TEMPLATE_CONTRACT } from "./importTemplateContract";
 
 const PAGE_SOURCE = readFileSync(
-  fileURLToPath(new URL("../app/admin/agenda/page.tsx", import.meta.url)),
+  fileURLToPath(new URL("../app/admin/agenda/pageContent.tsx", import.meta.url)),
   "utf8",
 );
 const CONTRACT_SOURCE = readFileSync(

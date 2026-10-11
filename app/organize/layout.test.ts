@@ -3,12 +3,12 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { resolveOrganizerBackTarget } from "./layout";
+import { resolveOrganizerBackTarget } from "./layoutContent";
 
 // Run with:
 //   npx tsx --test app/organize/layout.test.ts
 
-const SOURCE = readFileSync(fileURLToPath(new URL("./layout.tsx", import.meta.url)), "utf8");
+const SOURCE = readFileSync(fileURLToPath(new URL("./layoutContent.tsx", import.meta.url)), "utf8");
 
 test("the organizer shell mounts exactly once, at this layout, for the whole /organize family", () => {
   assert.match(SOURCE, /import \{ OrganizerShellAdapter \} from "@\/components\/shell\/adapters\/OrganizerShellAdapter";/);

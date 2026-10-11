@@ -6,7 +6,7 @@ import {
   IMPORT_TYPE_PARAM,
   isImportType,
   readImportType,
-} from "./importTypeRouting.ts";
+} from "./importTypeRouting";
 
 function params(value: string | null) {
   const p = new URLSearchParams();

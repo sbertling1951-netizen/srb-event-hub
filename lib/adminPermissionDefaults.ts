@@ -1,0 +1,56 @@
+export const ADMIN_ROLE_PERMISSION_DEFAULTS: Record<string, string[]> = {
+  super_admin: [
+    "can_manage_admins",
+    "can_manage_event_admins",
+    "can_view_admin_dashboard",
+    "can_manage_events",
+    "can_manage_attendees",
+    "can_manage_checkin",
+    "can_mark_arrived",
+    "can_manage_parking",
+    "can_manage_agenda",
+    "can_manage_announcements",
+    "can_manage_nearby",
+    "can_manage_locations",
+    "can_manage_reports",
+    "can_manage_imports",
+    "can_manage_event_staff",
+    "can_manage_master_maps",
+    "can_manage_vendors",
+  ],
+  event_admin: [
+    "can_view_admin_dashboard",
+    "can_manage_events",
+    "can_manage_attendees",
+    "can_manage_checkin",
+    "can_mark_arrived",
+    "can_manage_parking",
+    "can_manage_agenda",
+    "can_manage_announcements",
+    "can_manage_nearby",
+    "can_manage_locations",
+    "can_manage_reports",
+    "can_manage_imports",
+    "can_manage_event_staff",
+    "can_manage_vendors",
+  ],
+  checkin: [
+    "can_view_admin_dashboard",
+    "can_manage_checkin",
+    "can_mark_arrived",
+    "can_manage_attendees",
+  ],
+  parking: ["can_view_admin_dashboard", "can_manage_parking"],
+  content_admin: [
+    "can_view_admin_dashboard",
+    "can_manage_agenda",
+    "can_manage_announcements",
+    "can_manage_nearby",
+    "can_manage_locations",
+  ],
+  read_only: ["can_view_admin_dashboard"],
+};
+
+export function defaultAdminRolePermissions(group: string): readonly string[] {
+  return ADMIN_ROLE_PERMISSION_DEFAULTS[group] || ADMIN_ROLE_PERMISSION_DEFAULTS.read_only;
+}

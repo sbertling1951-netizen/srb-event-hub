@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { summarizeAttendeeImportRows } from "./attendeeImportOrchestration.ts";
+import { summarizeAttendeeImportRows } from "./attendeeImportOrchestration";
 
 // This repo has no HTTP/Supabase mocking infrastructure (see
 // lib/adminTaskAuthority.test.ts). Runtime-only branches (the actual RPC

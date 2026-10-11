@@ -33,7 +33,7 @@ test("the Tenant selector is populated from the governed self-scoped RPC", () =>
   assert.match(PAGE_SOURCE, /listMyTenantAdminAccess\(\)/);
   assert.match(
     PAGE_SOURCE,
-    /setTenants\(\s*\n\s*accessRows\.map\(\(row\) => \(\{ id: row\.tenant_id, display_name: row\.display_name \}\)\),\s*\n\s*\);/,
+    /setTenants\(\s*\n\s*accessRows\.filter\(\(row\) => row\.tenant_id === getAdminTenantFilterId\(\)\)\.map\(\(row\) => \(\{ id: row\.tenant_id, display_name: row\.display_name \}\)\),\s*\n\s*\);/,
   );
 });
 
@@ -204,11 +204,11 @@ test("the tenant override buttons (Suppress/Include/Prioritize) still only rende
 
 test("Member Nearby and Admin Nearby files are untouched by this Stage D adoption", () => {
   const memberSource = readFileSync(
-    fileURLToPath(new URL("../../member/nearby/page.tsx", import.meta.url)),
+    fileURLToPath(new URL("../../member/nearby/pageContent.tsx", import.meta.url)),
     "utf8",
   );
   const adminNearbySource = readFileSync(
-    fileURLToPath(new URL("../nearby/page.tsx", import.meta.url)),
+    fileURLToPath(new URL("../nearby/pageContent.tsx", import.meta.url)),
     "utf8",
   );
   for (const needle of ["InlineEdit", "rename_place_category", "renameCategory"]) {

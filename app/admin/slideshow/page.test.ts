@@ -12,7 +12,7 @@ import { resolveShellMode } from "@/components/shell/routeRegistry";
 //   npx tsx --test app/admin/slideshow/page.test.ts
 
 const PAGE_SOURCE = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 

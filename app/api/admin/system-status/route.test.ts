@@ -6,13 +6,13 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { resolveDeploymentIdentity } from "./route";
+import { resolveDeploymentIdentity } from "./routeImplementation";
 
 // Behavioural tests for deployment-identity resolution run against real
 // disposable directories, plus source assertions (the convention for routes in
 // this repository) for the authorization gates. No secrets are read.
 
-const source = readFileSync(fileURLToPath(new URL("./route.ts", import.meta.url)), "utf8");
+const source = readFileSync(fileURLToPath(new URL("./routeImplementation.ts", import.meta.url)), "utf8");
 /** Comments stripped: the route's own explanation names the things it avoids,
  *  which would otherwise satisfy an absence check. */
 const codeOnly = source.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");

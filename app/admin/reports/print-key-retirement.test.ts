@@ -12,7 +12,7 @@ const nameTagsPrintSource = readFileSync(
   "utf8",
 );
 const printCenterSource = readFileSync(
-  fileURLToPath(new URL("../print/page.tsx", import.meta.url)),
+  fileURLToPath(new URL("../print/pageContent.tsx", import.meta.url)),
   "utf8",
 );
 const storageKeysSource = readFileSync(

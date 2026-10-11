@@ -36,6 +36,7 @@ import {
   resolveAdminAttendeeTarget,
 } from "@/lib/adminAttendeeTarget";
 import { useAdmin } from "@/lib/adminContext";
+import { getAdminTenantFilterId } from "@/lib/adminTenantContext";
 import {
   getCurrentAdminEvent,
   subscribeToAdminWorkspace,
@@ -331,7 +332,7 @@ function ParkingAdminPageInner() {
 
     const { data: eventRow, error: eventError } = await supabase
       .from("events")
-      .select("id,name,location,map_image_url,parking_map_open_scale")
+      .select("id,name,location,map_image_url,parking_map_open_scale").eq("tenant_id", getAdminTenantFilterId())
       .eq("id", requestedEventId)
       .single();
 
@@ -1410,6 +1411,7 @@ function ParkingAdminPageInner() {
           Destination: {selectedSite.display_label || selectedSite.site_number} · {selectedSite.assigned_attendee_id ? "Occupied" : "Vacant"}
         </div>
       )}
+      <FormActions>
       {placementAction.enabled && (
         <AppButton
           variant="primary"
@@ -1449,6 +1451,7 @@ function ParkingAdminPageInner() {
           Reload current state
         </AppButton>
       )}
+      </FormActions>
       {lastAction && <Alert tone="success">{lastAction}</Alert>}
     </div>
   );
@@ -1469,18 +1472,6 @@ function ParkingAdminPageInner() {
         {isNarrow ? "Active Check-In Queue" : "Assignments"}
       </div>
       {actionPanel}
-
-      <AppButton
-        variant="secondary"
-        onClick={() => {
-          setSearch("");
-          setNeedsParkingOnly(false);
-          setShowArrivedOnly(false);
-          setShowParked(true);
-        }}
-      >
-        Show All Attendees
-      </AppButton>
 
       <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
         <Checkbox
@@ -1505,6 +1496,17 @@ function ParkingAdminPageInner() {
           onChange={(e) => setShowArrivedOnly(e.target.checked)}
           label="Show arrived only"
         />
+      <AppButton
+        variant="secondary"
+        onClick={() => {
+          setSearch("");
+          setNeedsParkingOnly(false);
+          setShowArrivedOnly(false);
+          setShowParked(true);
+        }}
+      >
+        Show All Attendees
+      </AppButton>
       </div>
 
       <div className="app-card-section">

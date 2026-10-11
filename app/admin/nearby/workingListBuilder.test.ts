@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 //   npx tsx --test app/admin/nearby/workingListBuilder.test.ts
 
 const PAGE_SOURCE = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 

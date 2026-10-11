@@ -7,8 +7,8 @@ function source(relativePath: string) {
   return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
 }
 
-const importsSource = source("./imports/page.tsx");
-const validationRulesSource = source("./validation-rules/page.tsx");
+const importsSource = source("./imports/pageContent.tsx");
+const validationRulesSource = source("./validation-rules/pageContent.tsx");
 const layoutSource = source("../layout.tsx");
 const globalsSource = source("../globals.css");
 const routeRegistrySource = source("../../components/shell/routeRegistry.ts");

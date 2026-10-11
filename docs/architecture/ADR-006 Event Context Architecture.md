@@ -75,6 +75,35 @@ Each workspace owns exactly one authoritative Event-context store. Pages and com
 - **Resolution:** Any page that needs to resolve "is the persisted Event still current" (typically on mount, after loading its own Event list) must do so through `resolveAdminWorkingEvent()` (`lib/adminEventContext.ts`), which implements §2.1–§2.3 exactly: a stored Event ID is looked up against the page's **full accessible Event set** — never a lifecycle-status-filtered subset — and is restored unchanged if found, or reported as an invalid-context condition (never auto-substituted) if not found. Status-based filtering (e.g., an "active only" list for a picker or dashboard summary) is presentation/discovery logic and must be computed separately from — and must never gate — this resolution.
 - **Authorization** is a separate, subsequent check (`canAccessEvent`) against the resolved Event, consistent with §2.1's two-part validity test.
 
+### 3.1.1 Explicit Admin working Tenant
+
+Pap approved explicit Tenant switching on October 10, 2026 after Platform
+Tenant settings inspection misleadingly appeared to switch the operational
+workspace while Saint George remained the working Event.
+
+- `lib/adminTenantContext.ts` owns the persisted Admin working Tenant UUID,
+  bound to the authenticated account. This operational selection is separate
+  from request-hostname branding and from Platform Tenant settings inspection.
+- `lib/AdminTenantWorkspaceProvider.tsx` validates Tenant choices and Event
+  ownership using the caller's governed administrative reads. It admits
+  operational pages only within the selected active Tenant. Platform recovery
+  and configuration remain separately identified and accessible.
+- The persistent **Working tenant** control is the explicit switch operation.
+  Confirmation leaves the current page, clears the working Event, and opens
+  the selected Tenant's workspace. No Event is automatically substituted.
+  An active Tenant without Events presents an empty choice state; an inactive
+  Tenant presents its operational freeze, never another Tenant's Event.
+- Every Admin Event discovery/selection query includes the selected Tenant
+  UUID. Event ownership is verified before admitting Event tools. Unknown,
+  stale, revoked, or account-mismatched selections fail closed. Existing
+  browsers may establish the working Tenant from the verified owner of their
+  *same* already-established Event; no other default Tenant is selected.
+- Navigation preserves both contexts. Tenant changes across browser tabs
+  retire the old workspace before reloading. Platform **Inspect settings**
+  selects a settings record only; it does not change the working Tenant.
+- This client workspace scope grants no authority. Existing server RPC and
+  RLS boundaries remain authoritative for every read and mutation.
+
 ### 3.2 Member workspace
 
 - **Canonical persisted client store:** `MemberSession` (`localStorage["fcoc-member-session"]`, `lib/memberSession.ts`). It carries the member's Event context **and** the Event-specific attendee identity as one coherent unit, and is written only as the outcome of a server-validated login: `/member/account` → `enterResolvedRegistration()` → `finishMemberLogin()` (authenticated Account, and the authenticated "My Events" switch), or a Temporary Event Access login. `/member/events` is **public event discovery**, not the authenticated My Events switcher — it selects an Event for public Nearby/browsing context only and must never establish or mutate a `MemberSession`.

@@ -53,7 +53,7 @@ test("no source file anywhere in app/ or components/ imports or references AddEv
 });
 
 test("/admin/attendees remains the sole live manual attendee creation surface -- its create-mode editor is unchanged by this removal", () => {
-  const source = readFileSync(join(repoRoot, "app/admin/attendees/page.tsx"), "utf8");
+  const source = readFileSync(join(repoRoot, "app/admin/attendees/pageContent.tsx"), "utf8");
   assert.match(source, /openCreateAttendeeEditor/);
   assert.match(source, /editorMode === "create"/);
 });

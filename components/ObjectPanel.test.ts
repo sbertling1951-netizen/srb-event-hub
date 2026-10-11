@@ -12,7 +12,7 @@ const CSS = readFileSync(
   "utf8",
 );
 const NEARBY = readFileSync(
-  fileURLToPath(new URL("../app/member/nearby/page.tsx", import.meta.url)),
+  fileURLToPath(new URL("../app/member/nearby/pageContent.tsx", import.meta.url)),
   "utf8",
 );
 const AGENDA = readFileSync(
@@ -20,7 +20,7 @@ const AGENDA = readFileSync(
   "utf8",
 );
 const ATTENDEES = readFileSync(
-  fileURLToPath(new URL("../app/admin/attendees/page.tsx", import.meta.url)),
+  fileURLToPath(new URL("../app/admin/attendees/pageContent.tsx", import.meta.url)),
   "utf8",
 );
 

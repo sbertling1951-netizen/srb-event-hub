@@ -10,14 +10,14 @@ import {
   interpretAgendaImportRow,
   yesNoToBool,
 } from "./agendaImportContract";
-import { interpretAttendeeImportRow } from "./attendeeImportContract.ts";
+import { interpretAttendeeImportRow } from "./attendeeImportContract";
 import {
   AGENDA_IMPORT_TEMPLATE_CONTRACT,
   ATTENDEE_IMPORT_TEMPLATE_CONTRACT,
   IMPORT_TEMPLATE_CONTRACTS,
   VENDOR_IMPORT_TEMPLATE_CONTRACT,
-} from "./importTemplateContract.ts";
-import { PREFERRED_VENDOR_HEADINGS, VENDOR_FIELD_ALIASES } from "./vendorImportContract.ts";
+} from "./importTemplateContract";
+import { PREFERRED_VENDOR_HEADINGS, VENDOR_FIELD_ALIASES } from "./vendorImportContract";
 
 function publicTemplatePath(relative: string) {
   return fileURLToPath(new URL(`../public/templates/${relative}`, import.meta.url));
@@ -80,7 +80,7 @@ test("attendee contract: Co-Pilot fields document Policy 1 (attendees.copilot_* 
 // ---- Agenda: one shared alias vocabulary and one normalization contract ---
 
 const AGENDA_PAGE_SOURCE = readFileSync(
-  fileURLToPath(new URL("../app/admin/agenda/page.tsx", import.meta.url)),
+  fileURLToPath(new URL("../app/admin/agenda/pageContent.tsx", import.meta.url)),
   "utf8",
 );
 const AGENDA_CONTRACT_SOURCE = readFileSync(
@@ -178,7 +178,7 @@ test("vendor contract: Admit to This Event? truthfully documents the real, deplo
 });
 
 const VENDORS_PAGE_SOURCE = readFileSync(
-  fileURLToPath(new URL("../app/admin/vendors/page.tsx", import.meta.url)),
+  fileURLToPath(new URL("../app/admin/vendors/pageContent.tsx", import.meta.url)),
   "utf8",
 );
 

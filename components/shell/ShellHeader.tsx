@@ -82,6 +82,7 @@ export function ShellHeader({ config, isCompact, navOpen, onToggleNav, navTrigge
 
   return (
     <header className="shell-header">
+      {config.contextContent}
       <div className="shell-header-row">
         <div className="shell-header-identity">
           {isCompact ? (

@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   eventAdminStatusTone,
   mapEventSaveRpcError,
-} from "@/app/admin/events/page";
+} from "@/app/admin/events/pageContent";
 
 // Focused tests for the Event Context Invariant
 // (docs/architecture/ADR-006 Event Context Architecture.md), written
@@ -21,7 +21,7 @@ import {
 //   npx tsx --test app/admin/events/page.test.ts
 
 const PAGE_SOURCE = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 
@@ -309,7 +309,7 @@ test("Edit resolves coordinates only through the shared /api/geocode path -- no 
   assert.doesNotMatch(PAGE_SOURCE, /"https:\/\/nominatim/);
   const saveStart = PAGE_SOURCE.indexOf("async function saveEvent()");
   const saveBody = PAGE_SOURCE.slice(saveStart, PAGE_SOURCE.indexOf("async function saveAssignments()", saveStart));
-  assert.match(saveBody, /resolveEventCoordinates\(form, \(\{ address \}\) =>\s*\n?\s*geocodeLocation\(\{ address \}\)/);
+  assert.match(saveBody, /resolveEventCoordinates\(form, \(\{ address, location_code \}\) =>\s*\n?\s*geocodeLocation\(\{ address, location_code \}\)/);
 });
 
 test("Editing Location updates only Location -- it never clears lat/lng", () => {

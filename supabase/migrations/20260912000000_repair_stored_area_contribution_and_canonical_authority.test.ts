@@ -19,7 +19,7 @@ const FIXTURE = readFileSync(
   "utf8",
 );
 const PAGE = readFileSync(
-  fileURLToPath(new URL("../../app/admin/nearby/page.tsx", import.meta.url)),
+  fileURLToPath(new URL("../../app/admin/nearby/pageContent.tsx", import.meta.url)),
   "utf8",
 );
 

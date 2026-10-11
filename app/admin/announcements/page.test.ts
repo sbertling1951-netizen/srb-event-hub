@@ -8,7 +8,7 @@ import {
   formatDate,
   priorityLabel,
   priorityTone,
-} from "@/app/admin/announcements/page";
+} from "@/app/admin/announcements/pageContent";
 
 // Focused tests for the Event Context Single-Owner Integrity pass
 // (docs/architecture/ADR-006 Event Context Architecture.md §3.1/§3.4):
@@ -20,7 +20,7 @@ import {
 //   npx tsx --test app/admin/announcements/page.test.ts
 
 const PAGE_SOURCE = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 
@@ -252,7 +252,7 @@ test("the Add/Edit form uses the canonical Field/Input/Select/Textarea/Checkbox 
   assert.match(formSource, /<Field label="Title" required error={fieldErrors\.title}>/);
   assert.match(formSource, /<Field label="Message" required error={fieldErrors\.body}>/);
   assert.match(formSource, /<Field label="Priority">/);
-  assert.match(formSource, /<Field label="Expire At" help="[^"]+">/);
+  assert.match(formSource, /<Field label="Expire At" help=\{eventScheduleCaution\(form\.expire_at, currentEvent\?\.start_date, currentEvent\?\.end_date\) \|\| "[^"]+"\}>/);
   assert.match(formSource, /<Checkbox\s+label="Pin this announcement"/);
   assert.match(formSource, /<Checkbox\s+label="Published"/);
 });

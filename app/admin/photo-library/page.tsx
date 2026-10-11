@@ -323,7 +323,7 @@ function PhotoLibraryPageInner() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))",
           gap: "var(--space-4)",
           minWidth: 0,
         }}

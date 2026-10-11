@@ -71,7 +71,7 @@ const ATOMIC_REPLACEMENT_SQL = readFileSync(
 );
 
 const PAGE_SOURCE = readFileSync(
-  fileURLToPath(new URL("../../app/admin/nearby/page.tsx", import.meta.url)),
+  fileURLToPath(new URL("../../app/admin/nearby/pageContent.tsx", import.meta.url)),
   "utf8",
 );
 

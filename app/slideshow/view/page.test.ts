@@ -21,7 +21,7 @@ const IMAGE_SOURCE = readFileSync(
 );
 
 const PRESENTER_SOURCE = readFileSync(
-  fileURLToPath(new URL("../../admin/slideshow/page.tsx", import.meta.url)),
+  fileURLToPath(new URL("../../admin/slideshow/pageContent.tsx", import.meta.url)),
   "utf8",
 );
 

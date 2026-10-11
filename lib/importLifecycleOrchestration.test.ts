@@ -7,7 +7,7 @@ import {
   ABANDONMENT_REASON_OPTIONS,
   describeFinalOutcome,
   describeLifecycleError,
-} from "./importLifecycleOrchestration.ts";
+} from "./importLifecycleOrchestration";
 
 // Same precedent as the other orchestration modules (see
 // lib/attendeeImportOrchestration.test.ts): this repo has no HTTP/Supabase

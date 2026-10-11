@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 // current one.)
 
 const PAGE = readFileSync(
-  fileURLToPath(new URL("./nearby/page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./nearby/pageContent.tsx", import.meta.url)),
   "utf8",
 );
 const ROUTE = readFileSync(

@@ -13,7 +13,7 @@ import {
   applyAccountProfileName,
   EventCard,
   fetchAccountProfileName,
-} from "./page";
+} from "./pageContent";
 
 // Member Event Context Stage 2: the account page is the existing,
 // reused recovery surface for an invalid established Event context --
@@ -30,7 +30,7 @@ import {
 //   npx tsx --test app/member/account/page.test.ts
 
 const SOURCE = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 const CODE_ONLY = SOURCE.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");

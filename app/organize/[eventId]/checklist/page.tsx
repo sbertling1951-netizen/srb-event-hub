@@ -229,7 +229,7 @@ export default function OrganizerChecklistPage({ params }: ChecklistPageProps) {
               <li key={item.id} {...recordRowProps(item, (record) => setSelectedId(record.id), startEdit)} className={"card" + (selectedId === item.id ? " data-table-row-selected" : "")} style={{ display: "grid", gap: 8 }}>
                 {editingId === item.id && editForm ? <Dialog open title="Edit checklist" onClose={() => { if (!editInFlight.current) {cancelEdit();} }} dismissOnBackdrop={false} className="app-dialog-wide record-editor-dialog"><form onSubmit={submitEdit} onKeyDown={recordEditorKeyDown} style={{ display: "grid", gap: 12 }}>
                     {editError ? <Alert tone="danger">{editError}</Alert> : null}
-                    <OrganizerChecklistFields values={editForm} onChange={setEditForm} />
+                    <OrganizerChecklistFields eventStartDate={draft.start_date} eventEndDate={draft.end_date} values={editForm} onChange={setEditForm} />
                     <div className="record-editor-actions" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                       <AppButton type="submit" variant="primary" loading={savingId === item.id}>Save changes</AppButton>
                       <AppButton type="button" onClick={cancelEdit} disabled={savingId === item.id}>Cancel</AppButton>
@@ -253,7 +253,7 @@ export default function OrganizerChecklistPage({ params }: ChecklistPageProps) {
                       </span>
                     ) : null}
                     {item.organizerNote ? <p style={{ margin: 0 }}>Note: {item.organizerNote}</p> : null}
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <div className="app-button-row">
                       <AppButton onClick={() => startEdit(item)}>Edit</AppButton>
                       <AppButton
                         variant="danger"
@@ -274,8 +274,8 @@ export default function OrganizerChecklistPage({ params }: ChecklistPageProps) {
         {addOpen ? (
           <form onSubmit={submitAdd} style={{ display: "grid", gap: 12 }}>
             {addError ? <Alert tone="danger">{addError}</Alert> : null}
-            <OrganizerChecklistFields values={addForm} onChange={setAddForm} />
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <OrganizerChecklistFields eventStartDate={draft.start_date} eventEndDate={draft.end_date} values={addForm} onChange={setAddForm} />
+            <div className="app-button-row">
               <AppButton type="submit" variant="primary" loading={adding}>Add item</AppButton>
               <AppButton
                 type="button"

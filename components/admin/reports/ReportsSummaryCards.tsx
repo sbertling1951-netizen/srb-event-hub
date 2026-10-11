@@ -69,7 +69,7 @@ export default function ReportsSummaryCards({
       style={{
         display: "grid",
         gap: "var(--space-5)",
-        gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+        gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
       }}
     >
       <PageSection variant="card" title="Registration Type Breakdown" titleStyle={{ marginBottom: "var(--space-3)" }}>

@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { reportsStatusTone } from "@/app/admin/reports/page";
+import { reportsStatusTone } from "@/app/admin/reports/pageContent";
 
-const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
 const source = readFileSync(sourcePath, "utf8");
 
 const controlsSourcePath = fileURLToPath(

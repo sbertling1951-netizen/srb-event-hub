@@ -2,11 +2,13 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 
+import { AdminTenantSwitcher } from "@/components/admin/AdminTenantSwitcher";
 import { AppShell } from "@/components/shell/AppShell";
 import { buildShellBrand } from "@/components/shell/brand";
 import { buildAdminNavSections } from "@/components/shell/navigation/adminNav";
 import type { ShellAccountAction, ShellBackTarget, ShellContentMode } from "@/components/shell/types";
 import { useAdmin } from "@/lib/adminContext";
+import { useAdminTenantWorkspace } from "@/lib/AdminTenantWorkspaceProvider";
 import { useAdminWorkspace } from "@/lib/AdminWorkspaceProvider";
 import { useTenant } from "@/lib/providers/TenantProvider";
 import { supabase } from "@/lib/supabase";
@@ -47,6 +49,7 @@ export function AdminShellAdapter({
 }: AdminShellAdapterProps) {
   const { admin, tenantAuthority } = useAdmin();
   const { currentEvent } = useAdminWorkspace();
+  const tenantWorkspace = useAdminTenantWorkspace();
   const { tenant } = useTenant();
   const [pendingPassportRefundCount, setPendingPassportRefundCount] = useState(0);
 
@@ -97,8 +100,11 @@ export function AdminShellAdapter({
     <AppShell
       config={{
         role: "admin",
-        brand: buildShellBrand(tenant),
-        workspace: currentEvent
+        contextContent: <AdminTenantSwitcher />,
+        brand: tenantWorkspace?.tenant
+          ? { ...buildShellBrand(tenant), title: tenantWorkspace.tenant.name, logoUrl: null }
+          : buildShellBrand(tenant),
+        workspace: currentEvent && (!tenantWorkspace || tenantWorkspace.eventValid)
           ? {
               name: currentEvent.name || currentEvent.eventName || null,
               location: currentEvent.location || currentEvent.venue_name || null,

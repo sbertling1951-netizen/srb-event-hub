@@ -268,7 +268,7 @@ function ParticipantsPageInner() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))",
             gap: "0.75rem",
             marginTop: "0.75rem",
           }}
@@ -309,7 +309,7 @@ function ParticipantsPageInner() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
                   gap: "1rem",
                   alignItems: "center",
                 }}

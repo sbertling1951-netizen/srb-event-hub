@@ -8,7 +8,7 @@ import {
   normalizeVendorBusinessName,
   PREFERRED_VENDOR_HEADINGS,
   VENDOR_FIELD_ALIASES,
-} from "./vendorImportContract.ts";
+} from "./vendorImportContract";
 
 const complete = {
   "Business Name": "  Acme   Services ", "Contact Person": "Ada Lovelace", Email: "ADA@EXAMPLE.COM", Phone: "1 (555) 123-4567",

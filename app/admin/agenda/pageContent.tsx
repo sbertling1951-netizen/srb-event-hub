@@ -1,0 +1,4423 @@
+"use client";
+
+import { useSearchParams } from "next/navigation";
+import Papa from "papaparse";
+import type React from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
+
+import { ActiveRunsPanel } from "@/app/admin/imports/ActiveRunsPanel";
+import { ImportHistoryPanel } from "@/app/admin/imports/ImportHistoryPanel";
+import AgendaImportPanel from "@/components/admin/agenda/AgendaImportPanel";
+import { AgendaImportReviewWorkspace } from "@/components/admin/agenda/AgendaImportReviewWorkspace";
+import { AgendaLocationPicker } from "@/components/admin/agenda/AgendaLocationPicker";
+import AgendaTemplatePanel from "@/components/admin/agenda/AgendaTemplatePanel";
+import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
+import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
+import { getAdminNavItemChildren } from "@/components/shell/navigation/adminNav";
+import { useShellInterfaceCapabilities } from "@/components/shell/useShellViewport";
+import { Alert } from "@/components/ui/Alert";
+import { AppButton, AppLinkButton } from "@/components/ui/AppButton";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { Dialog } from "@/components/ui/Dialog";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { PageSection } from "@/components/ui/PageSection";
+import { recordEditorKeyDown, recordRowProps } from "@/components/ui/recordInteraction";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { useAdmin } from "@/lib/adminContext";
+import { checkAdminEventTaskAuthority } from "@/lib/adminTaskAuthority";
+import type { AdminTenantAuthorityResult } from "@/lib/adminTenantAuthority";
+import {
+  getCurrentAdminEvent,
+  useAdminWorkingEventScope,
+} from "@/lib/adminWorkspaceContext";
+import { getAgendaColor } from "@/lib/agendaColors";
+import {
+  parseAgendaWorkbookWorksheet,
+  type RawAgendaImportRow,
+} from "@/lib/agendaImportContract";
+import {
+  type AgendaImportRunResult,
+  commitAgendaImportRun,
+  recoverAgendaImportRun,
+  stageGovernedAgendaImport,
+} from "@/lib/agendaImportOrchestration";
+import { type AgendaDraft, agendaDraftKey, type AgendaForm, readAgendaDraft, writeAgendaDraft } from "@/lib/agendaItemDraft";
+import {
+  collectAgendaLocations,
+  locationComparisonKey,
+  resolveLocationChoiceForSave,
+} from "@/lib/agendaLocations";
+import { endAfterStartChange, eventScheduleCaution } from "@/lib/eventScheduleHints";
+import { type AdminAccessResult, canAccessEvent } from "@/lib/getCurrentAdminAccess";
+import type { ImportRunLifecycleStatus } from "@/lib/importLifecycleOrchestration";
+import { buildImportsHref } from "@/lib/importTypeRouting";
+import { supabase } from "@/lib/supabase";
+
+type AgendaItem = {
+  id: string;
+  event_id: string;
+  external_id: string | null;
+  title: string;
+  description: string | null;
+  location: string | null;
+  speaker: string | null;
+  category: string | null;
+  color: string | null;
+  agenda_date: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  sort_order: number | null;
+  is_published: boolean | null;
+  source: string | null;
+};
+
+type AgendaCalendarBlock = {
+  item: AgendaItem;
+  lane: number;
+  laneCount: number;
+  top: number;
+  height: number;
+};
+
+type AgendaResizeEdge = "start" | "end";
+
+type AgendaResizeDrag = {
+  itemId: string;
+  columnTop: number;
+  edge: AgendaResizeEdge;
+  startMinutes: number;
+  endMinutes: number;
+  previewMinutes: number;
+};
+
+type ActiveEvent = {
+  id: string;
+  name: string;
+  start_date: string | null;
+  end_date: string | null;
+};
+
+
+// Shape returned by the governed list_available_agenda_templates RPC.
+// Replaces the legacy flat agenda_templates row -- a "template" the
+// admin selects is now a specific published revision of a Platform- or
+// Tenant-owned root, never a draft.
+type AgendaTemplate = {
+  source_scope: "platform" | "tenant";
+  template_root_id: string;
+  revision_id: string;
+  revision_number: number;
+  title: string;
+  description: string | null;
+  revision_status: string;
+  tenant_id: string | null;
+};
+
+// Shape returned by read_agenda_template_application_history.
+type AgendaTemplateApplication = {
+  application_id: string;
+  operation: "apply" | "replace";
+  source_template_root_id: string;
+  source_revision_id: string;
+  applied_at: string;
+  actor_auth_user_id: string;
+  copied_item_count: number;
+  replaced_item_count: number;
+  outcome_status: string;
+  correlation_id: string;
+};
+
+type AgendaAdminMode = "items" | "import";
+
+function activeAgendaImportRunStorageKey(eventId: string) {
+  return `epicentrax:agenda-import-run:${eventId}`;
+}
+
+function loadActiveAgendaImportRunId(eventId: string) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return localStorage.getItem(activeAgendaImportRunStorageKey(eventId));
+}
+
+function saveActiveAgendaImportRunId(eventId: string, runId: string | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  if (runId) {
+    localStorage.setItem(activeAgendaImportRunStorageKey(eventId), runId);
+  } else {
+    localStorage.removeItem(activeAgendaImportRunStorageKey(eventId));
+  }
+}
+
+function agendaRunResultFromRecovery(
+  recovered: Awaited<ReturnType<typeof recoverAgendaImportRun>>,
+): AgendaImportRunResult {
+  const committed = recovered.rows.filter(
+    (row) => row.rowState === "committed",
+  ).length;
+  const hasCommitFailure = recovered.rows.some(
+    (row) => row.rowState === "commit_failed" && row.abandonedAt === null,
+  );
+  const hasPendingCommit = recovered.rows.some(
+    (row) => row.rowState === "approved" && row.abandonedAt === null,
+  );
+
+  return {
+    ...recovered,
+    batchOutcome: hasCommitFailure
+      ? "commit_failed"
+      : hasPendingCommit
+        ? "pending_commit"
+        : committed
+          ? "already_committed"
+          : "no_eligible_rows",
+    importedCount: committed,
+    newVersion: null,
+    orchestrationError: null,
+  };
+}
+
+type ConfirmDialogState = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  danger: boolean;
+};
+
+const AGENDA_SLOT_MINUTES = 15;
+const AGENDA_SLOT_HEIGHT = 28;
+const AGENDA_DAY_START_MINUTES = 7 * 60;
+const AGENDA_DAY_END_MINUTES = 22 * 60;
+const emptyForm: AgendaForm = {
+  id: "",
+  external_id: "",
+  title: "",
+  description: "",
+  location: "",
+  speaker: "",
+  category: "",
+  color: "",
+  agenda_date: "",
+  start_time: "",
+  end_time: "",
+  sort_order: "",
+  is_published: true,
+};
+
+function normalizeText(value: string) {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function normalizeNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function buildExternalId(form: AgendaForm) {
+  if (form.external_id.trim()) {
+    return form.external_id.trim();
+  }
+
+  return [
+    slugify(form.title || "agenda-item"),
+    slugify(form.agenda_date || "no-date"),
+    slugify(form.start_time || "no-time"),
+  ].join("-");
+}
+
+function parseAgendaRowsFromWorkbook(file: File): Promise<RawAgendaImportRow[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (event) => {
+      try {
+        const data = event.target?.result;
+        if (!data) {
+          reject(new Error("Could not read workbook data."));
+          return;
+        }
+
+        const workbook = XLSX.read(data, { type: "array" });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        resolve(parseAgendaWorkbookWorksheet(worksheet));
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    reader.onerror = () => reject(new Error("Failed to read workbook file."));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function parseAgendaRowsFromCsv(file: File): Promise<RawAgendaImportRow[]> {
+  return new Promise((resolve, reject) => {
+    Papa.parse<RawAgendaImportRow>(file, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (header) => header.replace(/^\uFEFF/, "").trim(),
+      complete: (results) => resolve(results.data || []),
+      error: (error) => reject(error),
+    });
+  });
+}
+
+async function parseAgendaImportFile(file: File) {
+  const lowerName = file.name.toLowerCase();
+
+  if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+    return parseAgendaRowsFromWorkbook(file);
+  }
+
+  return parseAgendaRowsFromCsv(file);
+}
+
+function formatAgendaDate(value: string | null) {
+  if (!value) {
+    return "No date";
+  }
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatAgendaTime(start: string | null, end: string | null) {
+  if (!start && !end) {
+    return "Time TBD";
+  }
+  if (start && end) {
+    return `${start} – ${end}`;
+  }
+  return start || end || "Time TBD";
+}
+
+function formFromItem(item: AgendaItem): AgendaForm {
+  return {
+    id: item.id,
+    external_id: item.external_id || "",
+    title: item.title || "",
+    description: item.description || "",
+    location: item.location || "",
+    speaker: item.speaker || "",
+    category: item.category || "",
+    color: item.color || "",
+    agenda_date: item.agenda_date || "",
+    start_time: item.start_time || "",
+    end_time: item.end_time || "",
+    sort_order:
+      item.sort_order === null || item.sort_order === undefined
+        ? ""
+        : String(item.sort_order),
+    is_published: !!item.is_published,
+  };
+}
+
+// Exported for focused testing (app/admin/agenda/page.test.ts) -- mirrors
+// components/admin/agenda/AgendaEditRowDialog.tsx's own
+// agendaEditFieldsAreEqual, the established pattern for this dirty check.
+export function agendaItemFormsAreEqual(left: AgendaForm, right: AgendaForm) {
+  return (Object.keys(left) as (keyof AgendaForm)[]).every(
+    (key) => left[key] === right[key],
+  );
+}
+
+function moveItem<T>(arr: T[], fromIndex: number, toIndex: number) {
+  const copy = [...arr];
+  const [item] = copy.splice(fromIndex, 1);
+  copy.splice(toIndex, 0, item);
+  return copy;
+}
+
+// One consistent mapping from governed Agenda RPC error codes (raised
+// via RAISE EXCEPTION in the database) to short, actionable admin-facing
+// text. Unrecognized codes fall through to the raw message so nothing is
+// silently swallowed -- only the known codes get a friendlier rendering.
+const AGENDA_ERROR_MESSAGES: Record<string, string> = {
+  unauthorized:
+    "You do not have Agenda management authority for this event.",
+  not_authorized:
+    "You do not have the required Imports and Agenda authority for this event.",
+  unauthorized_event_agenda:
+    "You do not have Event agenda management authority for this event.",
+  unauthorized_tenant_template:
+    "You do not have authority to manage this Tenant's reusable templates.",
+  stale_agenda_version:
+    "This event's agenda changed since you loaded it. Reload before trying again.",
+  unpublished_revision: "That template has no published version to use.",
+  archived_template: "That template has been archived and can no longer be applied.",
+  cross_tenant_apply: "That template belongs to a different Tenant and cannot be applied here.",
+  malformed_row: "One or more rows are missing a required field (title, start time).",
+  duplicate_item_id: "The same agenda item was included twice in this request.",
+  foreign_or_missing_item:
+    "One or more agenda items do not belong to this event.",
+  duplicate_idempotency_key_conflict:
+    "This action appears to have already been submitted with different details. Reload and try again.",
+  empty_source_agenda: "This event has no agenda items to save as a template.",
+  "item not found": "That agenda item no longer exists.",
+  "wrong_event": "No admin working event selected, or it could not be found.",
+  // Lifecycle Mutation Enforcement Pilot (20260813170000) -- the one
+  // legitimate failure mode create/update/delete/reorder/import can
+  // still raise on an otherwise-valid request. Wording matches the
+  // existing app/admin/checkin/page.tsx precedent for the same two codes.
+  event_archived: "This Event is archived and can no longer be modified.",
+  event_lifecycle_indeterminate:
+    "This Event's lifecycle state could not be determined. Contact an administrator.",
+  import_run_not_agenda: "That import run is not an Agenda run.",
+  import_run_not_committable:
+    "That Agenda import run can no longer be committed.",
+  agenda_import_run_staging_incomplete:
+    "The source file was not fully staged. Abandon this run and start a new import.",
+  agenda_import_run_has_unresolved_rows:
+    "Resolve or abandon every open row before committing this Agenda batch.",
+};
+
+// Exported for focused testing (app/admin/agenda/page.test.ts). Never
+// surfaces a raw/unmapped Postgres error message to the Admin -- an
+// internal implementation detail (e.g. a trigger's own RAISE EXCEPTION
+// text) leaking into the UI is itself a defect, not a diagnostic
+// feature. An unmapped code still reaches the browser console via
+// console.error for developer diagnosis; the Admin only ever sees a
+// known friendly message or the caller-supplied fallback.
+export function mapAgendaRpcError(err: unknown, fallback: string): string {
+  const raw = err instanceof Error ? err.message : "";
+  const mapped = AGENDA_ERROR_MESSAGES[raw];
+  if (mapped) {
+    return mapped;
+  }
+  if (raw) {
+    console.error("Unmapped Agenda RPC error:", raw);
+  }
+  return fallback;
+}
+
+export function isStaleAgendaVersionError(err: unknown): boolean {
+  return err instanceof Error && err.message === "stale_agenda_version";
+}
+
+function newIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function timeToMinutes(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const [hourRaw, minuteRaw] = value.split(":");
+  const hour = Number(hourRaw);
+  const minute = Number(minuteRaw);
+
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+    return null;
+  }
+
+  return hour * 60 + minute;
+}
+
+function minutesToTime(value: number) {
+  const safeMinutes = Math.max(0, Math.min(23 * 60 + 59, value));
+  const hour = Math.floor(safeMinutes / 60);
+  const minute = safeMinutes % 60;
+
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function agendaDurationMinutes(item: AgendaItem) {
+  const start = timeToMinutes(item.start_time);
+  const end = timeToMinutes(item.end_time);
+
+  if (start !== null && end !== null && end > start) {
+    return end - start;
+  }
+
+  return 60;
+}
+
+function formatDurationLabel(minutes: number) {
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return "Duration TBD";
+  }
+
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+
+  if (remainder === 0) {
+    return `${hours} hr${hours === 1 ? "" : "s"}`;
+  }
+
+  return `${hours} hr ${remainder} min`;
+}
+
+function formatCalendarSlot(value: number) {
+  const hour = Math.floor(value / 60);
+  const minute = value % 60;
+  const date = new Date(1970, 0, 1, hour, minute);
+
+  return date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function buildAgendaCalendarBlocks(
+  dayItems: AgendaItem[],
+  rangeStartMinutes: number,
+): AgendaCalendarBlock[] {
+  const sorted = [...dayItems].sort((a, b) => {
+    const aStart = timeToMinutes(a.start_time) ?? 24 * 60;
+    const bStart = timeToMinutes(b.start_time) ?? 24 * 60;
+
+    if (aStart !== bStart) {
+      return aStart - bStart;
+    }
+
+    return (a.title || "").localeCompare(b.title || "");
+  });
+
+  const laneEnds: number[] = [];
+  const blocks: AgendaCalendarBlock[] = [];
+
+  sorted.forEach((item) => {
+    const start = timeToMinutes(item.start_time);
+
+    if (start === null) {
+      return;
+    }
+
+    const duration = agendaDurationMinutes(item);
+    const end = start + duration;
+    let lane = laneEnds.findIndex((laneEnd) => laneEnd <= start);
+
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(end);
+    } else {
+      laneEnds[lane] = end;
+    }
+
+    blocks.push({
+      item,
+      lane,
+      laneCount: 1,
+      top:
+        ((start - rangeStartMinutes) / AGENDA_SLOT_MINUTES) *
+        AGENDA_SLOT_HEIGHT,
+      height: Math.max(
+        34,
+        (duration / AGENDA_SLOT_MINUTES) * AGENDA_SLOT_HEIGHT - 4,
+      ),
+    });
+  });
+
+  const laneCount = Math.max(1, laneEnds.length);
+
+  return blocks.map((block) => ({
+    ...block,
+    laneCount,
+  }));
+}
+
+/**
+ * Agenda parent workspace (Central Navigation Batch 2C) -- the same
+ * shared entry-area pattern already used by the Event, Attendees, and
+ * Maps workspaces. Links are exactly the canonical
+ * "agenda" nav item's own visible children (today, Agenda Categories
+ * only) -- derived from `getAdminNavItemChildren()`, never a second
+ * permission/visibility list of its own. The existing "Manage
+ * Categories" convenience button in the operational header above
+ * remains untouched -- the same "appears in both places" precedent the
+ * Event Workspace section already established (Add Event also has its
+ * own separate control alongside its canonical workspace entry).
+ *
+ * Exported (not merely a local closure of `AdminAgendaPageInner`) so the
+ * test file can render this exact production component with
+ * `renderToStaticMarkup`, passing already-resolved `admin`/
+ * `tenantAuthority` values directly -- the same values `useAdmin()`
+ * would otherwise supply -- and exercising the real
+ * `getAdminNavItemChildren()` call itself, not a precomputed or
+ * separately re-derived link list.
+ */
+export function AgendaWorkspaceSection({
+  admin,
+  tenantAuthority,
+}: {
+  admin: AdminAccessResult | null;
+  tenantAuthority: AdminTenantAuthorityResult | null;
+}) {
+  const agendaWorkspaceLinks = getAdminNavItemChildren(admin, tenantAuthority, "agenda");
+
+  if (agendaWorkspaceLinks.length === 0) {
+    return null;
+  }
+
+  return (
+    <PageSection variant="card" title="Agenda Workspace">
+      <FormActions>
+        {agendaWorkspaceLinks.map((link) => (
+          <AppLinkButton key={link.id} href={link.href} variant="secondary">
+            {link.label}
+          </AppLinkButton>
+        ))}
+      </FormActions>
+    </PageSection>
+  );
+}
+
+function AdminAgendaPageInner() {
+  // Deep-link contract: the shared Imports Service Center's Agenda door
+  // (/admin/imports?type=agenda) routes here with ?mode=import to open
+  // this same import tab -- one implementation, reached two ways. An
+  // unrecognized or missing value falls back to the ordinary default
+  // ("items"); this carries no authority of its own (event.agenda.manage
+  // is still enforced exactly as before).
+  const searchParams = useSearchParams();
+  const initialAgendaMode: AgendaAdminMode = searchParams.get("mode") === "import" ? "import" : "items";
+  const { admin, tenantAuthority } = useAdmin();
+  const [activeEvent, setActiveEvent] = useState<ActiveEvent | null>(null);
+  const [items, setItems] = useState<AgendaItem[]>([]);
+  const [status, setStatus] = useState("Loading...");
+  const [form, setFormState] = useState<AgendaForm>(emptyForm);
+  const formRef = useRef(form);
+  const draftKeyRef = useRef<string | null>(null);
+  const [recoverableDraft, setRecoverableDraft] = useState<AgendaDraft | null>(null);
+  const [draftNotice, setDraftNotice] = useState("");
+  const accountId = admin?.adminUser.user_id ?? null;
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savingOrder, setSavingOrder] = useState(false);
+  const [filterCategory, setFilterCategory] = useState("All");
+  const [printDayFilter, setPrintDayFilter] = useState("all");
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [calendarDraggingId, setCalendarDraggingId] = useState<string | null>(
+    null,
+  );
+  const [calendarDropPreview, setCalendarDropPreview] = useState<{
+    day: string;
+    minutes: number;
+  } | null>(null);
+  const [calendarDragOffsetSlots, setCalendarDragOffsetSlots] = useState(0);
+  const [calendarResizePreview, setCalendarResizePreview] = useState<{
+    itemId: string;
+    minutes: number;
+  } | null>(null);
+  const calendarResizeDragRef = useRef<AgendaResizeDrag | null>(null);
+  const itemsRef = useRef<AgendaItem[]>([]);
+  const activeEventRef = useRef<ActiveEvent | null>(null);
+  // Authoritative event_agenda_state.version for the current working
+  // Event. Read via get_event_agenda_version on load, then replaced by
+  // whatever new_version each successful governed mutation returns --
+  // never incremented locally. A ref mirrors it for use inside async
+  // calendar drag/resize handlers, matching the existing itemsRef /
+  // activeEventRef pattern in this file.
+  const [agendaVersion, setAgendaVersionState] = useState(0);
+  const agendaVersionRef = useRef(0);
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
+  const [replacingFromTemplate, setReplacingFromTemplate] = useState(false);
+
+  function setAgendaVersion(next: number) {
+    agendaVersionRef.current = next;
+    setAgendaVersionState(next);
+  }
+  // Page-content access is governed by the canonical Task Authority
+  // resolver (event.agenda.view / event.agenda.manage for the current
+  // working Event), not the legacy can_manage_agenda permission. null =
+  // not yet checked (no Event selected, or check in flight); this page
+  // never inspects privilege_group/is_super_admin or reimplements
+  // has_event_task_authority's semantics itself -- it only asks the
+  // existing governed resolver the one question it needs answered.
+  const [hasAgendaAccess, setHasAgendaAccess] = useState<boolean | null>(null);
+
+  const agendaReloadRef = useRef<() => void>(() => {});
+
+  // Working-Event change (this tab or another): synchronously drop Event A's
+  // agenda so it can never render under Event B's header, gate mutation
+  // buttons (hasAgendaAccess === null disables them) until Event B's access
+  // check completes, then reload. `captureAgendaGeneration` / `isAgendaScopeCurrent`
+  // let loadPage() reject an in-flight Event-A response.
+  const {
+    captureGeneration: captureAgendaGeneration,
+    isCurrent: isAgendaScopeCurrent,
+  } = useAdminWorkingEventScope(() => {
+    draftKeyRef.current = null;
+    formRef.current = emptyForm;
+    originalFormRef.current = emptyForm;
+    setFormState(emptyForm);
+    setEditorExpanded(false);
+    setRecoverableDraft(null);
+    setDraftNotice("");
+    setActiveEvent(null);
+    activeEventRef.current = null;
+    setItems([]);
+    setHasAgendaAccess(null);
+    setLoading(true);
+    showStatus("Loading...");
+    agendaReloadRef.current();
+  });
+
+  const { isCompact } = useShellInterfaceCapabilities();
+  // Catalog & Templates lives in an initially closed disclosure above the
+  // Event Agenda working pane at every width, so the working pane always
+  // takes the full content width -- there is no reserved side column.
+  // Mirrors the item editor's own page-local disclosure (a labelled toggle
+  // with aria-expanded/aria-controls and a conditionally rendered body);
+  // the template inputs are page state, so entered values survive
+  // closing and reopening.
+  const [catalogExpanded, setCatalogExpanded] = useState(false);
+  // Agenda-local on-demand item editor (2026-08-23: extended to every
+  // viewport so the editor never permanently consumes agenda viewing
+  // space -- originally a compact-only disclosure from the 2026-08-21
+  // iPhone regression fix). No shared Disclosure/Collapsible primitive
+  // exists yet in components/ui; this remains the smallest Agenda-local
+  // implementation, still a future Central UI standardization candidate.
+  const saveInFlight = useRef(false);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [editorExpanded, setEditorExpanded] = useState(false);
+  const editorReturnScrollRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (editorExpanded || !editorReturnScrollRef.current) {return;}
+    const position = editorReturnScrollRef.current;
+    const frame = requestAnimationFrame(() => {
+      window.scrollTo(position.x, position.y);
+      editorReturnScrollRef.current = null;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [editorExpanded]);
+  // Deliberate-location-choice gate: the comparison key of a NEW location name
+  // the operator explicitly chose to add via the picker. Typing alone never
+  // sets this, so a save cannot silently accept a typed new name (or a likely
+  // typo). It is scoped to the current editor form and reset whenever the
+  // edited item or the editor open-state changes.
+  const [locationAckKey, setLocationAckKey] = useState<string | null>(null);
+  const [locationChoiceError, setLocationChoiceError] = useState<string | null>(
+    null,
+  );
+  // Switching items or closing/reopening the editor invalidates any prior
+  // "add new location" acknowledgment and clears the gate error, so an
+  // acknowledgment never leaks across a different edit.
+  useEffect(() => {
+    setLocationAckKey(null);
+    setLocationChoiceError(null);
+  }, [form.id, editorExpanded]);
+  const editorFormBodyRef = useRef<HTMLDivElement | null>(null);
+  const editorToggleButtonRef = useRef<HTMLButtonElement | null>(null);
+  // Set true when an unfinished draft is auto-resumed, so the reopened editor is
+  // brought into view exactly once (never on subsequent edits, never focusing an
+  // input, so the phone keyboard is not forced open).
+  const resumeScrollRef = useRef(false);
+  // Snapshot of the form as it stood the moment the editor was opened
+  // (blank, or the selected item's values) -- compared against live
+  // `form` state to gate the discard-confirmation on Cancel/Close.
+  const originalFormRef = useRef<AgendaForm>(emptyForm);
+  // Draft writes happen synchronously with edits, before an app switch can
+  // unmount this page. The tab's storage is recovery-only; RPCs still own Save.
+  function setForm(action: React.SetStateAction<AgendaForm>) {
+    const next = typeof action === "function" ? action(formRef.current) : action;
+    formRef.current = next;
+    setFormState(next);
+    const eventId = getCurrentAdminEvent()?.id;
+    const key = accountId && eventId ? agendaDraftKey(accountId, eventId) : null;
+    if (!key || draftKeyRef.current !== key) {return;}
+    const dirty = !agendaItemFormsAreEqual(next, originalFormRef.current);
+    const stored = writeAgendaDraft(key, dirty ? {
+      form: next, original: originalFormRef.current, updatedAt: Date.now(),
+    } : null);
+    setDraftNotice(stored
+      ? (dirty ? "Unfinished item kept in this tab. It is not saved to the agenda yet." : "")
+      : "This browser could not keep a recovery draft. Keep this page open until you can save.");
+  }
+
+  useEffect(() => {
+    if (loading || hasAgendaAccess !== true || !accountId || !activeEvent?.id) {return;}
+    const key = agendaDraftKey(accountId, activeEvent.id);
+    if (draftKeyRef.current === key) {return;}
+    draftKeyRef.current = key;
+    originalFormRef.current = emptyForm;
+    formRef.current = emptyForm;
+    setFormState(emptyForm);
+    setEditorExpanded(false);
+    setDraftNotice("");
+    setRecoverableDraft(readAgendaDraft(key));
+  }, [accountId, activeEvent?.id, hasAgendaAccess, loading]);
+
+  function restoreDraft() {
+    if (!recoverableDraft || loading || hasAgendaAccess !== true || !accountId ||
+        draftKeyRef.current !== agendaDraftKey(accountId, getCurrentAdminEvent()?.id || "")) {return;}
+    originalFormRef.current = recoverableDraft.original;
+    setForm(recoverableDraft.form);
+    setRecoverableDraft(null);
+    setEditorExpanded(true);
+    setAgendaMode("items");
+  }
+
+  function discardRecovery() {
+    if (draftKeyRef.current && !writeAgendaDraft(draftKeyRef.current, null)) {
+      setDraftNotice("The browser could not discard the recovery draft. Please try again.");
+      return;
+    }
+    setRecoverableDraft(null);
+    setDraftNotice("");
+  }
+
+  // While expanded, the outer card is no longer sticky as a whole (a
+  // 1200px+ sticky card would re-obstruct the viewport) -- instead only
+  // this small header (title + Add Item/Cancel) stays sticky, so it is
+  // reachable without scrolling back to the top of a long form. Collapsed
+  // is unchanged: the outer PageSection itself is still the thing that's
+  // sticky there, so this header needs no positioning of its own.
+  const editorHeaderSticky = editorExpanded;
+  const [forceDesktopDrag, setForceDesktopDrag] = useState(false);
+  const [compactCalendarView, setCompactCalendarView] = useState(false);
+  const [dayWidths, setDayWidths] = useState<Record<string, number>>({});
+  const calendarWidthRootRef = useRef<HTMLDivElement>(null);
+  const dayWidthDragRef = useRef<{ pointerId: number; day: string; x: number; width: number } | null>(null);
+  useEffect(() => {
+    setDayWidths({});
+    dayWidthDragRef.current = null;
+  }, [activeEvent?.id]);
+  const useButtonReorder = isCompact && !forceDesktopDrag;
+  const [templates, setTemplates] = useState<AgendaTemplate[]>([]);
+  const [applicationHistory, setApplicationHistory] = useState<AgendaTemplateApplication[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [newTemplateDescription, setNewTemplateDescription] = useState("");
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [agendaMode, setAgendaMode] = useState<AgendaAdminMode>(initialAgendaMode);
+  const [importStatus, setImportStatus] = useState(
+    "No agenda import file selected.",
+  );
+  const [importBusy, setImportBusy] = useState(false);
+  const [agendaImportRun, setAgendaImportRun] =
+    useState<AgendaImportRunResult | null>(null);
+  const [agendaImportRunStatus, setAgendaImportRunStatus] =
+    useState<ImportRunLifecycleStatus | null>(null);
+  const [resumingAgendaImportRunId, setResumingAgendaImportRunId] = useState<
+    string | null
+  >(null);
+  const [committingAgendaImport, setCommittingAgendaImport] = useState(false);
+  const [agendaImportRunsReloadToken, setAgendaImportRunsReloadToken] =
+    useState(0);
+  const [agendaActiveImportRunDiscovery, setAgendaActiveImportRunDiscovery] =
+    useState<{ eventId: string; count: number | null } | null>(null);
+  const [agendaImportHistoryReloadToken, setAgendaImportHistoryReloadToken] =
+    useState(0);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(
+    null,
+  );
+  const confirmResolverRef = useRef<((confirmed: boolean) => void) | null>(
+    null,
+  );
+  const [categorySaving, setCategorySaving] = useState(false);
+  const [categoryMessage, setCategoryMessage] = useState<string | null>(null);
+
+  const [agendaCategories, setAgendaCategories] = useState<
+    {
+      name: string;
+      color: string;
+      is_default: boolean;
+      is_active: boolean;
+    }[]
+  >([]);
+
+  const agendaActiveImportRunCount =
+    activeEvent?.id && agendaActiveImportRunDiscovery?.eventId === activeEvent.id
+      ? agendaActiveImportRunDiscovery.count
+      : null;
+  const handleAgendaActiveRunCountChanged = useCallback(
+    (count: number | null) => {
+      if (activeEvent?.id) {
+        setAgendaActiveImportRunDiscovery({ eventId: activeEvent.id, count });
+      }
+    },
+    [activeEvent?.id],
+  );
+
+  // Load agenda categories from DB
+  const loadAgendaCategories = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("agenda_categories")
+      .select("name,color,is_default,is_active")
+      .eq("is_active", true)
+      .order("name", { ascending: true });
+    if (error) {
+      showError(error.message || "Could not load agenda categories.");
+      setAgendaCategories([]);
+      return;
+    }
+    setAgendaCategories(data || []);
+    console.log("Loaded Categories:", data);
+  }, []);
+
+  function showStatus(message: string) {
+    setError(null);
+    setStatus(message);
+  }
+
+  function showError(message: string) {
+    setError(message);
+    setStatus("");
+  }
+
+  function requestConfirmation(dialog: Partial<ConfirmDialogState>) {
+    // Prevent orphaned promises if another confirmation is opened
+    // before the previous dialog has been resolved.
+    if (confirmResolverRef.current) {
+      confirmResolverRef.current(false);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      confirmResolverRef.current = resolve;
+
+      setConfirmDialog({
+        title: dialog.title || "Confirm Action",
+        message: dialog.message || "Are you sure you want to continue?",
+        confirmLabel: dialog.confirmLabel || "Confirm",
+        cancelLabel: dialog.cancelLabel || "Cancel",
+        danger: !!dialog.danger,
+      });
+    });
+  }
+
+  function closeConfirmDialog(confirmed: boolean) {
+    confirmResolverRef.current?.(confirmed);
+    confirmResolverRef.current = null;
+    setConfirmDialog(null);
+  }
+
+  // The three entry/exit points for the on-demand item editor. Each keeps
+  // originalFormRef in sync with whatever the editor now holds, so the
+  // discard check in closeEditor() always compares against the right
+  // baseline (blank, or the selected item's persisted values).
+  function openBlankEditor() {
+    if (recoverableDraft || loading || hasAgendaAccess !== true) {return;}
+    editorReturnScrollRef.current = { x: window.scrollX, y: window.scrollY };
+    const defaultCat = agendaCategories.find((cat) => cat.is_default);
+    const next = defaultCat
+      ? { ...emptyForm, category: defaultCat.name, color: defaultCat.color }
+      : emptyForm;
+    originalFormRef.current = next;
+    setForm(next);
+    setEditorExpanded(true);
+  }
+
+  function selectAgendaItem(item: AgendaItem) {
+    if (editorExpanded || recoverableDraft || loading || hasAgendaAccess !== true) {return;}
+    setSelectedItemId(item.id);
+    const next = formFromItem(item);
+    originalFormRef.current = next;
+    setForm(next);
+  }
+
+  function openEditorForItem(item: AgendaItem) {
+    editorReturnScrollRef.current = { x: window.scrollX, y: window.scrollY };
+    setSelectedItemId(item.id);
+    const next = formFromItem(item);
+    originalFormRef.current = next;
+    setForm(next);
+    setEditorExpanded(true);
+  }
+
+  // Guarded item-selection entry point, shared by the agenda list row and
+  // the Visual Agenda Editor calendar block -- both item-selection
+  // surfaces route through this one function so switching items never
+  // silently discards unsaved edits. Reuses the exact same
+  // agendaItemFormsAreEqual()/originalFormRef dirty check and
+  // requestConfirmation()/ConfirmDialog for switching; when the editor
+  // is closed, form already equals originalFormRef (both emptyForm), so
+  // the dirty check is trivially false and this opens immediately with no
+  // extra casing needed for "editor closed".
+  async function requestOpenEditorForItem(item: AgendaItem) {
+    if (recoverableDraft || loading || hasAgendaAccess !== true) {return;}
+    if (editorExpanded && form.id === item.id) {
+      // Already open on this exact item -- nothing to switch.
+      return;
+    }
+    if (!agendaItemFormsAreEqual(form, originalFormRef.current)) {
+      const confirmed = await requestConfirmation({
+        title: "Discard Unsaved Changes?",
+        message:
+          "This agenda item has unsaved changes. Discard them and open the selected item instead?",
+        confirmLabel: "Discard Changes",
+        cancelLabel: "Keep Editing",
+        danger: true,
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+    openEditorForItem(item);
+  }
+
+  // Cancel/Close. Escape and Cancel discard the draft while preserving record selection.
+  async function closeEditor() {
+    if (saving || saveInFlight.current) {return;}
+    setForm(originalFormRef.current);
+    setEditorExpanded(false);
+  }
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  useEffect(() => {
+    activeEventRef.current = activeEvent;
+  }, [activeEvent]);
+
+  // Move focus to the Add Item toggle whenever the editor closes (e.g.
+  // after a successful save, or a confirmed discard) while focus was
+  // actively inside the form body about to be hidden -- never leave a
+  // focused control silently removed from the page.
+  useEffect(() => {
+    if (editorExpanded) {
+      return;
+    }
+    const activeEl = document.activeElement;
+    if (
+      editorFormBodyRef.current &&
+      activeEl instanceof Node &&
+      editorFormBodyRef.current.contains(activeEl)
+    ) {
+      editorToggleButtonRef.current?.focus();
+    }
+  }, [editorExpanded]);
+
+  // Automatic resume: on the ordinary Items route a recovered unfinished draft
+  // reopens its editor with the exact stored form and baseline, with no manual
+  // Restore click. Gated on the same confirmed account / current Event / Agenda
+  // access as manual restore (via `recoverableDraft`, which the recovery effect
+  // only sets once per scope after those checks). The explicit Import route is
+  // never hijacked (`agendaMode !== "items"` bails), and an already-open editor
+  // is left untouched (`editorExpanded` bails), so a background refresh or a
+  // repeated effect run can never overwrite newer edits.
+  useEffect(() => {
+    if (
+      !recoverableDraft ||
+      loading ||
+      hasAgendaAccess !== true ||
+      agendaMode !== "items" ||
+      editorExpanded
+    ) {
+      return;
+    }
+    // Same restore as restoreDraft(), minus the redundant mode switch (already
+    // on Items). setForm re-persists the identical draft and shows the brief
+    // "unfinished / not saved" notice; no mutation request is issued.
+    resumeScrollRef.current = true;
+    originalFormRef.current = recoverableDraft.original;
+    setForm(recoverableDraft.form);
+    setRecoverableDraft(null);
+    setEditorExpanded(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recoverableDraft, loading, hasAgendaAccess, agendaMode, editorExpanded]);
+
+  // Bring the auto-resumed editor into view a single time. Scrolls the sticky
+  // editor header (a button, not focused) so the phone keyboard stays closed and
+  // no repeated scrolling happens while the operator edits.
+  useEffect(() => {
+    if (!editorExpanded || !resumeScrollRef.current) {
+      return;
+    }
+    resumeScrollRef.current = false;
+    const frame = requestAnimationFrame(() => {
+      editorToggleButtonRef.current?.scrollIntoView({ block: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [editorExpanded]);
+
+  const loadPage = useCallback(async () => {
+    // A working-Event change starts a newer loadPage(); every await below
+    // is followed by this guard so an in-flight Event-A response cannot
+    // repopulate the agenda, access state, or version after the switch.
+    const generation = captureAgendaGeneration();
+    const superseded = () => !isAgendaScopeCurrent(generation);
+
+    setLoading(true);
+    showStatus("Loading...");
+
+    const adminEvent = getCurrentAdminEvent();
+
+    if (!adminEvent?.id) {
+      setActiveEvent(null);
+      setItems([]);
+      setStatus("No admin working event selected.");
+      setHasAgendaAccess(null);
+      setLoading(false);
+      return;
+    }
+
+    const selectedEvent = {
+      id: adminEvent.id,
+      name: adminEvent.name || "Selected Event",
+      start_date: adminEvent.start_date ?? null,
+      end_date: adminEvent.end_date ?? null,
+    };
+
+    setActiveEvent(selectedEvent);
+
+    // Governed page-content access: replaces the transitional
+    // can_manage_agenda page-visibility gate with the same canonical
+    // Event Task Authority resolver every mutation RPC already enforces
+    // server-side. "view" is sufficient to see the page; mutation
+    // buttons remain gated only by the RPCs' own event.agenda.manage
+    // checks (never re-derived here). Routed through the shared
+    // checkAdminEventTaskAuthority helper (lib/adminTaskAuthority.ts)
+    // rather than calling has_event_task_authority directly -- same RPC,
+    // same fallback order, same fail-closed behavior.
+    const viewResult = await checkAdminEventTaskAuthority(
+      "event.agenda.view",
+      selectedEvent.id,
+    );
+
+    if (superseded()) {
+      return;
+    }
+
+    if (viewResult.status === "check_failed") {
+      showError(
+        mapAgendaRpcError(
+          new Error(viewResult.message),
+          "Could not check Agenda access for this event.",
+        ),
+      );
+      setHasAgendaAccess(false);
+      setLoading(false);
+      return;
+    }
+
+    if (viewResult.status !== "allowed") {
+      const manageResult = await checkAdminEventTaskAuthority(
+        "event.agenda.manage",
+        selectedEvent.id,
+      );
+
+      if (superseded()) {
+        return;
+      }
+
+      if (manageResult.status !== "allowed") {
+        setHasAgendaAccess(false);
+        setItems([]);
+        setStatus("You do not have Agenda access for this event.");
+        setLoading(false);
+        return;
+      }
+    }
+
+    setHasAgendaAccess(true);
+
+    // Stage 2B decision (assigned_agenda_template_id): no longer read or
+    // displayed by this page at all. It refers to a flat legacy
+    // agenda_templates row that cannot be resolved to a human-readable
+    // name against the new root/revision catalog, only 1 of 6 real
+    // Events has it set, and the application-history panel below now
+    // provides materially more useful, current provenance ("Applied
+    // agenda (N items) -- <timestamp>"). Presenting an unexplained
+    // legacy UUID as though it were meaningful operational state was
+    // judged worse than omitting it. The database column itself is
+    // untouched -- this is a display decision only.
+    const { data: versionData, error: versionError } = await supabase.rpc(
+      "get_event_agenda_version",
+      { p_event_id: selectedEvent.id },
+    );
+
+    if (superseded()) {
+      return;
+    }
+
+    if (versionError) {
+      showError(
+        mapAgendaRpcError(
+          new Error(versionError.message),
+          "Could not load the current agenda version.",
+        ),
+      );
+      setLoading(false);
+      return;
+    }
+
+    setAgendaVersion(typeof versionData === "number" ? versionData : 0);
+
+    const { data, error } = await supabase
+      .from("agenda_items")
+      .select(
+        "id,event_id,external_id,title,description,location,speaker,category,color,agenda_date,start_time,end_time,sort_order,is_published,source",
+      )
+      .eq("event_id", selectedEvent.id)
+      .order("agenda_date", { ascending: true, nullsFirst: false })
+      .order("start_time", { ascending: true, nullsFirst: false })
+      .order("sort_order", { ascending: true, nullsFirst: false })
+      .order("title", { ascending: true });
+
+    if (superseded()) {
+      return;
+    }
+
+    if (error) {
+      showError(error.message || "Could not load agenda items.");
+      setLoading(false);
+      return;
+    }
+
+    setItems((data || []) as AgendaItem[]);
+    setStatus(`Loaded ${(data || []).length} items for ${selectedEvent.name}.`);
+    setLoading(false);
+  }, [captureAgendaGeneration, isAgendaScopeCurrent]);
+
+  const loadTemplates = useCallback(async (eventIdOverride?: string) => {
+    // Accepts an explicit event id because this can run concurrently
+    // with loadPage() (via Promise.all in refreshAgendaData), before
+    // activeEventRef's own effect has had a chance to update it.
+    const eventId = eventIdOverride ?? activeEventRef.current?.id;
+
+    if (!eventId) {
+      setTemplates([]);
+      return;
+    }
+
+    const { data, error } = await supabase.rpc("list_available_agenda_templates", {
+      p_event_id: eventId,
+    });
+
+    if (error) {
+      showError(
+        mapAgendaRpcError(new Error(error.message), "Could not load agenda templates."),
+      );
+      return;
+    }
+
+    setTemplates((data || []) as AgendaTemplate[]);
+  }, []);
+
+  // Compact provenance status only -- not an audit dashboard. Shows the
+  // most recent few apply/replace commands for the current Event so an
+  // admin can see what was last applied and when, without a new UI
+  // surface beyond a short list.
+  const loadApplicationHistory = useCallback(async (eventIdOverride?: string) => {
+    const eventId = eventIdOverride ?? activeEventRef.current?.id;
+
+    if (!eventId) {
+      setApplicationHistory([]);
+      return;
+    }
+
+    const { data, error } = await supabase.rpc(
+      "read_agenda_template_application_history",
+      { p_event_id: eventId },
+    );
+
+    if (error) {
+      // Non-critical: this is supplementary provenance display, not a
+      // blocking read. Log and continue rather than surfacing an error
+      // banner for a status list.
+      console.error("loadApplicationHistory error:", error.message);
+      return;
+    }
+
+    setApplicationHistory(
+      ((data || []) as AgendaTemplateApplication[]).slice(0, 5),
+    );
+  }, []);
+
+  const refreshAgendaData = useCallback(async () => {
+    const eventId = getCurrentAdminEvent()?.id;
+    await Promise.all([
+      loadPage(),
+      loadTemplates(eventId),
+      loadApplicationHistory(eventId),
+      loadAgendaCategories(),
+    ]);
+  }, [loadPage, loadTemplates, loadApplicationHistory, loadAgendaCategories]);
+
+  // Reconcile local Agenda state with the server after a stale-version
+  // conflict: reload everything and tell the admin plainly what
+  // happened, rather than retrying blindly or silently overwriting
+  // whatever the other admin just saved.
+  async function reconcileAfterStaleVersion() {
+    showError(
+      "This event's agenda was changed by someone else since you loaded it. " +
+        "The agenda has been reloaded with the current data -- please review it before retrying your change.",
+    );
+    await refreshAgendaData();
+  }
+
+  useEffect(() => {
+    if (!admin) {
+      return;
+    }
+
+    const adminEvent = getCurrentAdminEvent();
+
+    if (!adminEvent?.id) {
+      setActiveEvent(null);
+      setItems([]);
+      setStatus("No admin working event selected.");
+      setLoading(false);
+      return;
+    }
+
+    if (!canAccessEvent(admin, adminEvent.id)) {
+      setActiveEvent(null);
+      setItems([]);
+      showError("You do not have access to this event.");
+      setLoading(false);
+      return;
+    }
+
+    void loadPage();
+    void loadTemplates();
+    void loadApplicationHistory();
+    void loadAgendaCategories();
+  }, [admin, loadPage, loadTemplates, loadApplicationHistory, loadAgendaCategories]);
+
+  // Working-Event changes (same-tab or cross-tab) are handled by
+  // useAdminWorkingEventScope above: it clears Event A's state
+  // synchronously and then calls this to load Event B.
+  useEffect(() => {
+    agendaReloadRef.current = () => {
+      void loadPage();
+      void loadTemplates();
+      void loadApplicationHistory();
+      void loadAgendaCategories();
+    };
+  }, [loadPage, loadTemplates, loadApplicationHistory, loadAgendaCategories]);
+
+  // The browser stores only a run-id locator. Persisted candidates, row
+  // states, commit results, and lifecycle status always come back through
+  // the governed recovery RPC.
+  useEffect(() => {
+    if (!activeEvent?.id) {
+      setAgendaImportRun(null);
+      setAgendaImportRunStatus(null);
+      return;
+    }
+
+    const storedRunId = loadActiveAgendaImportRunId(activeEvent.id);
+    if (!storedRunId) {
+      setAgendaImportRun(null);
+      setAgendaImportRunStatus(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const recovered = await recoverAgendaImportRun(storedRunId);
+        if (cancelled) {
+          return;
+        }
+        if (recovered.eventId !== activeEvent.id) {
+          throw new Error("not_authorized");
+        }
+        if (recovered.status === "finalized") {
+          saveActiveAgendaImportRunId(activeEvent.id, null);
+          setAgendaImportRun(null);
+          setAgendaImportRunStatus(null);
+          setImportStatus(
+            "This Agenda import run is complete and is available in Import History below.",
+          );
+          setAgendaImportHistoryReloadToken((token) => token + 1);
+          return;
+        }
+        const result = agendaRunResultFromRecovery(recovered);
+        setAgendaImportRun(result);
+        setAgendaImportRunStatus(result.status);
+        setImportStatus(
+          `Recovered Agenda import run from ${result.sourceFilename || "a prior session"}.`,
+        );
+      } catch (err) {
+        console.error("Could not recover Agenda import run", err);
+        if (!cancelled) {
+          saveActiveAgendaImportRunId(activeEvent.id, null);
+          setAgendaImportRun(null);
+          setAgendaImportRunStatus(null);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeEvent?.id]);
+
+  function moveItemUp(id: string) {
+    setItems((prev) => {
+      const index = prev.findIndex((item) => item.id === id);
+      if (index <= 0) {
+        return prev;
+      }
+
+      const next = moveItem(prev, index, index - 1);
+
+      return next.map((item, idx) => ({
+        ...item,
+        sort_order: idx + 1,
+      }));
+    });
+
+    showStatus('Order changed. Click "Save Order" to keep it.');
+  }
+
+  
+
+  function moveItemDown(id: string) {
+    setItems((prev) => {
+      const index = prev.findIndex((item) => item.id === id);
+      if (index === -1 || index >= prev.length - 1) {
+        return prev;
+      }
+
+      const next = moveItem(prev, index, index + 1);
+
+      return next.map((item, idx) => ({
+        ...item,
+        sort_order: idx + 1,
+      }));
+    });
+
+    showStatus('Order changed. Click "Save Order" to keep it.');
+  }
+
+  async function saveInlineCategory() {
+    const name = form.category.trim();
+    if (!name || categorySaving || !admin?.isSuperAdmin) {return;}
+    const generation = captureAgendaGeneration();
+    setCategorySaving(true);
+    setCategoryMessage(null);
+    try {
+      const existing = agendaCategories.find((cat) => cat.name.toLowerCase() === name.toLowerCase());
+      if (existing) {
+        setForm((prev) => ({ ...prev, category: existing.name, color: existing.color }));
+        setCategoryMessage("Existing category selected.");
+        return;
+      }
+      const color = form.color || "#2563eb";
+      const { error } = await supabase.rpc("create_agenda_category", {
+        p_name: name, p_color: color, p_sort_order: 100,
+        p_is_default: false, p_is_active: true,
+      });
+      if (!isAgendaScopeCurrent(generation)) {return;}
+      if (error) {throw error;}
+      await loadAgendaCategories();
+      if (!isAgendaScopeCurrent(generation)) {return;}
+      setForm((prev) => ({ ...prev, category: name, color }));
+      setCategoryMessage("Category saved. Save the agenda item separately; cancelling it will keep the category.");
+    } catch (error) {
+      if (isAgendaScopeCurrent(generation)) {
+        setCategoryMessage((error as { message?: string }).message === "duplicate_category_name"
+          ? "That category already exists. Select it from the suggestions."
+          : "Could not save the category. Your agenda edits are preserved.");
+      }
+    } finally {
+      setCategorySaving(false);
+    }
+  }
+
+  async function saveItem() {
+    if (categorySaving) {return;}
+    if (saveInFlight.current) {return;}
+    if (loading || hasAgendaAccess !== true || !accountId || !activeEvent ||
+        getCurrentAdminEvent()?.id !== activeEvent.id ||
+        draftKeyRef.current !== agendaDraftKey(accountId, activeEvent.id)) {return;}
+    // A restored edit must never overwrite a newer or deleted server item.
+    if (form.id) {
+      const current = items.find((item) => item.id === form.id);
+      if (!current || !agendaItemFormsAreEqual(formFromItem(current), originalFormRef.current)) {
+        showError("This item changed or was removed since you started editing. Copy your unfinished text, then cancel and reopen the current item before saving.");
+        return;
+      }
+    }
+    if (!activeEvent?.id) {
+      showError("No admin working event selected.");
+      return;
+    }
+
+    if (!form.title.trim()) {
+      showError("Enter a title.");
+      return;
+    }
+
+    if (!form.agenda_date.trim()) {
+      showError("Enter an agenda date.");
+      return;
+    }
+
+    if (!form.start_time.trim()) {
+      showError("Enter a start time.");
+      return;
+    }
+
+    // Deliberate location choice (enforced in the SAVE path, not only the
+    // picker): a typed new name or a likely typo cannot be saved unless it
+    // matches an existing location, is unchanged, is blank, or was explicitly
+    // added. A case/whitespace variant resolves to the existing spelling even
+    // without a blur.
+    const locationResolution = resolveLocationChoiceForSave(
+      form.location,
+      existingLocations,
+      {
+        originalValue: form.id ? originalFormRef.current.location : "",
+        acknowledgedNewKey: locationAckKey,
+      },
+    );
+    if (locationResolution.status !== "ok") {
+      const suggestion = locationResolution.suggestions[0]?.label;
+      setLocationChoiceError(
+        suggestion
+          ? `“${locationResolution.typed}” looks like “${suggestion}”. Choose the existing location, or use “Add new location” to keep this name.`
+          : `Choose an existing location, or use “Add new location” to keep “${locationResolution.typed}”.`,
+      );
+      showError("Choose or add the location before saving.");
+      return;
+    }
+    const resolvedLocation = locationResolution.value;
+
+    const submittedForm = form;
+    const submittedDraftKey = draftKeyRef.current;
+    const generation = captureAgendaGeneration();
+    const saveStillCurrent = () => isAgendaScopeCurrent(generation) &&
+      draftKeyRef.current === submittedDraftKey && formRef.current === submittedForm;
+    const externalId = form.id ? undefined : buildExternalId(form);
+
+    saveInFlight.current = true;
+    setSaving(true);
+    showStatus(form.id ? "Updating agenda item..." : "Adding agenda item...");
+
+    try {
+      if (form.id) {
+        const { data, error } = await supabase.rpc("update_event_agenda_item", {
+          p_item_id: form.id,
+          p_expected_agenda_version: agendaVersionRef.current,
+          p_title: form.title.trim(),
+          p_description: normalizeText(form.description),
+          p_location: normalizeText(resolvedLocation),
+          p_speaker: normalizeText(form.speaker),
+          p_category: normalizeText(form.category),
+          p_color: getAgendaColor(form.category, form.color),
+          p_agenda_date: form.agenda_date.trim() || null,
+          p_start_time: form.start_time.trim(),
+          p_end_time: normalizeText(form.end_time),
+          p_is_published: form.is_published,
+          p_sort_order: normalizeNumber(form.sort_order),
+        });
+
+        if (!saveStillCurrent()) {return;}
+
+        if (error) {
+          if (isStaleAgendaVersionError(new Error(error.message))) {
+            await reconcileAfterStaleVersion();
+            return;
+          }
+          showError(mapAgendaRpcError(new Error(error.message), "Could not update agenda item."));
+          return;
+        }
+
+        const result = (data as Array<{ new_version: number }> | null)?.[0];
+        if (typeof result?.new_version === "number") {
+          setAgendaVersion(result.new_version);
+        }
+
+        setStatus(`Updated "${form.title.trim()}".`);
+      } else {
+        const { data, error } = await supabase.rpc("create_event_agenda_item", {
+          p_event_id: activeEvent.id,
+          p_title: form.title.trim(),
+          p_description: normalizeText(form.description),
+          p_location: normalizeText(resolvedLocation),
+          p_speaker: normalizeText(form.speaker),
+          p_category: normalizeText(form.category),
+          p_color: getAgendaColor(form.category, form.color),
+          p_agenda_date: form.agenda_date.trim() || null,
+          p_start_time: form.start_time.trim(),
+          p_end_time: normalizeText(form.end_time),
+          p_is_published: form.is_published,
+          p_sort_order: normalizeNumber(form.sort_order),
+          p_external_id: externalId,
+        });
+
+        if (!saveStillCurrent()) {return;}
+
+        if (error) {
+          showError(mapAgendaRpcError(new Error(error.message), "Could not add agenda item."));
+          return;
+        }
+
+        const result = (data as Array<{ new_version: number }> | null)?.[0];
+        if (typeof result?.new_version === "number") {
+          setAgendaVersion(result.new_version);
+        }
+
+        setStatus(`Added "${form.title.trim()}".`);
+      }
+
+      // Successful Save/Add always closes the on-demand editor so the
+      // full agenda regains focus, per the item-editor workflow standard.
+      originalFormRef.current = emptyForm;
+      setForm(emptyForm);
+      setEditorExpanded(false);
+      void refreshAgendaData();
+    } catch (err: unknown) {
+      showError(err instanceof Error ? err.message : "Could not save this agenda item.");
+    } finally {
+      saveInFlight.current = false;
+      setSaving(false);
+    }
+  }
+
+  async function deleteItem(id: string) {
+    const itemToDelete = items.find((item) => item.id === id);
+    const itemTitle = itemToDelete?.title || "this agenda item";
+
+    const confirmed = await requestConfirmation({
+      title: "Delete Agenda Item",
+      message: `Delete "${itemTitle}"? This cannot be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    showStatus(`Deleting "${itemTitle}"...`);
+
+    const { data, error } = await supabase.rpc("delete_event_agenda_item", {
+      p_item_id: id,
+      p_expected_agenda_version: agendaVersionRef.current,
+    });
+
+    if (error) {
+      if (isStaleAgendaVersionError(new Error(error.message))) {
+        await reconcileAfterStaleVersion();
+        return;
+      }
+      showError(mapAgendaRpcError(new Error(error.message), "Could not delete item."));
+      return;
+    }
+
+    const result = (data as Array<{ new_version: number }> | null)?.[0];
+    if (typeof result?.new_version === "number") {
+      setAgendaVersion(result.new_version);
+    }
+
+    if (form.id === id) {
+      originalFormRef.current = emptyForm;
+      setForm(emptyForm);
+      setEditorExpanded(false);
+    }
+
+    setItems((prev) => prev.filter((item) => item.id !== id));
+    void refreshAgendaData();
+    setStatus(`Deleted "${itemTitle}".`);
+  }
+
+  async function togglePublished(item: AgendaItem) {
+    showStatus(
+      item.is_published
+        ? "Unpublishing agenda item..."
+        : "Publishing agenda item...",
+    );
+
+    const { data, error } = await supabase.rpc("update_event_agenda_item", {
+      p_item_id: item.id,
+      p_expected_agenda_version: agendaVersionRef.current,
+      p_title: item.title,
+      p_description: item.description,
+      p_location: item.location,
+      p_speaker: item.speaker,
+      p_category: item.category,
+      p_color: item.color,
+      p_agenda_date: item.agenda_date,
+      p_start_time: item.start_time,
+      p_end_time: item.end_time,
+      p_is_published: !item.is_published,
+      p_sort_order: item.sort_order,
+    });
+
+    if (error) {
+      if (isStaleAgendaVersionError(new Error(error.message))) {
+        await reconcileAfterStaleVersion();
+        return;
+      }
+      showError(mapAgendaRpcError(new Error(error.message), "Could not update publish status."));
+      return;
+    }
+
+    const result = (data as Array<{ new_version: number }> | null)?.[0];
+    if (typeof result?.new_version === "number") {
+      setAgendaVersion(result.new_version);
+    }
+
+    void refreshAgendaData();
+    setStatus(
+      `${item.title} ${item.is_published ? "unpublished" : "published"}.`,
+    );
+  }
+
+  // Shared single-field-change helper used by the calendar drag/resize
+  // interactions (start-time resize, end-time resize, drag-to-slot).
+  // update_event_agenda_item always takes the full editable field set,
+  // so this merges the one changed field over the item's current values
+  // rather than duplicating the RPC call three times. Returns the new
+  // version on success, or null on failure/stale-version (caller is
+  // responsible for its own optimistic-UI rollback via refreshAgendaData,
+  // matching this file's existing pattern for these handlers).
+  async function updateAgendaItemField(
+    item: AgendaItem,
+    overrides: Partial<
+      Pick<AgendaItem, "agenda_date" | "start_time" | "end_time" | "sort_order">
+    >,
+  ): Promise<number | null> {
+    const merged = { ...item, ...overrides };
+
+    const { data, error } = await supabase.rpc("update_event_agenda_item", {
+      p_item_id: item.id,
+      p_expected_agenda_version: agendaVersionRef.current,
+      p_title: merged.title,
+      p_description: merged.description,
+      p_location: merged.location,
+      p_speaker: merged.speaker,
+      p_category: merged.category,
+      p_color: merged.color,
+      p_agenda_date: merged.agenda_date,
+      p_start_time: merged.start_time,
+      p_end_time: merged.end_time,
+      p_is_published: merged.is_published,
+      p_sort_order: merged.sort_order,
+    });
+
+    if (error) {
+      if (isStaleAgendaVersionError(new Error(error.message))) {
+        await reconcileAfterStaleVersion();
+        return null;
+      }
+      showError(mapAgendaRpcError(new Error(error.message), "Could not update agenda item."));
+      return null;
+    }
+
+    const result = (data as Array<{ new_version: number }> | null)?.[0];
+    if (typeof result?.new_version === "number") {
+      setAgendaVersion(result.new_version);
+      return result.new_version;
+    }
+    return null;
+  }
+
+  const categories = useMemo(() => {
+    const values = Array.from(
+      new Set(items.map((item) => item.category).filter(Boolean)),
+    ) as string[];
+    return ["All", ...values.sort((a, b) => a.localeCompare(b))];
+  }, [items]);
+
+  // Locations already used by THIS Event's agenda items, deduped by the shared
+  // case/space comparison rules. This is the searchable selection the item
+  // editor and the import correction reuse; agenda_items.location remains the
+  // sole source -- there is no separate location registry.
+  const existingLocations = useMemo(
+    () => collectAgendaLocations(items.map((item) => item.location)),
+    [items],
+  );
+
+  const filteredItems = useMemo(() => {
+    if (filterCategory === "All") {
+      return items;
+    }
+    return items.filter(
+      (item) =>
+        (item.category || "").toLowerCase() === filterCategory.toLowerCase(),
+    );
+  }, [items, filterCategory]);
+
+  const calendarDays = useMemo(() => {
+    const dates = Array.from(
+      new Set(
+        filteredItems
+          .map((item) => item.agenda_date)
+          .filter((value): value is string => !!value),
+      ),
+    );
+
+    return dates.sort((a, b) => a.localeCompare(b));
+  }, [filteredItems]);
+
+  const minimumDayWidth = 180;
+  const maximumDayWidth = 720;
+  const defaultDayWidth = compactCalendarView ? 180 : 260;
+  const calendarDayWidth = (day: string) => dayWidths[day] ?? defaultDayWidth;
+  const calendarWidth = (compactCalendarView ? 76 : 92) +
+    calendarDays.reduce((total, day) => total + calendarDayWidth(day), 0);
+  const calendarColumns = `${compactCalendarView ? 76 : 92}px ${calendarDays.map((day) => `${calendarDayWidth(day)}px`).join(" ")}`;
+
+  function setCalendarDayWidth(day: string, width: number) {
+    if (!Number.isFinite(width)) {return;}
+    setDayWidths((previous) => ({ ...previous,
+      [day]: Math.max(minimumDayWidth, Math.min(maximumDayWidth, Math.round(width))),
+    }));
+  }
+
+  function fittedDayWidth(day: string) {
+    const root = calendarWidthRootRef.current;
+    const context = document.createElement("canvas").getContext("2d");
+    if (!root || !context) {return defaultDayWidth;}
+    let width = minimumDayWidth;
+    // Measure displayed text with its rendered font, including overlapping lanes.
+    root.querySelectorAll<HTMLElement>("[data-agenda-width-day]").forEach((column) => {
+      if (column.dataset.agendaWidthDay !== day) {return;}
+      column.querySelectorAll<HTMLElement>("[data-agenda-fit-text]").forEach((text) => {
+        const style = getComputedStyle(text);
+        context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        const lanes = Number(text.closest<HTMLElement>("[data-agenda-lanes]")?.dataset.agendaLanes ?? 1);
+        const textWidth = Math.max(...(text.textContent ?? "").split("\n").map((line) =>
+          context.measureText(line).width + Math.max(0, parseFloat(style.letterSpacing) || 0) * line.length));
+        width = Math.max(width, (textWidth + 44) * lanes);
+      });
+    });
+    return Math.min(maximumDayWidth, Math.ceil(width));
+  }
+
+  const printableAgendaItems = useMemo(() => {
+    if (printDayFilter === "all") {
+      return filteredItems;
+    }
+
+    return filteredItems.filter((item) => item.agenda_date === printDayFilter);
+  }, [filteredItems, printDayFilter]);
+
+  function handlePrintAgenda() {
+    const grouped = printableAgendaItems.reduce(
+      (acc, item) => {
+        const day = item.agenda_date || "No Date";
+        if (!acc[day]) {
+          acc[day] = [];
+        }
+        acc[day].push(item);
+        return acc;
+      },
+      {} as Record<string, typeof printableAgendaItems>,
+    );
+
+    const html = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+  <title>Agenda</title>
+  <style>
+  body{
+    font-family:Arial,Helvetica,sans-serif;
+    margin:30px;
+    color:#000;
+  }
+  h1{
+    margin-bottom:4px;
+  }
+  h2{
+    margin-top:28px;
+    border-bottom:2px solid #000;
+    padding-bottom:4px;
+  }
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:10px;
+  }
+  th,td{
+    border:1px solid #bbb;
+    padding:6px 8px;
+    vertical-align:top;
+  }
+  th{
+    background:#eee;
+  }
+  .description{
+    font-size:12px;
+    color:#444;
+  }
+  @media print{
+    h2{
+      page-break-before:auto;
+    }
+  }
+  </style>
+  </head>
+  <body>
+
+  <h1>${activeEvent?.name ?? "Agenda"}</h1>
+
+  ${Object.entries(grouped)
+    .map(
+      ([day, items]) => `
+  <h2>${formatAgendaDate(day)}</h2>
+
+  <table>
+  <thead>
+  <tr>
+  <th style="width:120px;">Time</th>
+  <th>Activity</th>
+  <th style="width:180px;">Location</th>
+  </tr>
+  </thead>
+
+  <tbody>
+
+  ${items
+    .map(
+      (item) => `
+  <tr>
+  <td>${formatAgendaTime(item.start_time, item.end_time)}</td>
+
+  <td>
+  <strong>${item.title}</strong>
+  ${item.speaker ? `<div><strong>Speaker:</strong> ${item.speaker}</div>` : ""}
+  ${
+    item.description ? `<div class="description">${item.description}</div>` : ""
+  }
+  </td>
+
+  <td>${item.location ?? ""}</td>
+  </tr>
+  `,
+    )
+    .join("")}
+
+  </tbody>
+  </table>
+  `,
+    )
+    .join("")}
+
+  </body>
+  </html>
+  `;
+
+    const win = window.open("", "_blank");
+
+    if (!win) {
+      return;
+    }
+
+    win.document.write(html);
+    win.document.close();
+
+    win.focus();
+
+    setTimeout(() => {
+      win.print();
+    }, 300);
+  }
+
+  const calendarRange = useMemo(() => {
+    const starts = filteredItems
+      .map((item) => timeToMinutes(item.start_time))
+      .filter((value): value is number => value !== null);
+
+    const ends = filteredItems
+      .map((item) => {
+        const start = timeToMinutes(item.start_time);
+        if (start === null) {
+          return null;
+        }
+
+        return start + agendaDurationMinutes(item);
+      })
+      .filter((value): value is number => value !== null);
+
+    const first = starts.length
+      ? Math.min(...starts)
+      : AGENDA_DAY_START_MINUTES;
+    const last = ends.length ? Math.max(...ends) : AGENDA_DAY_END_MINUTES;
+
+    return {
+      start: Math.max(
+        0,
+        Math.floor(Math.min(first, AGENDA_DAY_START_MINUTES) / 60) * 60,
+      ),
+      end: Math.min(
+        24 * 60,
+        Math.ceil(Math.max(last, AGENDA_DAY_END_MINUTES) / 60) * 60,
+      ),
+    };
+  }, [filteredItems]);
+
+  const calendarTimeSlots = useMemo(() => {
+    const slots: number[] = [];
+
+    for (
+      let minute = calendarRange.start;
+      minute <= calendarRange.end;
+      minute += AGENDA_SLOT_MINUTES
+    ) {
+      slots.push(minute);
+    }
+
+    return slots;
+  }, [calendarRange]);
+
+  const calendarGridHeight =
+    Math.max(1, calendarTimeSlots.length - 1) * AGENDA_SLOT_HEIGHT;
+
+  useEffect(() => {
+    function handleWindowResizeMove(e: MouseEvent) {
+      const drag = calendarResizeDragRef.current;
+
+      if (!drag) {
+        return;
+      }
+
+      const y = Math.max(0, e.clientY - drag.columnTop);
+      const slotIndex = Math.round(y / AGENDA_SLOT_HEIGHT);
+      const rawMinutes = Math.min(
+        calendarRange.end,
+        Math.max(
+          calendarRange.start,
+          calendarRange.start + slotIndex * AGENDA_SLOT_MINUTES,
+        ),
+      );
+
+      const nextMinutes =
+        drag.edge === "start"
+          ? Math.max(
+              calendarRange.start,
+              Math.min(drag.endMinutes - AGENDA_SLOT_MINUTES, rawMinutes),
+            )
+          : Math.max(
+              drag.startMinutes + AGENDA_SLOT_MINUTES,
+              Math.min(calendarRange.end, rawMinutes),
+            );
+
+      calendarResizeDragRef.current = {
+        ...drag,
+        previewMinutes: nextMinutes,
+      };
+
+      setCalendarResizePreview({
+        itemId: drag.itemId,
+        minutes: nextMinutes,
+      });
+    }
+
+    function handleWindowResizeEnd() {
+      const drag = calendarResizeDragRef.current;
+
+      if (!drag) {
+        return;
+      }
+
+      calendarResizeDragRef.current = null;
+
+      if (drag.edge === "start") {
+        void resizeAgendaItemStartTime(drag.itemId, drag.previewMinutes);
+        return;
+      }
+
+      void resizeAgendaItemEndTime(drag.itemId, drag.previewMinutes);
+    }
+
+    window.addEventListener("mousemove", handleWindowResizeMove);
+    window.addEventListener("mouseup", handleWindowResizeEnd);
+
+    // The resize handlers intentionally read the current drag ref and current calendar range.
+    // The resize save functions are declared below and use refs for current event/items.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendarRange.end, calendarRange.start]);
+
+  function beginCalendarStartResize(
+    e: React.MouseEvent<HTMLSpanElement>,
+    item: AgendaItem,
+  ) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startMinutes = timeToMinutes(item.start_time);
+    const endMinutes =
+      timeToMinutes(item.end_time) ??
+      (startMinutes === null
+        ? null
+        : startMinutes + agendaDurationMinutes(item));
+
+    if (startMinutes === null || endMinutes === null) {
+      showError(
+        "This agenda item needs a start and end time before it can be resized.",
+      );
+      return;
+    }
+
+    const dayColumn = e.currentTarget.closest(
+      "[data-agenda-calendar-day]",
+    ) as HTMLDivElement | null;
+
+    if (!dayColumn) {
+      return;
+    }
+
+    const rect = dayColumn.getBoundingClientRect();
+
+    calendarResizeDragRef.current = {
+      itemId: item.id,
+      columnTop: rect.top,
+      edge: "start",
+      startMinutes,
+      endMinutes,
+      previewMinutes: startMinutes,
+    };
+
+    setCalendarResizePreview({
+      itemId: item.id,
+      minutes: startMinutes,
+    });
+    setStatus(`Resizing start time for "${item.title}"... release to save.`);
+  }
+  async function resizeAgendaItemStartTime(
+    itemId: string,
+    nextStartMinutes: number,
+  ) {
+    const currentEvent = activeEventRef.current;
+    const currentItems = itemsRef.current;
+
+    if (!currentEvent?.id) {
+      showError("No admin working event selected.");
+      setCalendarResizePreview(null);
+      return;
+    }
+
+    const item = currentItems.find((agendaItem) => agendaItem.id === itemId);
+
+    if (!item) {
+      setCalendarResizePreview(null);
+      return;
+    }
+
+    const currentStartMinutes = timeToMinutes(item.start_time);
+    const endMinutes =
+      timeToMinutes(item.end_time) ??
+      (currentStartMinutes ?? 0) + agendaDurationMinutes(item);
+
+    const safeStartMinutes = Math.max(
+      calendarRange.start,
+      Math.min(endMinutes - AGENDA_SLOT_MINUTES, nextStartMinutes),
+    );
+    const nextStartTime = minutesToTime(safeStartMinutes);
+
+    setItems((prev) =>
+      prev.map((agendaItem) =>
+        agendaItem.id === itemId
+          ? {
+              ...agendaItem,
+              start_time: nextStartTime,
+            }
+          : agendaItem,
+      ),
+    );
+
+    showStatus(`Resizing "${item.title}" to start at ${nextStartTime}...`);
+
+    const newVersion = await updateAgendaItemField(item, { start_time: nextStartTime });
+
+    if (newVersion === null) {
+      setCalendarResizePreview(null);
+      void refreshAgendaData();
+      return;
+    }
+
+    setStatus(`Resized "${item.title}" to start at ${nextStartTime}.`);
+    setCalendarResizePreview(null);
+    void refreshAgendaData();
+  }
+
+  function handleDragStart(e: React.DragEvent<HTMLDivElement>, id: string) {
+    setDraggedId(id);
+
+    if (!e.dataTransfer) {
+      return;
+    }
+
+    try {
+      e.dataTransfer.setData("text/plain", id);
+      e.dataTransfer.effectAllowed = "move";
+    } catch (err) {
+      console.debug("Drag dataTransfer unavailable:", err);
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+
+    if (!e.dataTransfer) {
+      return;
+    }
+
+    try {
+      e.dataTransfer.dropEffect = "move";
+    } catch (err) {
+      console.debug("Drag dropEffect unavailable:", err);
+    }
+  }
+
+  function handleCalendarDragStart(
+    e: React.DragEvent<HTMLButtonElement>,
+    id: string,
+  ) {
+    setCalendarDraggingId(id);
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const offsetY = Math.max(0, e.clientY - rect.top);
+
+    setCalendarDragOffsetSlots(Math.floor(offsetY / AGENDA_SLOT_HEIGHT));
+
+    if (!e.dataTransfer) {
+      return;
+    }
+
+    try {
+      e.dataTransfer.setData("text/plain", id);
+      e.dataTransfer.effectAllowed = "move";
+    } catch (err) {
+      // Some mobile/Safari drag events do not fully support dataTransfer.
+      // Safe to ignore because local component drag state still works.
+      console.debug("Calendar drag dataTransfer unavailable:", err);
+    }
+  }
+
+  function handleCalendarDragOver(
+    e: React.DragEvent<HTMLDivElement>,
+    day: string,
+  ) {
+    e.preventDefault();
+
+    try {
+      e.dataTransfer.dropEffect = "move";
+    } catch (err) {
+      // Some mobile/Safari drag events do not fully support dropEffect.
+      // Safe to ignore because drag/drop still functions with local state.
+      console.debug("Calendar drag dropEffect unavailable:", err);
+    }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = Math.max(0, e.clientY - rect.top);
+    const topEdgeY = Math.max(
+      0,
+      y - calendarDragOffsetSlots * AGENDA_SLOT_HEIGHT,
+    );
+
+    const slotIndex = Math.floor(topEdgeY / AGENDA_SLOT_HEIGHT);
+    const nextStartMinutes = Math.min(
+      calendarRange.end - AGENDA_SLOT_MINUTES,
+      Math.max(
+        calendarRange.start,
+        calendarRange.start + slotIndex * AGENDA_SLOT_MINUTES,
+      ),
+    );
+
+    setCalendarDropPreview({ day, minutes: nextStartMinutes });
+  }
+
+  function beginCalendarEndResize(
+    e: React.MouseEvent<HTMLSpanElement>,
+    item: AgendaItem,
+  ) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startMinutes = timeToMinutes(item.start_time);
+
+    if (startMinutes === null) {
+      setStatus(
+        "This agenda item needs a start time before it can be resized.",
+      );
+      return;
+    }
+
+    const dayColumn = e.currentTarget.closest(
+      "[data-agenda-calendar-day]",
+    ) as HTMLDivElement | null;
+
+    if (!dayColumn) {
+      return;
+    }
+
+    const rect = dayColumn.getBoundingClientRect();
+    const currentEndMinutes =
+      timeToMinutes(item.end_time) ??
+      startMinutes + agendaDurationMinutes(item);
+
+    calendarResizeDragRef.current = {
+      itemId: item.id,
+      columnTop: rect.top,
+      edge: "end",
+      startMinutes,
+      endMinutes: currentEndMinutes,
+      previewMinutes: currentEndMinutes,
+    };
+
+    setCalendarResizePreview({
+      itemId: item.id,
+      minutes: currentEndMinutes,
+    });
+  }
+
+  async function resizeAgendaItemEndTime(
+    itemId: string,
+    nextEndMinutes: number,
+  ) {
+    const currentEvent = activeEventRef.current;
+    const currentItems = itemsRef.current;
+
+    if (!currentEvent?.id) {
+      setStatus("No admin working event selected.");
+      setCalendarResizePreview(null);
+      return;
+    }
+
+    const item = currentItems.find((agendaItem) => agendaItem.id === itemId);
+
+    if (!item) {
+      setCalendarResizePreview(null);
+      return;
+    }
+
+    const startMinutes = timeToMinutes(item.start_time);
+
+    if (startMinutes === null) {
+      showError(
+        "This agenda item needs a start time before it can be resized.",
+      );
+      setCalendarResizePreview(null);
+      return;
+    }
+
+    const safeEndMinutes = Math.max(
+      startMinutes + AGENDA_SLOT_MINUTES,
+      Math.min(calendarRange.end, nextEndMinutes),
+    );
+    const nextEndTime = minutesToTime(safeEndMinutes);
+
+    setItems((prev) =>
+      prev.map((agendaItem) =>
+        agendaItem.id === itemId
+          ? {
+              ...agendaItem,
+              end_time: nextEndTime,
+            }
+          : agendaItem,
+      ),
+    );
+
+    showStatus(`Resizing "${item.title}" to end at ${nextEndTime}...`);
+
+    const newVersion = await updateAgendaItemField(item, { end_time: nextEndTime });
+
+    if (newVersion === null) {
+      setCalendarResizePreview(null);
+      void refreshAgendaData();
+      return;
+    }
+
+    setStatus(`Resized "${item.title}" to end at ${nextEndTime}.`);
+    setCalendarResizePreview(null);
+    void refreshAgendaData();
+  }
+
+  async function moveAgendaItemToCalendarSlot(
+    itemId: string,
+    nextDate: string,
+    nextStartMinutes: number,
+  ) {
+    if (!activeEvent?.id) {
+      showError("No admin working event selected.");
+      setCalendarDraggingId(null);
+      return;
+    }
+
+    const item = items.find((agendaItem) => agendaItem.id === itemId);
+
+    if (!item) {
+      setCalendarDraggingId(null);
+      return;
+    }
+
+    const duration = agendaDurationMinutes(item);
+    const nextStartTime = minutesToTime(nextStartMinutes);
+    const safeEndMinutes = Math.min(24 * 60 - 1, nextStartMinutes + duration);
+
+    const nextEndTime = minutesToTime(safeEndMinutes);
+    setItems((prev) =>
+      prev.map((agendaItem) =>
+        agendaItem.id === itemId
+          ? {
+              ...agendaItem,
+              agenda_date: nextDate,
+              start_time: nextStartTime,
+              end_time: nextEndTime,
+            }
+          : agendaItem,
+      ),
+    );
+
+    showStatus(
+      `Moving "${item.title}" to ${formatAgendaDate(nextDate)} at ${nextStartTime}...`,
+    );
+
+    const newVersion = await updateAgendaItemField(item, {
+      agenda_date: nextDate,
+      start_time: nextStartTime,
+      end_time: nextEndTime,
+    });
+
+    if (newVersion === null) {
+      setCalendarDraggingId(null);
+      void refreshAgendaData();
+      return;
+    }
+
+    setStatus(
+      `Moved "${item.title}" to ${formatAgendaDate(nextDate)} at ${nextStartTime}.`,
+    );
+    setCalendarDraggingId(null);
+    void refreshAgendaData();
+  }
+
+  function handleCalendarColumnDrop(
+    e: React.DragEvent<HTMLDivElement>,
+    day: string,
+  ) {
+    e.preventDefault();
+
+    const itemId = calendarDraggingId || e.dataTransfer.getData("text/plain");
+
+    if (!itemId) {
+      return;
+    }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = Math.max(0, e.clientY - rect.top);
+    const topEdgeY = Math.max(
+      0,
+      y - calendarDragOffsetSlots * AGENDA_SLOT_HEIGHT,
+    );
+    const slotIndex = Math.floor(topEdgeY / AGENDA_SLOT_HEIGHT);
+    const nextStartMinutes = Math.min(
+      calendarRange.end - AGENDA_SLOT_MINUTES,
+      Math.max(
+        calendarRange.start,
+        calendarRange.start + slotIndex * AGENDA_SLOT_MINUTES,
+      ),
+    );
+
+    void moveAgendaItemToCalendarSlot(itemId, day, nextStartMinutes);
+  }
+
+  function handleDrop(targetId: string) {
+    if (!draggedId || draggedId === targetId) {
+      return;
+    }
+
+    const fromIndex = items.findIndex((item) => item.id === draggedId);
+    const toIndex = items.findIndex((item) => item.id === targetId);
+
+    if (fromIndex === -1 || toIndex === -1) {
+      setDraggedId(null);
+      return;
+    }
+
+    const reordered = moveItem(items, fromIndex, toIndex).map(
+      (item, index) => ({
+        ...item,
+        sort_order: index + 1,
+      }),
+    );
+
+    setItems(reordered);
+    setDraggedId(null);
+    showStatus('Order changed. Click "Save Order" to keep it.');
+  }
+
+  async function saveOrder() {
+    if (!activeEvent?.id) {
+      showError("No admin working event selected.");
+      return;
+    }
+
+    try {
+      setSavingOrder(true);
+      showStatus("Saving agenda order...");
+
+      // One atomic governed command for the whole batch -- not one
+      // .upsert() row per item.
+      const itemOrders = items.map((item, index) => ({
+        id: item.id,
+        sort_order: index + 1,
+      }));
+
+      const { data, error } = await supabase.rpc("reorder_event_agenda_items", {
+        p_event_id: activeEvent.id,
+        p_expected_agenda_version: agendaVersionRef.current,
+        p_item_orders: itemOrders,
+      });
+
+      if (error) {
+        if (isStaleAgendaVersionError(new Error(error.message))) {
+          await reconcileAfterStaleVersion();
+          return;
+        }
+        throw new Error(mapAgendaRpcError(new Error(error.message), "Failed to save order."));
+      }
+
+      if (typeof data === "number") {
+        setAgendaVersion(data);
+      }
+
+      setStatus("Agenda order saved.");
+      await loadPage();
+    } catch (err) {
+      console.error("saveOrder error:", err);
+      showError(err instanceof Error ? err.message : "Failed to save order.");
+    } finally {
+      setSavingOrder(false);
+    }
+  }
+
+  // NOTE: assignTemplate() (writing events.assigned_agenda_template_id as
+  // the operational "which template applies here" mechanism) has been
+  // removed. apply_agenda_template_to_event / replace_agenda_from_template
+  // and their agenda_template_applications provenance now fully supersede
+  // its purpose. As of Stage 2B, assigned_agenda_template_id is no longer
+  // read or displayed by this page at all (see the loadPage() comment
+  // where it used to be fetched) -- the application-history panel below
+  // is the current, useful provenance display.
+
+  async function saveCurrentAgendaAsTemplate() {
+    if (!activeEvent?.id) {
+      showError("No admin working event selected.");
+      return;
+    }
+
+    const templateName = newTemplateName.trim();
+    const templateDescription = newTemplateDescription.trim();
+
+    if (!templateName) {
+      showError(
+        "Enter a template name before saving this agenda as a template.",
+      );
+      return;
+    }
+
+    if (items.length === 0) {
+      showError("There are no agenda items to save as a template.");
+      return;
+    }
+
+    const confirmed = await requestConfirmation({
+      title: "Save Agenda Template",
+      message: `Save the current agenda for ${activeEvent.name} as template "${templateName}"?`,
+      confirmLabel: "Save Template",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setSavingTemplate(true);
+      showStatus("Saving agenda template...");
+
+      // The database owns the Event -> template transformation entirely
+      // (snapshot, section grouping, revision creation) -- this page
+      // never reads or copies item rows itself for this operation.
+      // Publishes immediately so the new template is selectable right
+      // away, matching the legacy UI's behavior where a saved template
+      // was instantly usable with no separate draft step.
+      const { error } = await supabase.rpc("save_event_agenda_as_tenant_template", {
+        p_event_id: activeEvent.id,
+        p_title: templateName,
+        p_description: templateDescription || null,
+        p_publish: true,
+        p_idempotency_key: newIdempotencyKey(),
+      });
+
+      if (error) {
+        throw new Error(
+          mapAgendaRpcError(new Error(error.message), "Could not save agenda template."),
+        );
+      }
+
+      await loadTemplates(activeEvent.id);
+      setNewTemplateName("");
+      setNewTemplateDescription("");
+
+      setStatus(`Saved "${templateName}" as a reusable template.`);
+    } catch (err) {
+      console.error("saveCurrentAgendaAsTemplate error:", err);
+
+      showError(
+        err instanceof Error ? err.message : "Could not save agenda template.",
+      );
+    } finally {
+      setSavingTemplate(false);
+    }
+  }
+
+  // Apply is additive: it only ever adds new, freshly-copied rows and
+  // never touches, merges into, or overwrites any existing agenda_items
+  // row -- this is not "merge" or "upsert" behavior. One idempotency key
+  // per user click, so a duplicate network retry of the same click
+  // cannot double-apply the same template.
+  async function applyTemplateToEvent() {
+    if (!activeEvent?.id) {
+      showError("No admin working event selected.");
+      return;
+    }
+
+    if (!selectedTemplateId) {
+      showError("Select a template first.");
+      return;
+    }
+
+    if (applyingTemplate) {
+      return;
+    }
+
+    try {
+      setApplyingTemplate(true);
+      showStatus("Applying template to event...");
+
+      const { error } = await supabase.rpc("apply_agenda_template_to_event", {
+        p_event_id: activeEvent.id,
+        p_source_revision_id: selectedTemplateId,
+        p_idempotency_key: newIdempotencyKey(),
+      });
+
+      if (error) {
+        if (isStaleAgendaVersionError(new Error(error.message))) {
+          await reconcileAfterStaleVersion();
+          return;
+        }
+        throw new Error(
+          mapAgendaRpcError(new Error(error.message), "Could not apply template to event."),
+        );
+      }
+
+      await loadPage();
+
+      setStatus("Template applied to this event.");
+    } catch (err) {
+      console.error("applyTemplateToEvent error:", err);
+
+      showError(
+        err instanceof Error
+          ? err.message
+          : "Could not apply template to event.",
+      );
+    } finally {
+      setApplyingTemplate(false);
+    }
+  }
+
+  async function replaceEventFromTemplate() {
+    if (!activeEvent?.id) {
+      showError("No admin working event selected.");
+      return;
+    }
+
+    if (!selectedTemplateId) {
+      showError("Select a template first.");
+      return;
+    }
+
+    const confirmed = await requestConfirmation({
+      title: "Replace Event Agenda",
+      message:
+        "Replace the current event agenda with the selected template? This will remove current event agenda items first.",
+      confirmLabel: "Replace Agenda",
+      danger: true,
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    if (replacingFromTemplate) {
+      return;
+    }
+
+    try {
+      setReplacingFromTemplate(true);
+      showStatus("Replacing event agenda from template...");
+
+      // One atomic governed command: authoritative replacement of the
+      // Event's agenda with the template's contents. Never a separate
+      // browser-side delete-then-copy sequence, so there is no window
+      // where the Event's agenda can be observed empty.
+      const { error } = await supabase.rpc("replace_agenda_from_template", {
+        p_event_id: activeEvent.id,
+        p_source_revision_id: selectedTemplateId,
+        p_expected_agenda_version: agendaVersionRef.current,
+        p_idempotency_key: newIdempotencyKey(),
+      });
+
+      if (error) {
+        if (isStaleAgendaVersionError(new Error(error.message))) {
+          await reconcileAfterStaleVersion();
+          return;
+        }
+        throw new Error(
+          mapAgendaRpcError(new Error(error.message), "Could not replace event from template."),
+        );
+      }
+
+      await loadPage();
+
+      setStatus("Event agenda replaced from template.");
+    } catch (err) {
+      console.error("replaceEventFromTemplate error:", err);
+
+      showError(
+        err instanceof Error
+          ? err.message
+          : "Could not replace event from template.",
+      );
+    } finally {
+      setReplacingFromTemplate(false);
+    }
+  }
+
+  async function handleAgendaImportFile(file: File) {
+    if (!activeEvent?.id) {
+      setImportStatus("No admin working event selected.");
+      showError("No admin working event selected.");
+      return;
+    }
+
+    if (agendaActiveImportRunCount === null) {
+      setImportStatus(
+        "Wait for the active Agenda import check to finish before uploading a file.",
+      );
+      return;
+    }
+
+    if (agendaImportRun || agendaActiveImportRunCount > 0) {
+      setImportStatus(
+        "Resume and complete the existing Agenda import run before uploading another file.",
+      );
+      return;
+    }
+
+    setImportBusy(true);
+    showStatus(`Reading ${file.name} for ${activeEvent.name}...`);
+    setImportStatus(`Reading ${file.name} for ${activeEvent.name}...`);
+
+    try {
+      const rows = await parseAgendaImportFile(file);
+
+      if (!rows.length) {
+        setImportStatus("No rows found in file.");
+        return;
+      }
+
+      setImportStatus(`Creating governed Agenda import run for ${activeEvent.name}...`);
+
+      // Stage A interpretation occurs exactly once inside this orchestration.
+      // It persists every valid or invalid candidate through the generic
+      // governed staging RPCs, then stops at recovered staged truth so the
+      // operator can review, resolve, and explicitly close staging before the
+      // sole Agenda batch commit is offered.
+      const result = await stageGovernedAgendaImport({
+        eventId: activeEvent.id,
+        sourceFilename: file.name,
+        rows,
+        expectedAgendaVersion: agendaVersionRef.current,
+        eventDateContext: {
+          event_start_date: activeEvent.start_date,
+          event_end_date: activeEvent.end_date,
+        },
+      });
+      setAgendaImportRun(result);
+      setAgendaImportRunStatus(result.status);
+      saveActiveAgendaImportRunId(activeEvent.id, result.runId);
+      setAgendaImportRunsReloadToken((token) => token + 1);
+
+      setImportStatus(
+        `Staged ${result.rows.length} row${result.rows.length === 1 ? "" : "s"}. Review the persisted candidates below, skip any row you do not want, then close staging.`,
+      );
+    } catch (err) {
+      console.error(err);
+      const message = mapAgendaRpcError(
+        err instanceof Error ? err : new Error("agenda_import_failed"),
+        "Agenda import could not be completed.",
+      );
+      setImportStatus(message);
+      showError(message);
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
+  async function resumeAgendaImportRun(runId: string) {
+    if (!activeEvent?.id) {
+      return;
+    }
+    setResumingAgendaImportRunId(runId);
+    try {
+      const recovered = await recoverAgendaImportRun(runId);
+      if (recovered.eventId !== activeEvent.id) {
+        throw new Error("not_authorized");
+      }
+      const result = agendaRunResultFromRecovery(recovered);
+      setAgendaImportRun(result);
+      setAgendaImportRunStatus(result.status);
+      saveActiveAgendaImportRunId(activeEvent.id, result.runId);
+      setImportStatus(
+        `Resumed Agenda import run from ${result.sourceFilename || "a prior session"}.`,
+      );
+    } catch (err) {
+      console.error("Could not resume Agenda import run", err);
+      showError(
+        mapAgendaRpcError(
+          err instanceof Error ? err : new Error("agenda_resume_failed"),
+          "Could not resume that Agenda import run.",
+        ),
+      );
+    } finally {
+      setResumingAgendaImportRunId(null);
+    }
+  }
+
+  async function commitCurrentAgendaImportRun() {
+    if (!agendaImportRun) {
+      return;
+    }
+    setCommittingAgendaImport(true);
+    try {
+      const result = await commitAgendaImportRun(agendaImportRun.runId);
+      setAgendaImportRun(result);
+      setAgendaImportRunStatus(result.status);
+      if (typeof result.newVersion === "number") {
+        setAgendaVersion(result.newVersion);
+      }
+      if (result.batchOutcome === "committed") {
+        await refreshAgendaData();
+      }
+      setImportStatus(
+        result.batchOutcome === "committed"
+          ? `Imported ${result.importedCount} Agenda row${result.importedCount === 1 ? "" : "s"}. Review the persisted outcome, then finalize the run.`
+          : result.batchOutcome === "already_committed"
+            ? "This Agenda run was already imported. Its persisted outcome is shown below."
+            : "The Agenda import did not commit. The recovered persisted run state is shown below.",
+      );
+    } catch (err) {
+      console.error("Could not commit Agenda import run", err);
+      showError("Could not complete the governed Agenda import.");
+    } finally {
+      setCommittingAgendaImport(false);
+    }
+  }
+
+  async function refreshAgendaImportRun(message: string) {
+    if (!agendaImportRun) {
+      return;
+    }
+    try {
+      const recovered = await recoverAgendaImportRun(agendaImportRun.runId);
+      setAgendaImportRun(agendaRunResultFromRecovery(recovered));
+      setAgendaImportRunStatus(recovered.status);
+      setImportStatus(message);
+      setAgendaImportRunsReloadToken((token) => token + 1);
+    } catch (err) {
+      console.error("Could not refresh Agenda import run", err);
+      showError(
+        "The lifecycle action completed, but the current governed Agenda import state could not be reloaded. Reload this page before continuing.",
+      );
+    }
+  }
+
+  async function handleAgendaImportFinalized(result: {
+    status: ImportRunLifecycleStatus;
+    finalizedAt: string | null;
+    finalizedByAuthUserId: string | null;
+  }) {
+    if (!agendaImportRun || result.status !== "finalized") {
+      return;
+    }
+
+    try {
+      const recovered = await recoverAgendaImportRun(agendaImportRun.runId);
+      if (recovered.status !== "finalized") {
+        throw new Error("import_run_not_finalized");
+      }
+      setImportStatus(
+        "This Agenda import run is complete and has moved to Import History below.",
+      );
+      if (activeEvent?.id) {
+        saveActiveAgendaImportRunId(activeEvent.id, null);
+      }
+      setAgendaImportRun(null);
+      setAgendaImportRunStatus(null);
+      setAgendaImportRunsReloadToken((token) => token + 1);
+      setAgendaImportHistoryReloadToken((token) => token + 1);
+    } catch (err) {
+      console.error("Could not verify finalized Agenda import run", err);
+      showError(
+        "The run was finalized, but its governed completed state could not be reloaded. Reload this page before continuing.",
+      );
+    }
+  }
+
+  if (hasAgendaAccess === false) {
+    return (
+      <div style={{ display: "grid", gap: "var(--space-5)" }}>
+        <PageSection variant="section">
+          <PageHeader
+            title="No Agenda access for this event"
+            headingLevel="h2"
+            titleClassName="app-section-title"
+          />
+          <Alert tone="danger">
+            {status ||
+              "You do not have Agenda view or manage authority for the current admin working event."}
+          </Alert>
+        </PageSection>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "grid", gap: "var(--space-5)" }}>
+      <ConfirmDialog
+        open={!!confirmDialog}
+        title={confirmDialog?.title || "Confirm Action"}
+        message={confirmDialog?.message || "Are you sure you want to continue?"}
+        confirmLabel={confirmDialog?.confirmLabel || "Confirm"}
+        cancelLabel={confirmDialog?.cancelLabel || "Cancel"}
+        danger={!!confirmDialog?.danger}
+        onCancel={() => closeConfirmDialog(false)}
+        onConfirm={() => closeConfirmDialog(true)}
+      />
+
+      <PageSection variant="section">
+        <PageHeader title="Admin Agenda" headingLevel="h2" titleClassName="app-section-title" />
+
+        <FormActions>
+          <AppButton
+            variant={agendaMode === "items" ? "primary" : "tertiary"}
+            aria-pressed={agendaMode === "items"}
+            onClick={() => setAgendaMode("items")}
+          >
+            Agenda Items
+          </AppButton>
+
+          <AppButton
+            variant={agendaMode === "import" ? "primary" : "tertiary"}
+            aria-pressed={agendaMode === "import"}
+            onClick={() => setAgendaMode("import")}
+          >
+            Import Agenda
+          </AppButton>
+
+          <AppButton
+            variant="tertiary"
+            onClick={() => {
+              window.location.href = "/admin/agenda/categories";
+            }}
+          >
+            Manage Categories
+          </AppButton>
+
+          {/* Contextual action into the shared Imports Service Center
+              (Stage 5A) -- the same Agenda import workflow above, reached
+              through the other door. Navigation only; carries no
+              authority (event.agenda.manage is enforced independently by
+              whichever door the operator actually uses). */}
+          <AppLinkButton variant="secondary" href={buildImportsHref("agenda")}>
+            Browse Imports
+          </AppLinkButton>
+        </FormActions>
+
+        <div style={{ display: "grid", gap: "var(--space-1)", marginTop: "var(--space-3)" }}>
+          <div style={{ fontWeight: "var(--font-weight-semibold)" as unknown as number }}>
+            {activeEvent?.name || "No admin working event selected"}
+          </div>
+          <div className="app-subtle-text">
+            {loading ? "Loading agenda data..." : status}
+          </div>
+          <div className="app-subtle-text">Agenda version: {agendaVersion}</div>
+        </div>
+      </PageSection>
+
+      <AgendaWorkspaceSection admin={admin} tenantAuthority={tenantAuthority} />
+
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+
+      {recoverableDraft && !loading && hasAgendaAccess === true && agendaMode === "import" ? (
+        <div style={{ display: "grid", gap: "var(--space-3)" }}>
+          <Alert tone="info">
+            An unfinished agenda item is available for this account and event in this tab.
+          </Alert>
+          <FormActions>
+            <AppButton onClick={restoreDraft}>Restore unfinished item</AppButton>
+            <AppButton variant="tertiary" onClick={discardRecovery}>Discard unfinished item</AppButton>
+          </FormActions>
+        </div>
+      ) : null}
+      {draftNotice ? <Alert tone="info">{draftNotice}</Alert> : null}
+
+      <div
+        style={{
+          display: "grid",
+          gap: "var(--space-5)",
+          alignItems: "start",
+          minWidth: 0,
+        }}
+      >
+        {/* Catalog & Templates -- reusable agenda templates, not a per-item
+            edit surface. An initially closed disclosure above the working
+            pane; expanding it stacks the content in this same column and
+            never creates a side column. */}
+        {agendaMode === "items" ? (
+        <PageSection variant="section">
+          <PageHeader
+            headingLevel="h2"
+            titleStyle={{ margin: 0 }}
+            title="Catalog & Templates"
+            actions={
+              <AppButton
+                variant="secondary"
+                aria-expanded={catalogExpanded}
+                aria-controls="agenda-catalog-templates-body"
+                onClick={() => setCatalogExpanded((open) => !open)}
+              >
+                {catalogExpanded ? "Hide Templates" : "Show Templates"}
+              </AppButton>
+            }
+          />
+          {catalogExpanded ? (
+          <div
+            id="agenda-catalog-templates-body"
+            style={{ display: "grid", gap: "var(--space-5)", marginTop: "var(--space-4)" }}
+          >
+          <AgendaTemplatePanel
+            activeEvent={activeEvent}
+            itemCount={items.length}
+            templates={templates}
+            selectedTemplateId={selectedTemplateId}
+            newTemplateName={newTemplateName}
+            newTemplateDescription={newTemplateDescription}
+            savingTemplate={savingTemplate}
+            applyingTemplate={applyingTemplate}
+            replacingFromTemplate={replacingFromTemplate}
+            setSelectedTemplateId={setSelectedTemplateId}
+            setNewTemplateName={setNewTemplateName}
+            setNewTemplateDescription={setNewTemplateDescription}
+            onSaveTemplate={saveCurrentAgendaAsTemplate}
+            onApplyTemplate={applyTemplateToEvent}
+            onReplaceFromTemplate={replaceEventFromTemplate}
+          />
+
+          {applicationHistory.length > 0 && (
+            <PageSection title="Recent Template Activity" titleStyle={{ margin: 0 }}>
+              <div style={{ display: "grid", gap: "var(--space-2)" }} className="app-subtle-text">
+                {applicationHistory.map((entry) => (
+                  <div key={entry.application_id}>
+                    {entry.operation === "replace" ? "Replaced" : "Applied"} agenda (
+                    {entry.copied_item_count} item
+                    {entry.copied_item_count === 1 ? "" : "s"}
+                    {entry.operation === "replace"
+                      ? `, ${entry.replaced_item_count} removed`
+                      : ""}
+                    ) &mdash; {new Date(entry.applied_at).toLocaleString()}
+                  </div>
+                ))}
+              </div>
+            </PageSection>
+          )}
+          </div>
+          ) : null}
+        </PageSection>
+        ) : null}
+
+        {/* Event Agenda working pane -- the primary workflow: import (when
+            active), the edit/detail form attached to the active selection,
+            the filter/reorder toolbar, the calendar, and the item list. */}
+        <div
+          style={{
+            display: "grid",
+            gap: "var(--space-5)",
+            minWidth: 0,
+          }}
+        >
+          <AgendaImportPanel
+            agendaMode={agendaMode}
+            activeEvent={activeEvent}
+            importBusy={importBusy}
+            hasActiveRun={
+              agendaImportRun !== null || (agendaActiveImportRunCount ?? 0) > 0
+            }
+            activeRunCheckPending={agendaActiveImportRunCount === null}
+            importStatus={importStatus}
+            onImportFile={handleAgendaImportFile}
+          />
+
+          {agendaMode === "import" && activeEvent?.id ? (
+            <ActiveRunsPanel
+              eventId={activeEvent.id}
+              importType="agenda"
+              onResume={(runId) => void resumeAgendaImportRun(runId)}
+              resumingRunId={resumingAgendaImportRunId}
+              onRunCountChanged={handleAgendaActiveRunCountChanged}
+              reloadToken={agendaImportRunsReloadToken}
+            />
+          ) : null}
+
+          {agendaMode === "import" && agendaImportRun && agendaImportRunStatus ? (
+            <AgendaImportReviewWorkspace
+              run={agendaImportRun}
+              status={agendaImportRunStatus}
+              compact={isCompact}
+              committing={committingAgendaImport}
+              eventDateContext={{
+                event_start_date: activeEvent?.start_date ?? null,
+                event_end_date: activeEvent?.end_date ?? null,
+              }}
+              categoryOptions={agendaCategories}
+              existingLocations={existingLocations}
+              onRowsChanged={refreshAgendaImportRun}
+              onCommit={commitCurrentAgendaImportRun}
+              onFinalized={handleAgendaImportFinalized}
+              onError={(message) => showError(message)}
+            />
+          ) : null}
+
+          {agendaMode === "import" && activeEvent?.id ? (
+            <div id="agenda-import-history">
+              <ImportHistoryPanel
+                key={agendaImportHistoryReloadToken}
+                eventId={activeEvent.id}
+                importType="agenda"
+              />
+            </div>
+          ) : null}
+
+          {agendaMode === "items" ? (
+          <>
+          <AgendaEditorSurface open={editorExpanded} onClose={() => void closeEditor()}>
+          <form onSubmit={(event) => { event.preventDefault(); void saveItem(); }} onKeyDown={recordEditorKeyDown}>
+          <PageSection
+            variant="section"
+            style={{
+              // Sticky only while collapsed (a small, helpful,
+              // always-reachable summary bar with the Add Item entry
+              // point) -- never sticky while expanded, so a tall open
+              // editor scrolls away normally instead of re-pinning
+              // itself over the agenda.
+              position: editorExpanded ? undefined : "sticky",
+              top: 12,
+              zIndex: 20,
+            }}
+          >
+            <div
+              style={
+                editorHeaderSticky
+                  ? {
+                      position: "sticky",
+                      top: 12,
+                      zIndex: 20,
+                      background: "var(--color-bg-panel)",
+                      borderBottom: "var(--border-width-default) solid var(--color-border-default)",
+                      paddingBottom: "var(--space-3)",
+                    }
+                  : undefined
+              }
+            >
+                  <PageHeader
+                headingLevel="h2"
+                titleStyle={{ margin: 0 }}
+                title={form.id ? `Editing: ${form.title || "Untitled Item"}` : "New Agenda Item"}
+                actions={
+                  editorExpanded ? (
+                    <AppButton
+                      ref={editorToggleButtonRef}
+                      variant="secondary"
+                      aria-expanded={editorExpanded}
+                      aria-controls="agenda-editor-form-body"
+                      onClick={() => void closeEditor()}
+                    >
+                      Cancel
+                    </AppButton>
+                  ) : (
+                    <AppButton
+                      ref={editorToggleButtonRef}
+                      variant="primary"
+                      aria-expanded={editorExpanded}
+                      aria-controls="agenda-editor-form-body"
+                      disabled={!!recoverableDraft || loading || hasAgendaAccess !== true}
+                      onClick={openBlankEditor}
+                    >
+                      Add Item
+                    </AppButton>
+                  )
+                }
+              />
+            </div>
+
+            <div style={{ display: "grid", gap: "var(--space-4)" }}>
+              {form.id ? (
+                <div className="app-subtle-text">
+                  {form.category || "No Category"} • {form.agenda_date || "No Date"}
+                  {form.start_time ? ` • ${form.start_time}` : ""}
+                  {form.end_time ? ` – ${form.end_time}` : ""}
+                </div>
+              ) : null}
+
+              {editorExpanded ? (
+              <div
+                id="agenda-editor-form-body"
+                ref={editorFormBodyRef}
+                style={{ display: "grid", gap: "var(--space-4)" }}
+              >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))",
+                  gap: "var(--space-4)",
+                  alignItems: "start",
+                }}
+              >
+                <Field label="Title">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      value={form.title}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, title: e.target.value }))
+                      }
+                      placeholder="Title"
+                    />
+                  )}
+                </Field>
+
+                <Field
+                  label="Location"
+                  help="Reuse a location already on this event's agenda, or add a new one."
+                  error={locationChoiceError}
+                >
+                  {(controlProps) => (
+                    <AgendaLocationPicker
+                      controlProps={controlProps}
+                      value={form.location}
+                      options={existingLocations}
+                      onChange={(next, source) => {
+                        setForm((prev) => ({ ...prev, location: next }));
+                        setLocationAckKey(
+                          source === "add" ? locationComparisonKey(next) : null,
+                        );
+                        setLocationChoiceError(null);
+                      }}
+                      placeholder="Location"
+                    />
+                  )}
+                </Field>
+
+                <Field label="Speaker">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      value={form.speaker}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, speaker: e.target.value }))
+                      }
+                      placeholder="Speaker"
+                    />
+                  )}
+                </Field>
+
+                <Field label="Category" help="Select an existing category or type a new name. Saved categories are shared across tenants.">
+                  {(controlProps) => (
+                    <>
+                      <Input {...controlProps} list="agenda-category-options"
+                        value={form.category} disabled={categorySaving}
+                        onChange={(event) => {
+                          const category = event.target.value;
+                          const found = agendaCategories.find((cat) => cat.name.toLowerCase() === category.trim().toLowerCase());
+                          setCategoryMessage(null);
+                          setForm((prev) => ({ ...prev, category, color: found?.color || "" }));
+                        }} />
+                      <datalist id="agenda-category-options">
+                        {agendaCategories.map((cat) => <option key={cat.name} value={cat.name} />)}
+                      </datalist>
+                      {admin?.isSuperAdmin ? (
+                        <AppButton variant="secondary" loading={categorySaving}
+                          disabled={!form.category.trim()} onClick={() => void saveInlineCategory()}>
+                          Save Category
+                        </AppButton>
+                      ) : <span className="app-subtle-text">A Platform Admin must save new shared categories.</span>}
+                      {categoryMessage ? <p role="status">{categoryMessage}</p> : null}
+                    </>
+                  )}
+                </Field>
+
+                <Field label="External ID" help="Optional">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      value={form.external_id}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, external_id: e.target.value }))
+                      }
+                      placeholder="External ID (optional)"
+                    />
+                  )}
+                </Field>
+
+                <Field label="Date" help={eventScheduleCaution(form.agenda_date, activeEvent?.start_date, activeEvent?.end_date)}>
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      type="date"
+                      value={form.agenda_date}
+                      onFocus={() => {
+                        if (!form.id && !form.agenda_date && activeEvent?.start_date) {
+                          setForm((prev) => ({ ...prev, agenda_date: activeEvent.start_date || "" }));
+                        }
+                      }}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, agenda_date: e.target.value }))
+                      }
+                    />
+                  )}
+                </Field>
+
+                {/* Recurring Event Placeholder UI -- inert (no onChange
+                    handler, matches its pre-migration behavior); the
+                    capability itself does not exist yet anywhere in the
+                    backend. The prior "after Amana" copy named a specific
+                    past Event as the unlock milestone -- Amana has since
+                    concluded with no such capability delivered, so that
+                    wording was stale/inaccurate rather than merely dated. */}
+                <Field
+                  label="Recurring"
+                  help="Recurring item generation is not yet available."
+                >
+                  {(controlProps) => (
+                    <Select
+                      {...controlProps}
+                      defaultValue="none"
+                      title="Recurring agenda items are not yet supported."
+                    >
+                      <option value="none">Does Not Repeat</option>
+                      <option value="daily">Daily</option>
+                      <option value="weekdays">Weekdays</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="custom">Custom…</option>
+                    </Select>
+                  )}
+                </Field>
+
+                <Field label="Start">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      type="time"
+                      value={form.start_time}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, start_time: e.target.value, end_time: prev.id ? prev.end_time : endAfterStartChange(prev.end_time, e.target.value, prev.start_time) }))
+                      }
+                    />
+                  )}
+                </Field>
+
+                <Field label="End">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      type="time"
+                      value={form.end_time}
+                      min={form.start_time || undefined}
+                      onFocus={() => {
+                        if (!form.id && !form.end_time && form.start_time) {
+                          setForm((prev) => ({ ...prev, end_time: prev.start_time }));
+                        }
+                      }}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, end_time: e.target.value }))
+                      }
+                    />
+                  )}
+                </Field>
+
+                <Field label="Sort">
+                  {(controlProps) => (
+                    <Input
+                      {...controlProps}
+                      value={form.sort_order}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, sort_order: e.target.value }))
+                      }
+                      placeholder="Sort"
+                    />
+                  )}
+                </Field>
+
+                <div style={{ display: "flex", alignItems: "center" }}>
+                  <Checkbox
+                    label="Published"
+                    checked={form.is_published}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        is_published: e.target.checked,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <Field label="Description">
+                {(controlProps) => (
+                  <Textarea
+                    {...controlProps}
+                    value={form.description}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, description: e.target.value }))
+                    }
+                    placeholder="Description"
+                    rows={2}
+                  />
+                )}
+              </Field>
+
+              {error ? <Alert tone="danger">{error}</Alert> : null}
+              <FormActions className="record-editor-actions">
+                <AppButton
+                  variant="primary"
+                  type="submit"
+                  disabled={saving}
+                >
+                  {saving ? "Saving..." : form.id ? "Update Item" : "Add Item"}
+                </AppButton>
+
+                <AppButton
+                  variant="secondary"
+                  onClick={openBlankEditor}
+                  disabled={saving}
+                >
+                  New Blank
+                </AppButton>
+
+                <AppButton
+                  variant="secondary"
+                  onClick={() => void closeEditor()}
+                  disabled={saving}
+                >
+                  Cancel
+                </AppButton>
+
+                {form.id ? (
+                  <AppButton
+                    variant="danger"
+                    onClick={() => void deleteItem(form.id)}
+                    disabled={saving}
+                  >
+                    Delete Selected
+                  </AppButton>
+                ) : null}
+              </FormActions>
+              </div>
+              ) : null}
+            </div>
+          </PageSection>
+          </form>
+          </AgendaEditorSurface>
+
+          <PageSection variant="section">
+            <div style={{ display: "grid", gap: "var(--space-3)" }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "var(--space-2)",
+                  flexWrap: "wrap",
+                  alignItems: "flex-start",
+                }}
+              >
+                <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+                  {categories.map((category) => {
+                    const cat = agendaCategories.find(
+                      (c) =>
+                        c.name.trim().toLowerCase() ===
+                        category.trim().toLowerCase(),
+                    );
+
+                    const bgColor =
+                      category === "All" ? "#ffffff" : cat?.color || "#f3f4f6";
+
+                    const selected = filterCategory === category;
+
+                    return (
+                      <button
+                        key={category}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setFilterCategory(category)}
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          border: selected
+                            ? "2px solid #1d4ed8"
+                            : "1px solid #d1d5db",
+                          background: bgColor,
+                          cursor: "pointer",
+                          fontSize: 13,
+                          fontWeight: selected ? 700 : 500,
+                          boxShadow: selected
+                            ? "0 0 0 2px rgba(37,99,235,0.15)"
+                            : "none",
+                          transition: "all .15s ease",
+                        }}
+                      >
+                        {category}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <FormActions>
+                  <AppButton
+                    variant="primary"
+                    onClick={() => void saveOrder()}
+                    disabled={savingOrder}
+                  >
+                    {savingOrder ? "Saving Order..." : "Save Order"}
+                  </AppButton>
+                  <AppButton
+                    variant="secondary"
+                    aria-pressed={forceDesktopDrag}
+                    onClick={() => setForceDesktopDrag((prev) => !prev)}
+                  >
+                    {forceDesktopDrag ? "Desktop Drag On" : "Desktop Drag Off"}
+                  </AppButton>
+                </FormActions>
+                <FormActions className="app-action-cluster">
+                  <select
+                    aria-label="Filter print by day"
+                    value={printDayFilter}
+                    onChange={(e) => setPrintDayFilter(e.target.value)}
+                    className="app-control"
+                  >
+                    <option value="all">All Days</option>
+
+                    {calendarDays.map((day) => (
+                      <option key={day} value={day}>
+                        {formatAgendaDate(day)}
+                      </option>
+                    ))}
+                  </select>
+
+                  <AppButton variant="secondary" onClick={handlePrintAgenda}>
+                    Print
+                  </AppButton>
+                </FormActions>
+              </div>
+
+              <p className="app-subtle-text" style={{ margin: 0 }}>
+                {useButtonReorder
+                  ? 'Button reorder mode: use ↑ and ↓, then click "Save Order".'
+                  : 'Desktop drag mode: drag rows by ☰, then click "Save Order".'}
+              </p>
+            </div>
+          </PageSection>
+
+          <PageSection title="Visual Agenda Editor" titleStyle={{ margin: 0 }}>
+            <div style={{ display: "grid", gap: "var(--space-3)" }}>
+              <p className="app-subtle-text" style={{ margin: 0 }}>
+                Select an item, then choose Edit or double-click it. Drag and resize
+                items visually; changes are synchronized with the properties panel
+                and the agenda list below.
+              </p>
+              <FormActions>
+                <AppButton variant="secondary" disabled={!form.id || loading}
+                  onClick={() => {
+                    const selected = items.find((item) => item.id === form.id);
+                    if (selected) {void requestOpenEditorForItem(selected);}
+                  }}>
+                  Edit selected item
+                </AppButton>
+                <AppButton
+                  variant="secondary"
+                  aria-pressed={compactCalendarView}
+                  onClick={() => setCompactCalendarView((prev) => !prev)}
+                >
+                  {compactCalendarView ? "Compact View On" : "Compact View Off"}
+                </AppButton>
+                <AppButton variant="secondary" disabled={!calendarDays.length}
+                  onClick={() => setDayWidths(Object.fromEntries(calendarDays.map((day) => [day, fittedDayWidth(day)])))}>
+                  Fit all days
+                </AppButton>
+                <AppButton variant="tertiary" disabled={!calendarDays.length}
+                  onClick={() => setDayWidths({})}>Reset widths</AppButton>
+              </FormActions>
+              <p id="agenda-width-help" className="app-subtle-text" style={{ margin: 0 }}>
+                Drag a day’s right divider; double-click to fit. Use arrow keys on a divider,
+                or open Day width for touch controls. Fit measures displayed text (including overlapping items),
+                within 180–720 px; long text still wraps. Widths last until you leave or change Event.
+              </p>
+              {/* Specialized calendar interactions remain local (blueprint Part 12). */}
+              <div
+                ref={calendarWidthRootRef}
+                style={{
+                  border: "1px solid #d1d5db",
+                  borderRadius: 12,
+                  background: "#ffffff",
+                  overflow: "auto",
+                  maxWidth: "100%",
+                }}
+              >
+                {calendarDays.length === 0 ? (
+                  <div style={{ padding: 16, color: "#666" }}>
+                    Add agenda dates and start times to begin visually editing
+                    your event schedule.
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      width: calendarWidth,
+                      minWidth: calendarWidth,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: calendarColumns,
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 4,
+                        background: "#f8fafc",
+                        borderBottom: "1px solid #e5e7eb",
+                      }}
+                    >
+                      <div style={{ padding: 10, fontWeight: 800 }}>Time</div>
+                      {calendarDays.map((day) => (
+                        <div
+                          key={day}
+                          data-agenda-width-day={day}
+                          style={{
+                            position: "relative",
+                            minWidth: 0,
+                            padding: "10px calc(var(--touch-target-min) + 4px) 10px 10px",
+                            overflowWrap: "anywhere",
+                            fontWeight: 900,
+                            borderLeft: "1px solid #e5e7eb",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "flex-start",
+                            gap: 2,
+                          }}
+                        >
+                          <span data-agenda-fit-text
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              textTransform: "uppercase",
+                              color: "#64748b",
+                              letterSpacing: "0.02em",
+                              lineHeight: "1.2",
+                            }}
+                          >
+                            {new Date(`${day}T00:00:00`).toLocaleDateString([], {
+                              weekday: "long",
+                            })}
+                          </span>
+                          <span data-agenda-fit-text
+                            style={{
+                              fontSize: 16,
+                              fontWeight: 800,
+                              color: "#111827",
+                              lineHeight: "1.25",
+                            }}
+                          >
+                            {formatAgendaDate(day)}
+                          </span>
+                          <details>
+                            <summary style={{ minHeight: "var(--touch-target-min)", cursor: "pointer", display: "list-item" }}>Day width</summary>
+                            <Field label={`Width for ${formatAgendaDate(day)}: ${calendarDayWidth(day)} px`}>
+                              {(props) => <Input {...props} type="range" step={10} min={minimumDayWidth} max={maximumDayWidth}
+                                value={calendarDayWidth(day)} style={{ width: "100%", minHeight: "var(--touch-target-min)" }}
+                                onChange={(event) => {
+                                  if (event.target.value) {setCalendarDayWidth(day, event.target.valueAsNumber);}
+                                }} />}
+                            </Field>
+                            <AppButton variant="tertiary" onClick={() => setCalendarDayWidth(day, fittedDayWidth(day))}>Fit day</AppButton>
+                          </details>
+                          <AppButton variant="tertiary" role="separator" aria-orientation="vertical"
+                            aria-label={`Resize ${formatAgendaDate(day)}`} aria-describedby="agenda-width-help"
+                            aria-valuemin={minimumDayWidth} aria-valuemax={maximumDayWidth}
+                            aria-valuenow={calendarDayWidth(day)} aria-valuetext={`${calendarDayWidth(day)} pixels`}
+                            style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: "var(--touch-target-min)",
+                              padding: 0, borderRadius: 0, cursor: "col-resize", touchAction: "pan-y pinch-zoom", userSelect: "none" }}
+                            onPointerDown={(event) => {
+                              if (event.button !== 0 || !event.isPrimary) {return;}
+                              event.currentTarget.setPointerCapture(event.pointerId);
+                              dayWidthDragRef.current = { pointerId: event.pointerId, day, x: event.clientX, width: calendarDayWidth(day) };
+                            }}
+                            onPointerMove={(event) => {
+                              const drag = dayWidthDragRef.current;
+                              if (drag?.pointerId === event.pointerId && drag.day === day) {
+                                setCalendarDayWidth(day, drag.width + event.clientX - drag.x);
+                              }
+                            }}
+                            onPointerUp={() => { dayWidthDragRef.current = null; }}
+                            onPointerCancel={() => { dayWidthDragRef.current = null; }}
+                            onLostPointerCapture={() => { dayWidthDragRef.current = null; }}
+                            onDoubleClick={() => setCalendarDayWidth(day, fittedDayWidth(day))}
+                            onKeyDown={(event) => {
+                              const width = calendarDayWidth(day);
+                              if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                                event.preventDefault();
+                                setCalendarDayWidth(day, width + (event.key === "ArrowRight" ? 1 : -1) * (event.shiftKey ? 50 : 10));
+                              } else if (event.key === "Home" || event.key === "End") {
+                                event.preventDefault();
+                                setCalendarDayWidth(day, event.key === "Home" ? minimumDayWidth : maximumDayWidth);
+                              } else if (event.key === "Enter") {
+                                event.preventDefault(); setCalendarDayWidth(day, fittedDayWidth(day));
+                              }
+                            }}><span aria-hidden="true">↔</span></AppButton>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: calendarColumns,
+                        minHeight: calendarGridHeight,
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: "relative",
+                          height: calendarGridHeight,
+                          background: "#f8fafc",
+                          borderRight: "1px solid #e5e7eb",
+                        }}
+                      >
+                        {calendarTimeSlots.slice(0, -1).map((slot) => (
+                          <div
+                            key={slot}
+                            style={{
+                              height: AGENDA_SLOT_HEIGHT,
+                              borderTop:
+                                slot % 60 === 0
+                                  ? "1px solid #cbd5e1"
+                                  : "1px solid transparent",
+                              borderBottom: "1px solid #eef2f7",
+                              padding: "2px 8px",
+                              fontSize: slot % 60 === 0 ? 12 : 10,
+                              fontWeight: slot % 60 === 0 ? 800 : 500,
+                              color: slot % 60 === 0 ? "#334155" : "#94a3b8",
+                            }}
+                          >
+                            {slot % 60 === 0 ? formatCalendarSlot(slot) : ""}
+                          </div>
+                        ))}
+                      </div>
+
+                      {calendarDays.map((day, dayIdx) => {
+                        const dayItems = filteredItems.filter(
+                          (item) => item.agenda_date === day,
+                        );
+
+                        const blocks = buildAgendaCalendarBlocks(
+                          dayItems,
+                          calendarRange.start,
+                        );
+
+                        // Alternate background color by column index
+                        const columnBg = dayIdx % 2 === 0 ? "#ffffff" : "#f8fafc";
+
+                        return (
+                          <div
+                            key={day}
+                            data-agenda-calendar-day={day}
+                            data-agenda-width-day={day}
+                            onDragOver={(e) => handleCalendarDragOver(e, day)}
+                            onDragLeave={() => setCalendarDropPreview(null)}
+                            onDrop={(e) => handleCalendarColumnDrop(e, day)}
+                            style={{
+                              position: "relative",
+                              height: calendarGridHeight,
+                              borderLeft: "1px solid #e5e7eb",
+                              background: columnBg,
+                            }}
+                          >
+                            {calendarTimeSlots.slice(0, -1).map((slot) => (
+                              <div
+                                key={`${day}-${slot}`}
+                                style={{
+                                  height: AGENDA_SLOT_HEIGHT,
+                                  borderTop:
+                                    slot % 60 === 0
+                                      ? "1px solid #dbe4ef"
+                                      : "1px solid transparent",
+                                  borderBottom: "1px solid #f1f5f9",
+                                  background: "transparent",
+                                }}
+                              />
+                            ))}
+
+                            {calendarDropPreview?.day === day ? (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top:
+                                    Math.floor(
+                                      (calendarDropPreview.minutes -
+                                        calendarRange.start) /
+                                        AGENDA_SLOT_MINUTES,
+                                    ) * AGENDA_SLOT_HEIGHT,
+                                  left: 0,
+                                  right: 0,
+                                  height: 0,
+                                  borderTop: "3px solid #2563eb",
+                                  boxShadow: "0 0 0 2px rgba(37,99,235,0.18)",
+                                  pointerEvents: "none",
+                                  zIndex: 5,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    right: 8,
+                                    top: -24,
+                                    background: "#2563eb",
+                                    color: "#ffffff",
+                                    WebkitTextFillColor: "#ffffff",
+                                    fontSize: 11,
+                                    fontWeight: 900,
+                                    padding: "3px 7px",
+                                    borderRadius: 999,
+                                  }}
+                                >
+                                  {minutesToTime(calendarDropPreview.minutes)}
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {calendarResizePreview ? (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top:
+                                    Math.floor(
+                                      (calendarResizePreview.minutes -
+                                        calendarRange.start) /
+                                        AGENDA_SLOT_MINUTES,
+                                    ) * AGENDA_SLOT_HEIGHT,
+                                  left: 0,
+                                  right: 0,
+                                  height: 0,
+                                  borderTop: "3px dashed #16a34a",
+                                  boxShadow: "0 0 0 2px rgba(22,163,74,0.14)",
+                                  pointerEvents: "none",
+                                  zIndex: 6,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    right: 8,
+                                    top: -24,
+                                    background: "#16a34a",
+                                    color: "#ffffff",
+                                    WebkitTextFillColor: "#ffffff",
+                                    fontSize: 11,
+                                    fontWeight: 900,
+                                    padding: "3px 7px",
+                                    borderRadius: 999,
+                                  }}
+                                >
+                                  {calendarResizeDragRef.current?.edge === "start"
+                                    ? "Starts"
+                                    : "Ends"}{" "}
+                                  {minutesToTime(calendarResizePreview.minutes)}
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {blocks.map((block) => {
+                              const item = block.item;
+                              const isSelected = selectedItemId === item.id;
+                              const laneWidth = 100 / block.laneCount;
+                              const left = block.lane * laneWidth;
+
+                              return (
+                                <button
+                                  key={item.id}
+                                  data-agenda-lanes={block.laneCount}
+                                  type="button"
+                                  draggable
+                                  onDragStart={(e) =>
+                                    handleCalendarDragStart(e, item.id)
+                                  }
+                                  onDragEnd={() => {
+                                    setCalendarDraggingId(null);
+                                    setCalendarDropPreview(null);
+                                  }}
+                                  onClick={() => selectAgendaItem(item)}
+                                  onDoubleClick={() => void requestOpenEditorForItem(item)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      void requestOpenEditorForItem(item);
+                                    }
+                                  }}
+                                  style={{
+                                    position: "absolute",
+                                    top: block.top + 2,
+                                    left: `calc(${left}% + 4px)`,
+                                    width: `calc(${laneWidth}% - 8px)`,
+                                    height: block.height,
+
+                                    borderTop: isSelected
+                                      ? "3px solid #2563eb"
+                                      : "1px solid rgba(15,23,42,0.16)",
+
+                                    borderRight: isSelected
+                                      ? "3px solid #2563eb"
+                                      : "1px solid rgba(15,23,42,0.16)",
+
+                                    borderBottom: isSelected
+                                      ? "3px solid #2563eb"
+                                      : "1px solid rgba(15,23,42,0.16)",
+
+                                    borderLeft: `6px solid ${getAgendaColor(
+                                      item.category || "",
+                                      item.color || "",
+                                    )}`,
+
+                                    borderRadius: 10,
+                                    background: isSelected ? "#eff6ff" : "#ffffff",
+                                    color: "#111827",
+                                    textAlign: "left",
+                                    padding: "16px 8px 16px",
+                                    cursor: "pointer",
+                                    overflow: "hidden",
+                                    overflowWrap: "anywhere",
+
+                                    boxShadow: isSelected
+                                      ? "0 0 0 3px rgba(37,99,235,.25), 0 6px 16px rgba(0,0,0,.15)"
+                                      : calendarDraggingId === item.id
+                                        ? "0 0 0 3px rgba(96,165,250,.35)"
+                                        : "0 2px 8px rgba(15,23,42,.10)",
+
+                                    transform: isSelected
+                                      ? "scale(1.02)"
+                                      : "scale(1)",
+
+                                    transition: "all .15s ease",
+
+                                    zIndex: isSelected ? 20 : block.lane + 1,
+                                  }}
+                                  title="Click to select. Double-click or press Enter to edit. Drag to move; drag top/bottom handles to change time."
+                                >
+                                  <span
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      beginCalendarStartResize(e, item);
+                                    }}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                    }}
+                                    onDoubleClick={(event) => event.stopPropagation()}
+                                    draggable={false}
+                                    style={{
+                                      position: "absolute",
+                                      left: 12,
+                                      right: 12,
+                                      top: 4,
+                                      height: 8,
+                                      borderRadius: 999,
+                                      background: "rgba(37,99,235,0.24)",
+                                      cursor: "ns-resize",
+                                      zIndex: 7,
+                                    }}
+                                    title="Drag to change start time"
+                                  />
+
+                                  <div data-agenda-fit-text style={{ fontWeight: 900, fontSize: 12 }}>
+                                    {item.title}
+                                  </div>
+
+                                  <div data-agenda-fit-text
+                                    style={{
+                                      fontSize: 11,
+                                      color: "#475569",
+                                      marginTop: 3,
+                                    }}
+                                  >
+                                    {formatAgendaTime(
+                                      item.start_time,
+                                      item.end_time,
+                                    )}
+                                  </div>
+
+                                  <div data-agenda-fit-text
+                                    style={{
+                                      fontSize: 10,
+                                      color: "#64748b",
+                                      fontWeight: 800,
+                                      marginTop: 2,
+                                    }}
+                                  >
+                                    {formatDurationLabel(
+                                      agendaDurationMinutes(item),
+                                    )}
+                                  </div>
+
+                                  {item.location ? (
+                                    <div data-agenda-fit-text
+                                      style={{
+                                        fontSize: 11,
+                                        color: "#334155",
+                                        marginTop: 3,
+                                      }}
+                                    >
+                                      📍 {item.location}
+                                    </div>
+                                  ) : null}
+
+                                  <span
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      beginCalendarEndResize(e, item);
+                                    }}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                    }}
+                                    onDoubleClick={(event) => event.stopPropagation()}
+                                    draggable={false}
+                                    style={{
+                                      position: "absolute",
+                                      left: 12,
+                                      right: 12,
+                                      bottom: 4,
+                                      height: 8,
+                                      borderRadius: 999,
+                                      background: "rgba(22,163,74,0.28)",
+                                      cursor: "ns-resize",
+                                      zIndex: 7,
+                                    }}
+                                    title="Drag to change end time"
+                                  />
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </PageSection>
+
+          <PageSection
+            title={filteredItems.length === 0 ? "Agenda Items" : `Agenda Items (${filteredItems.length})`}
+            titleStyle={{ margin: 0 }}
+          >
+            {filteredItems.length === 0 ? (
+              <EmptyState message="No agenda items found." />
+            ) : (
+              <div style={{ display: "grid" }}>
+                {printableAgendaItems.map((item) => {
+                  const isSelected = selectedItemId === item.id;
+                  return (
+                    <div
+                      key={item.id}
+                      {...recordRowProps(item, selectAgendaItem, (record) => { void requestOpenEditorForItem(record); })}
+                      onDragOver={!useButtonReorder ? handleDragOver : undefined}
+                      onDrop={
+                        !useButtonReorder ? () => handleDrop(item.id) : undefined
+                      }
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: useButtonReorder
+                          ? isCompact
+                            ? "1fr"
+                            : "72px 1fr auto"
+                          : isCompact
+                            ? "1fr"
+                            : "52px 1fr auto",
+                        gap: 12,
+                        padding: isCompact ? 16 : 14,
+                        borderTop: "1px solid #eee",
+                        background: isSelected
+                          ? "#dbeafe"
+                          : draggedId === item.id
+                            ? "#f8fafc"
+                            : "white",
+                        borderLeft: `${isSelected ? 8 : 6}px solid ${getAgendaColor(
+                          item.category || "",
+                          item.color || "",
+                        )}`,
+                        boxShadow: isSelected
+                          ? "inset 0 0 0 2px #2563eb"
+                          : "none",
+                        transition: "all .15s ease",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: 6,
+                          alignContent: "start",
+                          justifyItems: "center",
+                          gridAutoFlow: isCompact ? "column" : "row",
+                          justifyContent: isCompact ? "start" : "center",
+                        }}
+                      >
+                        {useButtonReorder ? (
+                          <>
+                            <button
+                              type="button"
+                              aria-label="Move item up"
+                              onClick={() => moveItemUp(item.id)}
+                              disabled={printableAgendaItems[0]?.id === item.id}
+                              style={{
+                                padding: "6px 8px",
+                                minWidth: 40,
+                                cursor:
+                                  printableAgendaItems[0]?.id === item.id
+                                    ? "default"
+                                    : "pointer",
+                              }}
+                              title="Move up"
+                            >
+                              ↑
+                            </button>
+
+                            <button
+                              type="button"
+                              aria-label="Move item down"
+                              onClick={() => moveItemDown(item.id)}
+                              disabled={
+                                printableAgendaItems[
+                                  printableAgendaItems.length - 1
+                                ]?.id === item.id
+                              }
+                              style={{
+                                padding: "6px 8px",
+                                minWidth: 40,
+                                cursor:
+                                  printableAgendaItems[
+                                    printableAgendaItems.length - 1
+                                  ]?.id === item.id
+                                    ? "default"
+                                    : "pointer",
+                              }}
+                              title="Move down"
+                            >
+                              ↓
+                            </button>
+                          </>
+                        ) : (
+                          <div
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, item.id)}
+                            onDragEnd={() => setDraggedId(null)}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 20,
+                              color: "#666",
+                              cursor: "grab",
+                              userSelect: "none",
+                              width: 40,
+                              height: 40,
+                            }}
+                            title="Drag to reorder"
+                          >
+                            ☰
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => selectAgendaItem(item)}
+                        onDoubleClick={() => void requestOpenEditorForItem(item)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            void requestOpenEditorForItem(item);
+                          }
+                        }}
+                        style={{
+                          textAlign: "left",
+                          background: "transparent",
+                          border: "none",
+                          padding: 0,
+                          cursor: "pointer",
+                          display: "grid",
+                          gap: 6,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 10,
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontWeight: 800,
+                              fontSize: isCompact ? 16 : 15,
+                              color: "#111827",
+                            }}
+                          >
+                            {item.title}
+                          </div>
+
+                          <StatusBadge tone={item.is_published ? "success" : "neutral"}>
+                            {item.is_published ? "Published" : "Hidden"}
+                          </StatusBadge>
+
+                          {isSelected ? <StatusBadge tone="info">Editing</StatusBadge> : null}
+                        </div>
+
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: "#475569",
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <span>{formatAgendaDate(item.agenda_date)}</span>
+                          <span>•</span>
+                          <span>
+                            {formatAgendaTime(item.start_time, item.end_time)}
+                          </span>
+                          <span>•</span>
+                          <span>
+                            {formatDurationLabel(agendaDurationMinutes(item))}
+                          </span>
+                        </div>
+
+                        {item.location ? (
+                          <div
+                            style={{
+                              fontSize: 13,
+                              color: "#334155",
+                            }}
+                          >
+                            📍 {item.location}
+                          </div>
+                        ) : null}
+
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 700,
+                              padding: "4px 8px",
+                              borderRadius: 999,
+                              background: "#f1f5f9",
+                              color: "#334155",
+                            }}
+                          >
+                            {item.category || "No category"}
+                          </span>
+
+                          {item.speaker ? (
+                            <span
+                              style={{
+                                fontSize: 12,
+                                color: "#475569",
+                              }}
+                            >
+                              Speaker: {item.speaker}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        {item.description ? (
+                          <div
+                            style={{
+                              fontSize: 13,
+                              color: "#555",
+                              lineHeight: 1.45,
+                            }}
+                          >
+                            {item.description}
+                          </div>
+                        ) : null}
+
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 10,
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                            marginTop: 2,
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: 14,
+                                height: 14,
+                                borderRadius: 999,
+                                background: item.color || "#cbd5e1",
+                                border: "1px solid rgba(0,0,0,0.15)",
+                                display: "inline-block",
+                              }}
+                            />
+
+                            <span style={{ fontSize: 12, color: "#777" }}>
+                              {item.color || "Auto Color"}
+                            </span>
+                          </div>
+
+                          <span style={{ fontSize: 12, color: "#777" }}>
+                            Sort: {item.sort_order ?? "—"}
+                          </span>
+
+                          {item.source ? (
+                            <span style={{ fontSize: 12, color: "#777" }}>
+                              Source: {item.source}
+                            </span>
+                          ) : null}
+                        </div>
+                      </button>
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: 8,
+                          alignContent: "start",
+                          gridTemplateColumns: isCompact ? "1fr 1fr" : "1fr",
+                        }}
+                      >
+                        <AppButton
+                          variant="secondary"
+                          onClick={() => void requestOpenEditorForItem(item)}
+                          aria-label={`Edit ${item.title || "agenda item"}`}
+                        >
+                          Edit
+                        </AppButton>
+                        <AppButton
+                          variant="tertiary"
+                          onClick={() => void togglePublished(item)}
+                        >
+                          {item.is_published ? "Unpublish" : "Publish"}
+                        </AppButton>
+
+                        <AppButton
+                          variant="danger"
+                          onClick={() => void deleteItem(item.id)}
+                        >
+                          Delete
+                        </AppButton>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </PageSection>
+          </>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Keep one editor and one form state; the shared dialog owns focus and scroll lock.
+function AgendaEditorSurface({ open, onClose, children }: {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <>
+      {!open ? children : null}
+      <Dialog open={open} onClose={onClose} title="Agenda item editor"
+        className="app-dialog-wide record-editor-dialog" dismissOnBackdrop={false}>
+        {open ? children : null}
+      </Dialog>
+    </>
+  );
+}
+
+export default function AdminAgendaPage() {
+  const { admin } = useAdmin();
+  // AdminRouteGuard with no requiredPermission still enforces the
+  // baseline "must be an authenticated, linked admin" check (redirects
+  // to login otherwise) -- only the legacy can_manage_agenda permission
+  // gate is removed. Actual page-content access is now decided inside
+  // AdminAgendaPageInner via the governed event.agenda.view/manage
+  // Task Authority check (hasAgendaAccess), not a role-name permission.
+  return (
+    <AdminRouteGuard>
+      <AdminShellAdapter
+        pageTitle="Admin Agenda"
+        backTarget={{ href: "/admin/dashboard", label: "Dashboard" }}
+      >
+        <AdminAgendaPageInner key={admin?.adminUser.user_id ?? "signed-out"} />
+      </AdminShellAdapter>
+    </AdminRouteGuard>
+  );
+}

@@ -414,6 +414,305 @@ The handoff is a report, not a second project memory system. Durable decisions b
 
 ## Development checkpoint
 
+### Tenant and standard-layout release — 2026-10-10 (Approved release preparation)
+
+Pap requested committing and pushing the complete accepted local work to main,
+and explicitly authorized applying the three production migrations first.
+The pending cohort includes Tenant context and full-card selection, governed
+Tenant type creation and field help, shared permission baselines, Agenda
+category creation, Event Location Code and schedule hints, and the common
+responsive action layout described below. Google credential configuration
+is deferred at Pap's request; no Google key was supplied or configured.
+The missing-key response is displayed without raising the development overlay.
+
+Release validation uncovered unsupported helper exports in 25 existing Next
+page entries, one API route and the organizer layout. Their implementations
+were moved unchanged into sibling modules, leaving framework-valid route
+entries; helper imports and source tests follow the implementation modules.
+Existing test-only TypeScript errors were corrected without disabling checks.
+The authoritative normal `npm run build` (Turbopack) passes, `tsc --noEmit`
+passes, and changed-source lint has zero errors (29 existing warnings).
+Disposable full database replay rebuilt all 278 migrations from zero; all
+three new authorization/audit/location-code rollback fixtures pass locally.
+The broad regression run covers 68 test files (1,539 pass / 7 fail); all seven failures reproduce on
+the old main baseline: three obsolete announcement inline-form assertions,
+Nearby dirty-cancel confirmation, Print Settings permission-source assertion,
+validation-rule action-source assertion, and canonical admin-cache acceptance.
+These remain recorded defects; they are not silently marked passing.
+Representative responsive component checks at 320/390/768/1280px pass.
+
+Production project `lastlzlewonsmwtolpvh` was verified via the signed-in
+Supabase dashboard. The three checked-in migration bodies were applied in
+one transaction guarded by the starting ledger (275 through `20261102000000`)
+and recorded in `supabase_migrations.schema_migrations`. Readback confirms
+278 through `20261105000000`, the Tenant type RPC and Event Location Code
+column, six creation defaults and three edit defaults preserving old callers,
+and anonymous Tenant type execution denied. The transaction contained no
+business-record mutation. Earlier local-only and pending-gate notes below
+are historical observations superseded by this release record.
+Commit, push and live activation verification are the remaining steps.
+
+
+### Standard page action layout — 2026-10-10 (Local implementation)
+
+Pap requested an all-page layout review after scattered Agenda controls,
+then explicitly directed all pages to follow a standard layout. Shared
+PageHeader now keeps heading/actions together on the left and stacks actions
+beneath the heading at narrow widths. Ordinary action clusters, shared
+wrapping rows and dialog footers align left; form actions retain source order
+and phone full-width button treatment (up to 599px); tablet actions wrap.
+Check-In retains its established larger compact touch targets. Page-specific action rows
+across Admin, Member and Vendor were migrated; auto-fit page grids and shared
+toolbars can shrink below their preferred column width. The Central UI
+Standard blueprint records the governing action-placement rule. Status-only
+rows and specialized spatial controls retain their meaningful composition.
+No authority, database or workflow changes; no commit, push or deployment.
+Validation: 256 focused Agenda/Check-In/Parking/shared-action/dialog tests passed, changed-file
+lint has zero errors (existing warnings remain), and browser component checks
+at 320/390/768/1280px passed with no horizontal overflow and narrow header
+stacking. These are representative component checks, not proof of every
+authenticated page in Safari. Claude's independent read-only cross-page layout
+review covered all 102 route pages by source sweep, with contextual reads of
+40 pages. Remaining ordinary action clusters and identified narrow-screen
+risks were corrected; status-only and spatial arrangements were retained.
+The legacy ADR-002 file was found empty; this pre-existing documentation gap
+is not evidence of an implemented architecture contract.
+
+Pap confirms the full-card Tenant selector works. Working-Tenant switching
+and other Tenant flows remain separate acceptance checks.
+
+
+### Governed Tenant type creation — 2026-10-10 (Implemented and tested locally)
+
+Pap requested additional Tenant types beyond the seeded RV Club, then
+clarified their eventual onboarding purpose: suggest defaults from common
+patterns among Tenants of the same type while all tools remain available,
+subject to independent ordinary role/scope permissions. ADR-014 §12.1 records
+that direction; recommendations/templates are future work, not implemented.
+
+- **Add tenant type** beside the shared create/edit dropdown opens a name,
+  unique lowercase code, and optional audit-reason dialog. A successful save
+  adds and selects the saved option in the Tenant draft; the Tenant still
+  requires its own Save/Create action. Catalog creation is immediate and is
+  not undone by canceling the enclosing Tenant form.
+- Migration `20261103000000` adds the Platform-only `create_tenant_type` RPC
+  and immutable creation audit. Raw catalog writes remain closed; duplicate
+  codes/names and invalid fields fail without a partial catalog/audit row.
+  Existing classifications, tenants, authority and defaults are preserved.
+- **Local only:** `supabase migration up --local` applied the previously
+  pending logo migration and new type migration to the development database;
+  its ledger is 276 through `20261103000000`. Production remains recorded at
+  275 through `20261102000000`; no production migration was attempted.
+- **Validation:** isolated disposable Supabase full replay of 276 migrations
+  passed. Authorization/duplicate/validation/audit rollback fixtures passed
+  against both development and replay databases. Real authenticated Storage-
+  independent PostgREST type creation and dropdown-option readback passed in
+  the disposable replay stack, which was stopped afterward. 79 focused UI/
+  context tests passed; changed type/page lint passed. Local Tenant route
+  returns HTTP 200; typecheck retains only existing unrelated errors.
+- **Remaining:** Pap's local click/tap acceptance; commit/push/deployment and
+  the production migration remain pending separate release authorization.
+
+### Tenant field explanations — 2026-10-10 (Implemented locally)
+
+Agenda item Category is now a text field with existing active categories as
+suggestions, plus inline Save Category for Platform Admins. It reuses the
+governed `create_agenda_category` command; vocabulary remains shared and
+Platform-controlled. Existing names are selected case-insensitively; new
+categories use the selected color or blue default and remain saved even if
+the separate agenda-item draft is cancelled, explicitly explained inline.
+Creation errors preserve item edits; scope changes prevent stale selection.
+Validation: 115 Agenda tests and changed-page lint passed, no changed-page
+type errors, local authenticated creation/readback succeeded in a rolled-back
+transaction, and Agenda returned HTTP 200. Browser acceptance remains pending.
+No migration, commit or deployment for this change.
+
+Pap reported role defaults appearing entirely off on Permissions. Local DB
+evidence showed only 16 enabled Event Admin override rows; other roles had
+no rows. The access loader still had the established role baselines, but
+Permissions incorrectly treated absence of an override as false. Those
+unchanged presets now live in `lib/adminPermissionDefaults.ts`, shared by
+the access loader and Permissions display. Explicit false/true overrides
+take precedence; failed override reads show an error and block editing
+instead of displaying assumed states. No permission rows, grants or defaults
+were changed. Validation: 33 permission/access tests passed, lint has no
+errors (two existing Permissions warnings), no changed-file type errors,
+and local Permissions returned HTTP 200. Safari acceptance pending; no release.
+
+Pap requested stronger button definition on Admin Users. New now uses the
+existing primary treatment and Edit uses secondary. Shared secondary actions
+and shell navigation use a pale blue surface with stronger action borders
+and restrained shadows; primary/destructive semantics and explicit tertiary
+help actions remain intact. The Tenant card focus ring was aligned to the
+shared 2px geometry and registered in the shared focus-consumer test.
+Validation: 108 Admin Users/button tests passed; page lint has no errors
+(one existing hook warning), and local Admin Users returned HTTP 200.
+Visual acceptance remains with Pap. No release. Pap also confirmed automatic
+Event coordinate lookup succeeded after correcting the venue location.
+
+Event Details now loads, edits and saves Location Code, including coordinate
+auto-fill and save-time lookup. Its optimistic snapshot includes the code;
+`20261105000000_edit_event_location_code.sql` adds proposed/expected code
+arguments and a write flag to the guarded save, preserving old callers and
+rejecting stale code overwrites atomically. Local ledger is 278; production
+remains 275 and both location-code migrations are release gates. Local SQL
+creation/update/readback/stale-overwrite rejection passed and rolled back
+fixtures; 94 focused tests and changed-page lint passed, with no changed-page
+type errors. Event Admin returned HTTP 200. The exact screenshot address
+returned `found:false` from the local geocode endpoint. Missing coordinates
+now trigger another save-time lookup even when location text is unchanged;
+failed lookup still preserves Event details and any existing coordinate pair.
+No production writes or release. Newest migrations still need a full clean
+replay and Safari acceptance before promotion.
+
+Add Event now includes an optional Location Code distinct from the venue
+label, Event Code and manual coordinate pair. Shared coordinate resolution
+forwards it to the existing geocode contract (best effort, with manual
+coordinates taking precedence). The governed creation adapter forwards the
+trimmed code to the canonical Event creation RPC. New migration
+`20261104000000_add_event_location_code.sql` adds `events.location_code` and
+replaces the creation signature with an optional final code argument, retaining
+the existing authority, Tenant ownership, lifecycle and immutable creation
+audit contract; the code is included in persisted creation evidence and RPC
+readback. Local ledger is now 277 through this migration. Production remains
+275 through `20261102000000`; both Tenant type and Event location-code
+migrations remain production release gates. Validation: 35 focused tests
+passed; local authenticated SQL creation/readback/audit proof passed and
+rolled back its fixture; anonymous execute remains denied. Changed-file lint
+has no errors (two existing coordinate-test warnings); typecheck reports no
+changed-file errors, with baseline errors elsewhere. Local Add Event returned
+HTTP 200. No commit/push/deployment; Safari acceptance and clean full migration
+replay for this newest migration remain pending.
+
+Pap clarified that saving ends automatic following. Existing Event editors
+now change only the edited start field; Admin Agenda end-following and empty
+date/time seeding are limited to new items. Organizer Event/Agenda editors
+disable those creation hints when editing persisted entries. Saved ends are
+preserved even when the start changes; ordering validation still requires
+explicit correction if the user creates an invalid range. Validation: 117
+focused tests and changed-file ESLint passed. Local only; browser acceptance
+pending and no commit/deployment.
+
+Follow-up: an end matching the previous start now follows start changes in
+both directions in Admin/organizer Event forms and Admin Agenda time pairs.
+A separately chosen later end is preserved; invalid earlier ends still move
+forward. Repeated forward/backward date changes are covered by a regression
+test. Validation: 94 focused tests and changed-file ESLint passed; Safari
+acceptance remains pending. The change remains local and uncommitted.
+
+Pap reported that Add Event's end selector stopped following after the start
+date changed. Empty or now-earlier ends move to the new start in Admin and
+organizer Event forms and Admin Agenda time pairs; later ends stay unchanged,
+and clearing the start preserves the end. Event-boundary cautions remain
+nonblocking. Validation: 93 focused tests including the October 14-to-28
+regression passed, changed-file ESLint passed, and Add Event returned HTTP
+200. Safari picker interaction still awaits Pap's verification; no release.
+
+Pap clarified that event dates are picker starting points, not restrictions
+on scheduling outside the Event. Agenda dates, organizer checklist targets,
+announcement expiry and vendor notice expiry now seed empty selectors from
+the Event start and show nonblocking caution outside its date range. Existing
+values are preserved. Events store calendar dates, not overall times, so
+datetime expiry selectors use explicitly explained, editable midnight as
+their initial time. Recorded cancellation correction retains its historical
+timestamp. Start/end ordering validation remains separate from Event-boundary
+warnings. Validation: 138 of 139 focused tests passed; the remaining existing
+checklist source test expects an obsolete literal return-link expression.
+New boundary tests and changed-file lint passed; typecheck has no errors in
+changed files, with unrelated baseline errors remaining. Local announcements
+returned HTTP 200. Browser acceptance pending; no commit or deployment.
+
+App-wide selector review additionally covered organizer Event creation/editing
+and both Admin/organizer Agenda forms. Empty organizer Event ends start from
+the chosen start; empty Agenda dates begin at the owning Event's start date,
+and organizer end-time entry begins at its start time when focused. Existing
+values and optional fields left untouched are preserved. Standalone checklist
+deadlines, notice expirations, and cancellation timestamps have no paired
+start selector and retain their existing behavior. Validation: 147 focused
+Agenda/organizer tests and changed-file ESLint passed; typecheck found no
+errors in changed files (unrelated baseline test errors remain); local Admin
+Agenda returned HTTP 200. User browser acceptance is pending; no deployment.
+
+Paired selectors in Event creation/editing and Agenda editing now seed an
+empty end date/time from the selected start, rather than today's date or
+current time. End selectors use the start as their minimum; previously
+entered ends are preserved for explicit user correction. No data writes
+occur until Save/Create. Validation: 94 Event/draft tests passed, changed
+page ESLint passed, and local Add Event returned HTTP 200. Safari picker
+acceptance remains pending. This change is local and uncommitted.
+
+Pap verified full-card Tenant selection works in Safari after the native
+button correction.
+
+After Pap reported the initial overlay did not select cards, the entire
+card was changed to the native button itself, removing the overlay and
+its hit-area/stacking dependency. Browser click acceptance remains pending.
+
+Tenant administration cards now select their settings workspace when clicked
+anywhere, using a native full-card button with Enter/Space support, visible
+focus and selected styling. The existing unsaved-edit confirmation still
+governs selection. This changes settings inspection only. Validation: 48
+Tenant page tests and page ESLint passed; local route returned HTTP 200.
+Safari visual acceptance remains with Pap; the change is not deployed.
+
+Add Tenant submission errors now receive focus and scroll into view inside
+the dialog, including repeated submissions with the same error. Entered
+values are preserved; missing organization code and slug are reported
+separately. Validation: 48 Tenant page tests passed, page ESLint passed,
+and local `/admin/tenants` returned HTTP 200. Visual focus/scroll acceptance
+remains to be checked in Pap's Safari session. This fix is local only.
+
+Pap requested selectable info circles for every field in Add Tenant. The
+create and shared Tenant metadata forms now use the existing HelpButton and
+Dialog to explain organization code, slug, organization/display names, app
+branding, logo URL/upload, favicon, each color, Tenant type, post-Event edit
+window, and audit reason. Each explanation includes relevant examples,
+optional/default behavior, and current limitations. Help actions sit beside,
+rather than inside, labels so keyboard interaction and input labels remain
+valid; the shared Dialog supports nested form-help dialogs and focus return.
+
+Validation: 70 focused tests passed; changed implementation lint has no
+errors (one existing Radio accessibility warning in Field.tsx); local
+`/admin/tenants` returned HTTP 200. No data/migration or permission changes.
+Browser tap/focus acceptance remains with Pap's local session. Neither this
+change nor the working-Tenant changes below are committed or deployed.
+
+### Explicit Admin working Tenant — 2026-10-10 (Implemented locally; not committed or deployed)
+
+Pap requested clear Tenant switching after inspecting the inactive EpicentraX
+Test Tenant (no Events) and encountering Saint George evaluations. Inspection
+confirmed that Platform Tenant settings selection did not change the shared
+Admin working Event; the screenshot alone does not establish unauthorized
+Tenant access.
+
+- Added a persistent **Working tenant** selector and account-bound canonical
+  Tenant selection. Explicit switching confirms leaving drafts across open
+  Admin tabs, clears the Event, retires old page loads, and returns to the
+  selected Tenant's dashboard. No Event is chosen automatically.
+- Admin Event queries and Tenant-target pickers are scoped to the selected
+  Tenant. The shared admission boundary verifies Event ownership before
+  admitting Event tools, fails closed for stale/revoked/account-mismatched
+  selections, and blocks inactive Tenant operational tools. Platform settings
+  and recovery remain available. Settings **Inspect settings** is distinct
+  from the working-Tenant switch; the header identifies the working Tenant.
+- ADR-006 records the authorized working-Tenant context contract. Existing
+  server authority, RLS, RPC signatures, hostname resolution, data ownership,
+  and Tenant lifecycle are unchanged. No migration or production write.
+- Validation: 424 focused tests passed; changed/new core and shell files pass
+  lint. Local Next dev compiled `/admin/dashboard` and `/admin/tenants`, both
+  returning HTTP 200. Typecheck reports only existing errors outside changed
+  files. Wider suites additionally expose stale existing cache and validation
+  rule source tests; the storage-key checker reports the existing Stripe
+  refund idempotency-key literal in `lib/server/stripePassport.ts`.
+- Remaining: authenticated Safari acceptance for explicit Tenant switching,
+  inactive/no-Event Tenant behavior, unsaved-draft cancellation, multiple tabs,
+  and a Tenant-only account; no runtime production-isolation claim is made.
+  Commit/push/deployment have not been authorized for this change.
+- The prior uncommitted Tenant-logo production migration closeout remains
+  preserved below. Generated-only `next-env.d.ts` dev output was inspected
+  and restored after local compilation per Pap's standing instruction.
+
+
 Hand-maintained. This subsection records the **substantive development
 baseline** — the last integration state that changed the product — so a fresh
 contributor can recover where real work stands without relying on conversation
@@ -431,11 +730,13 @@ reconcile. Git history, source, migrations, and verified database or runtime
 state override this subsection whenever they disagree, per the
 `AUTHORITATIVE_SOURCES.md` authority order.
 
-### Tenant logo URL and upload choice — 2026-10-09 (Commit/push authorized; production migration pending)
+### Tenant logo URL and upload choice — 2026-10-09 (Code deployed; production migration verified)
 
 - **Substantive baseline:** `2070702` — Add tenant logo uploads alongside URL
-  branding — committed on main. Production remains gated on applying migration
-  `20261102000000` and verifying the deployed upload flow.
+  branding — committed on main. Pap reported production responding at
+  `1cb2547`, deployed October 9 at 8:04:07 AM America/Los_Angeles. Production
+  migration `20261102000000` is now applied and independently verified; the
+  authenticated production upload/save flow still needs the user retry.
 - Tenant Administration keeps the existing Logo URL field and adds Upload /
   Replace and Remove for saved Tenants. New Tenants can use a URL immediately
   or upload after creation. Upload fills the draft URL and existing branding
@@ -463,11 +764,21 @@ state override this subsection whenever they disagree, per the
   objects and idempotent audit. Real local Storage API checks passed upload,
   unauthenticated public fetch, metadata Save/readback, finalization retries,
   unauthorized denial, MIME/size limits and overwrite/delete protection.
-- Release gates: migration is not applied to the existing development stack
-  or production. Pap authorized commit and push on 2026-10-09; the push invokes
-  the existing deployment webhook, but does not establish database migration
-  or deployment completion. Full browser/device acceptance remains pending.
-  The standing AGENTS.md pre-commit artifact check is included in this delivery.
+- Production closeout (October 9): after Pap authorized application and
+  signed into Supabase, verified project `lastlzlewonsmwtolpvh` and preflight
+  ledger 274 through `20261101000000`; bucket and both new functions were
+  absent, and the existing audit constraint matched the migration prerequisite.
+  Applied the checked-in migration body through the owner SQL editor, recording
+  its ledger entry in the same guarded transaction. Readback confirms 275
+  migrations through `20261102000000`, public `tenant-logos`, limit 2097152
+  bytes, PNG/JPEG/WebP, four storage policies, authenticated finalizer execution,
+  no anonymous finalizer execution, and the extended upload audit constraint.
+  No tenant records, identities or logo files were changed by this operation.
+- Remaining acceptance: Pap's 670 KB PNG upload failed before the missing
+  migration was applied; refresh and authenticated upload/finalization/Save
+  retry are pending. Full browser/device acceptance and application to the
+  existing development stack remain pending. The standing AGENTS.md pre-commit
+  artifact check is included in the delivered code.
 
 ### App-wide record editing interaction — 2026-10-08 (Committed locally; push authorized 2026-10-09)
 
@@ -3988,16 +4299,16 @@ index.
 ## Librarian-generated repository status
 > Derived local context generated from repository evidence. This section is not an authoritative source and must not override the Constitution, ADRs, migrations, database evidence, or verified runtime behavior.
 
-**Generated at:** `2026-10-09T08:02:10-07:00`
+**Generated at:** `2026-10-10T18:35:30-07:00`
 **Branch:** `main`
-**Commit:** `2070702 Add tenant logo uploads alongside URL branding`
-**Commit date:** `2026-10-09T08:01:59-07:00`
-**origin/main:** `a7a3420`
-**HEAD vs origin/main:** 1 ahead, 0 behind
+**Commit:** `1cb2547 Record tenant logo delivery baseline and migration gate`
+**Commit date:** `2026-10-09T08:02:10-07:00`
+**origin/main:** `1cb2547`
+**HEAD vs origin/main:** 0 ahead, 0 behind
 **Working tree (pre-update snapshot):** Pending changes
-**Tracked modified:** `1`
+**Tracked modified:** `152`
 **Staged:** `0`
-**Untracked:** `0`
+**Untracked:** `43`
 _Git status above was captured before this script wrote this section; writing this file changes the working tree afterward._
 
 ### Architecture records
@@ -4076,14 +4387,14 @@ _Git status above was captured before this script wrote this section; writing th
 - `README.md`
 
 ### Migration inventory
-- Total migration files: `275`
-- Latest migration: `20261102000000_add_tenant_logo_storage.sql`
+- Total migration files: `278`
+- Latest migration: `20261105000000_edit_event_location_code.sql`
 - Latest five:
-  - `20261030000000_confirm_arrival_and_parking.sql`
-  - `20261030100000_fix_site_placement_override_and_retry.sql`
-  - `20261031000000_fix_activate_vendor_invitation_ambiguous_person_id.sql`
   - `20261101000000_jump_presentation_slide.sql`
   - `20261102000000_add_tenant_logo_storage.sql`
+  - `20261103000000_add_governed_tenant_type_creation.sql`
+  - `20261104000000_add_event_location_code.sql`
+  - `20261105000000_edit_event_location_code.sql`
 
 ### Identity-audit inventory
 - SQL files: `13`

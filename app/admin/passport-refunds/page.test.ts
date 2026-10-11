@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { presentRefundReviewRow } from "@/app/admin/passport-refunds/page";
+import { presentRefundReviewRow } from "@/app/admin/passport-refunds/pageContent";
 
-const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
 
 test("the Passport refund review page is guarded by platform authority and uses the canonical Admin shell", () => {
   assert.match(source, /<AdminRouteGuard requiredPlatformAuthority>/);

@@ -265,9 +265,9 @@ test("event_nearby_places is never referenced -- this migration touches nearby_m
 
 test("no Nearby admin/member/settings UI page is modified by this workstream's changed files", () => {
   const uiPaths = [
-    "../../app/admin/nearby/page.tsx",
+    "../../app/admin/nearby/pageContent.tsx",
     "../../app/admin/nearby-settings/page.tsx",
-    "../../app/member/nearby/page.tsx",
+    "../../app/member/nearby/pageContent.tsx",
   ];
   for (const relativePath of uiPaths) {
     // Existence-independent: this test only needs to prove the migration

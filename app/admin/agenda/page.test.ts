@@ -13,7 +13,7 @@ import {
   AgendaWorkspaceSection,
   isStaleAgendaVersionError,
   mapAgendaRpcError,
-} from "@/app/admin/agenda/page";
+} from "@/app/admin/agenda/pageContent";
 import {
   findAgendaWorkbookHeaderRow,
   interpretAgendaImportRow,
@@ -27,7 +27,7 @@ import { AGENDA_IMPORT_TEMPLATE_CONTRACT } from "@/lib/importTemplateContract";
 //   npx tsx --test app/admin/agenda/page.test.ts
 
 const PAGE_SOURCE = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 const TEMPLATE_PANEL_SOURCE = readFileSync(

@@ -306,7 +306,7 @@ export default function OrganizerRegistryPlanPage({ params }: RegistryPageProps)
                       </span>
                     ) : null}
                     {entry.organizerNote ? <p style={{ margin: 0 }}>Note: {entry.organizerNote}</p> : null}
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <div className="app-button-row">
                       <AppButton onClick={() => startEdit(entry)}>Edit</AppButton>
                       <AppButton
                         variant="danger"
@@ -336,7 +336,7 @@ export default function OrganizerRegistryPlanPage({ params }: RegistryPageProps)
           <form onSubmit={submitAdd} style={{ display: "grid", gap: 12 }}>
             {addError ? <Alert tone="danger">{addError}</Alert> : null}
             <OrganizerRegistryPlanFields values={addForm} onChange={setAddForm} />
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div className="app-button-row">
               <AppButton type="submit" variant="primary" loading={adding}>Add registry</AppButton>
               <AppButton
                 type="button"

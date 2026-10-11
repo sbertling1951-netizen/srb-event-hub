@@ -97,6 +97,7 @@ export function stepTime(value: string, deltaMinutes: number): string {
 export function OrganizerTimeField({
   value,
   onChange,
+  onFocus,
   id,
   required,
   ariaLabel,
@@ -106,6 +107,7 @@ export function OrganizerTimeField({
 }: {
   value: string;
   onChange: (next: string) => void;
+  onFocus?: () => void;
   id?: string;
   required?: boolean;
   ariaLabel?: string;
@@ -133,6 +135,7 @@ export function OrganizerTimeField({
       aria-required={ariaRequired}
       required={required}
       value={value}
+      onFocus={onFocus}
       onChange={(event) => onChange(normalizeTimeInput(event.target.value))}
       onBlur={() => {
         const finalized = finalizeTimeInput(value);

@@ -16,10 +16,10 @@ test("the canonical workspace is guarded by exact Platform authority and uses th
 
 // -- Central UI: Tenant Administration Parent Return -----------------------
 
-test("the shell carries the exact Admin backTarget, with pageTitle/pageSubtitle and the workspace child otherwise unchanged", () => {
+test("the shell carries the exact Admin backTarget, with a clear Platform scope and the workspace child", () => {
   assert.match(
     SOURCE,
-    /<AdminShellAdapter\s*\n\s*pageTitle="Tenant Administration"\s*\n\s*pageSubtitle="Govern Tenant lifecycle, metadata, access, and retained evidence"\s*\n\s*backTarget=\{\{ href: "\/admin\/admin", label: "Admin" \}\}\s*\n\s*>\s*\n\s*<TenantAdministrationWorkspace \/>\s*\n\s*<\/AdminShellAdapter>/,
+    /<AdminShellAdapter\s*\n\s*pageTitle="Tenant Administration"\s*\n\s*pageSubtitle="Platform administration: inspect tenant settings and retained evidence. Use Working tenant above to switch operational workspaces."\s*\n\s*backTarget=\{\{ href: "\/admin\/admin", label: "Admin" \}\}\s*\n\s*>\s*\n\s*<TenantAdministrationWorkspace \/>\s*\n\s*<\/AdminShellAdapter>/,
   );
 });
 
@@ -396,7 +396,7 @@ test("Post-Event edit window is a deliberately compact numeric control; Tenant t
     /className=\{compact \? "tenant-operational-row-compact" : "app-form-grid-2"\}/,
   );
   // create dialog opts in; the per-Tenant editor does not
-  assert.match(SOURCE, /<TenantOperationalFields\s*\n\s*form=\{form\}\s*\n\s*tenantTypes=\{tenantTypes\}\s*\n\s*disabled=\{disabled\}\s*\n\s*compact\s*\n\s*onChange=\{onChange\}/);
+  assert.match(SOURCE, /<TenantOperationalFields\s*\n\s*form=\{form\}\s*\n\s*tenantTypes=\{tenantTypes\}\s*\n\s*onTypeCreated=\{onTypeCreated\}\s*\n\s*disabled=\{disabled\}\s*\n\s*compact\s*\n\s*onChange=\{onChange\}/);
   // P-1D: two equal desktop columns; the Post-Event field lays input + help
   // side by side so its help does not inflate the row height
   assert.match(
@@ -597,7 +597,7 @@ test("P-1D: all three color labels, text inputs, native pickers and per-field va
     SOURCE.indexOf("function TenantOperationalFields"),
   );
   assert.match(brandingFields, /BRANDING_COLOR_FIELDS\.map\(\(\{ key, label \}\)/);
-  assert.match(brandingFields, /<Field\s*\n\s*key=\{key\}\s*\n\s*label=\{label\}\s*\n\s*error=\{colorErrors\[key\]\}/);
+  assert.match(brandingFields, /<Field\s*\n\s*key=\{key\}\s*\n\s*label=\{label\}\s*\n\s*labelAction=\{<TenantFieldHelp field=\{key\} \/>\}\s*\n\s*error=\{colorErrors\[key\]\}/);
   assert.match(brandingFields, /type="color"/);
   assert.match(brandingFields, /aria-label=\{`\$\{label\} picker`\}/);
 });
@@ -624,7 +624,7 @@ test("P-1D: operational row is two equal columns and the Post-Event help sits be
   );
   // label/control/help area mappings exist
   for (const part of [
-    "> .app-field-label {\n    grid-area: label;",
+    "> .app-field-label-row {\n    grid-area: label;",
     "> .app-control {\n    grid-area: control;",
     "> .app-field-help {\n    grid-area: help;",
   ]) {

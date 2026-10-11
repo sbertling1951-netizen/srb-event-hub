@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { recordEditorKeyDown, recordRowProps } from "@/components/ui/recordInteraction";
 import VendorWorkspaceShell from "@/components/vendor/VendorWorkspaceShell";
+import { eventScheduleCaution } from "@/lib/eventScheduleHints";
 import {
   formatVendorNoticeDisplay,
   VENDOR_NOTICE_META,
@@ -252,11 +253,14 @@ function NoticeEditor({
             <input
               type="datetime-local"
               value={expiresAt}
+              onFocus={() => { if (!expiresAt && event?.start_date) {setExpiresAt(`${event.start_date}T00:00`);} }}
               onChange={(e) => setExpiresAt(e.target.value)}
               style={{ width: "100%", padding: 8 }}
             />
           </label>
 
+          <p>Picker starts at midnight on the event start date; adjust as needed. Dates outside the event are allowed.</p>
+          {eventScheduleCaution(expiresAt, event?.start_date, event?.end_date) ? <p role="status">{eventScheduleCaution(expiresAt, event?.start_date, event?.end_date)}</p> : null}
           <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <input
               type="checkbox"
@@ -300,7 +304,7 @@ function NoticeEditor({
         </form>
 </Dialog> : null}
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="app-button-row">
           <button
             type="button"
             className="app-button app-button-muted"

@@ -8,9 +8,9 @@ import {
   type AttendeeRow,
   buildCoachPlateNameLines,
   printStatusTone,
-} from "@/app/admin/print/page";
+} from "@/app/admin/print/pageContent";
 
-const sourcePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
+const sourcePath = fileURLToPath(new URL("./pageContent.tsx", import.meta.url));
 const source = readFileSync(sourcePath, "utf8");
 
 // Print Center registration-selection reconciliation --

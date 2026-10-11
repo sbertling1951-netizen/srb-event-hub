@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { PhotosWorkspaceSection } from "@/app/admin/photos/page";
+import { PhotosWorkspaceSection } from "@/app/admin/photos/pageContent";
 import type { AdminAccessResult } from "@/lib/getCurrentAdminAccess";
 
 // Focused tests for the Photo/Media Authority Foundation Stage 2 Admin
@@ -14,7 +14,7 @@ import type { AdminAccessResult } from "@/lib/getCurrentAdminAccess";
 //   npx tsx --test app/admin/photos/page.test.ts
 
 const PAGE_SOURCE = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 

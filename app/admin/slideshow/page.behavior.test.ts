@@ -11,7 +11,7 @@ import { SLIDESHOW_AUDIENCE_MESSAGES, STORAGE_KEYS } from "../../../lib/storageK
 // Execute actual page functions/effects, with only the network, React state,
 // clock and windows replaced. Browser coverage separately checks reconciliation
 // and decoding in two real windows.
-const presenter = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const presenter = readFileSync(new URL("./pageContent.tsx", import.meta.url), "utf8");
 const viewer = readFileSync(new URL("../../slideshow/view/page.tsx", import.meta.url), "utf8");
 const transpile = (code: string) => ts.transpileModule(code, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },

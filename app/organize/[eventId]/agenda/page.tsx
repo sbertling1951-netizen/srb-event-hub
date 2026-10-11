@@ -250,7 +250,7 @@ export default function OrganizerAgendaPage({ params }: AgendaPageProps) {
               <li key={item.id} {...recordRowProps(item, (record) => setSelectedId(record.id), startEdit)} className={"card" + (selectedId === item.id ? " data-table-row-selected" : "")} style={{ display: "grid", gap: 8 }}>
                 {editingId === item.id && editForm ? <Dialog open title="Edit agenda" onClose={() => { if (!editInFlight.current) {cancelEdit();} }} dismissOnBackdrop={false} className="app-dialog-wide record-editor-dialog"><form onSubmit={submitEdit} onKeyDown={recordEditorKeyDown} style={{ display: "grid", gap: 12 }}>
                     {editError ? <Alert tone="danger">{editError}</Alert> : null}
-                    <OrganizerAgendaItemFields values={editForm} onChange={setEditForm} />
+                    <OrganizerAgendaItemFields seedEmptyFields={false} eventStartDate={draft.start_date} eventEndDate={draft.end_date} values={editForm} onChange={setEditForm} />
                     <div className="record-editor-actions" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                       <AppButton type="submit" variant="primary" loading={savingId === item.id}>Save changes</AppButton>
                       <AppButton type="button" onClick={cancelEdit} disabled={savingId === item.id}>Cancel</AppButton>
@@ -262,7 +262,7 @@ export default function OrganizerAgendaPage({ params }: AgendaPageProps) {
                     {item.location ? <span>Location: {item.location}</span> : null}
                     {item.speaker ? <span>Speaker: {item.speaker}</span> : null}
                     {item.description ? <p style={{ margin: 0 }}>{item.description}</p> : null}
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <div className="app-button-row">
                       <AppButton onClick={() => startEdit(item)}>Edit</AppButton>
                       <AppButton
                         variant="danger"
@@ -283,8 +283,8 @@ export default function OrganizerAgendaPage({ params }: AgendaPageProps) {
         {addOpen ? (
           <form onSubmit={submitAdd} style={{ display: "grid", gap: 12 }}>
             {addError ? <Alert tone="danger">{addError}</Alert> : null}
-            <OrganizerAgendaItemFields values={addForm} onChange={setAddForm} />
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <OrganizerAgendaItemFields eventStartDate={draft.start_date} eventEndDate={draft.end_date} values={addForm} onChange={setAddForm} />
+            <div className="app-button-row">
               <AppButton type="submit" variant="primary" loading={adding}>Add agenda item</AppButton>
               <AppButton
                 type="button"

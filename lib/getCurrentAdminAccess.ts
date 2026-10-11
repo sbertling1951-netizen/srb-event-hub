@@ -1,3 +1,4 @@
+import { defaultAdminRolePermissions } from "@/lib/adminPermissionDefaults";
 import { LEGACY_STORAGE_KEYS, STORAGE_KEYS } from "@/lib/storageKeys";
 import { dualRemoveLocal, readMigratingLocal } from "@/lib/storageMigration";
 import { supabase } from "@/lib/supabase";
@@ -324,60 +325,8 @@ export async function getCurrentAdminAccess(): Promise<AdminAccessResult | null>
       const privilegeGroup = adminUser.privilege_group || "read_only";
 
       // 🔥 BASE PRESETS (guaranteed baseline)
-      const PRESETS: Record<string, string[]> = {
-        super_admin: [
-          "can_manage_admins",
-          "can_manage_event_admins",
-          "can_view_admin_dashboard",
-          "can_manage_events",
-          "can_manage_attendees",
-          "can_manage_checkin",
-          "can_mark_arrived",
-          "can_manage_parking",
-          "can_manage_agenda",
-          "can_manage_announcements",
-          "can_manage_nearby",
-          "can_manage_locations",
-          "can_manage_reports",
-          "can_manage_imports",
-          "can_manage_event_staff",
-          "can_manage_master_maps",
-          "can_manage_vendors",
-        ],
-        event_admin: [
-          "can_view_admin_dashboard",
-          "can_manage_events",
-          "can_manage_attendees",
-          "can_manage_checkin",
-          "can_mark_arrived",
-          "can_manage_parking",
-          "can_manage_agenda",
-          "can_manage_announcements",
-          "can_manage_nearby",
-          "can_manage_locations",
-          "can_manage_reports",
-          "can_manage_imports",
-          "can_manage_event_staff",
-          "can_manage_vendors",
-        ],
-        checkin: [
-          "can_view_admin_dashboard",
-          "can_manage_checkin",
-          "can_mark_arrived",
-          "can_manage_attendees",
-        ],
-        parking: ["can_view_admin_dashboard", "can_manage_parking"],
-        content_admin: [
-          "can_view_admin_dashboard",
-          "can_manage_agenda",
-          "can_manage_announcements",
-          "can_manage_nearby",
-          "can_manage_locations",
-        ],
-        read_only: ["can_view_admin_dashboard"],
-      };
 
-      const basePermissions = PRESETS[privilegeGroup] || PRESETS.read_only;
+      const basePermissions = defaultAdminRolePermissions(privilegeGroup);
 
       const { data: overrideRows, error: permissionError } = await withTimeout(
         supabase

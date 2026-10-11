@@ -6,10 +6,10 @@ import { fileURLToPath } from "node:url";
 import {
   checklistStorageKeyForEvent,
   previousChecklistStorageKeyForEvent,
-} from "@/app/admin/checklist/page";
+} from "@/app/admin/checklist/pageContent";
 
 const PAGE_SOURCE = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 

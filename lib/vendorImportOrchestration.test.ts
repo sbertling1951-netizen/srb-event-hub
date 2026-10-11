@@ -7,7 +7,7 @@ import {
   describeVendorReviewReason,
   summarizeVendorImportRows,
   vendorReviewRequiresIdentityWork,
-} from "./vendorImportOrchestration.ts";
+} from "./vendorImportOrchestration";
 
 // Same precedent as lib/attendeeImportOrchestration.test.ts (see its own
 // comment / lib/adminTaskAuthority.test.ts): this repo has no HTTP/Supabase

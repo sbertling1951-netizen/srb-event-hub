@@ -19,6 +19,7 @@ export type FieldControlProps = {
 
 export type FieldProps = {
   label: ReactNode;
+  labelAction?: ReactNode;
   required?: boolean;
   help?: ReactNode;
   error?: ReactNode;
@@ -50,6 +51,7 @@ export type FieldProps = {
  */
 export function Field({
   label,
+  labelAction,
   required = false,
   help,
   error,
@@ -62,21 +64,20 @@ export function Field({
   const errorId = error ? `${id}-error` : undefined;
   const describedBy = [helpId, errorId].filter(Boolean).join(" ") || undefined;
 
+  const fieldLabel = (
+    <label htmlFor={id} className="app-field-label">
+      {label}
+      {required ? <span className="app-field-required" aria-hidden="true"> * </span> : null}
+    </label>
+  );
+
   return (
     <div
       className={["app-field", disabled ? "app-field-disabled" : "", className]
         .filter(Boolean)
         .join(" ")}
     >
-      <label htmlFor={id} className="app-field-label">
-        {label}
-        {required ? (
-          <span className="app-field-required" aria-hidden="true">
-            {" "}
-            *
-          </span>
-        ) : null}
-      </label>
+      {labelAction ? <div className="app-field-label-row app-flex-wrap-8">{fieldLabel}{labelAction}</div> : fieldLabel}
 
       {children({
         id,

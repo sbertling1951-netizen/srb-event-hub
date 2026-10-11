@@ -216,11 +216,12 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
             ) : null}
             {saveError ? <Alert tone="danger">{saveError}</Alert> : null}
             <OrganizerEventFields
+              followStart={false}
               values={form}
               onChange={setForm}
               plannedPlaceOptions={plannedPlaceOptions}
             />
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div className="app-button-row">
               <AppButton variant="primary" loading={saving} onClick={() => void saveDetails()}>
                 Save changes
               </AppButton>
@@ -331,7 +332,7 @@ export default function OrganizerDraftWorkspacePage({ params }: WorkspacePagePro
               workspace are removed for good — this cannot be undone and it cannot be resumed.
             </p>
             {deleteError ? <p style={{ color: "#991b1b", fontWeight: 600 }}>{deleteError}</p> : null}
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div className="app-button-row">
               <AppButton variant="danger" loading={deleting} disabled={!deleteKey} onClick={() => void confirmDelete()}>
                 Permanently delete this event
               </AppButton>

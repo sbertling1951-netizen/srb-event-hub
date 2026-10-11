@@ -96,13 +96,7 @@ export default function MemberDashboardHeader({
         background: "#fff",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: 12,
-        }}
+      <div className="app-action-cluster"
       >
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {logoUrl ? (

@@ -6,6 +6,7 @@ import type { CSSProperties } from "react";
 import LegacyTransferInitiator from "@/components/auth/LegacyTransferInitiator";
 import { ShellTransition } from "@/components/shell/ShellTransition";
 import { AdminProvider } from "@/lib/adminContext";
+import { AdminTenantWorkspaceProvider } from "@/lib/AdminTenantWorkspaceProvider";
 import { AdminWorkspaceProvider } from "@/lib/AdminWorkspaceProvider";
 import { MemberWorkspaceProvider } from "@/lib/memberWorkspace";
 import { TenantProvider } from "@/lib/providers/TenantProvider";
@@ -89,7 +90,7 @@ export default async function RootLayout({
                 brandLogoUrl={brandLogoUrl}
                 brandLogoAlt={brandLogoAlt}
               >
-                {children}
+                <AdminTenantWorkspaceProvider>{children}</AdminTenantWorkspaceProvider>
               </ShellTransition>
             </MemberWorkspaceProvider>
             </AdminWorkspaceProvider>

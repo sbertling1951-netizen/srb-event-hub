@@ -136,7 +136,7 @@ export default function ParticipantIdentityEditor({
           </div>
         </div>
 
-        <div style={{ marginTop: 24, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+        <div className="app-action-cluster" style={{ marginTop: 24,     }}>
           <button type="button" onClick={onClose}>Cancel</button>
           <button
             type="button"

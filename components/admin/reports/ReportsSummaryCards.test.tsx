@@ -24,7 +24,7 @@ const CANONICAL_SUMMARY: CanonicalEventOperationalSummary = {
   activeNeedsParkingUnplaced: 12,
 };
 
-function baseProps() {
+function baseProps(): Parameters<typeof ReportsSummaryCards>[0] {
   return {
     registrationTypeBreakdown: [],
     dataStatusBreakdown: [],

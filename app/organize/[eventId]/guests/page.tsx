@@ -217,7 +217,7 @@ export default function OrganizerGuestListPage({ params }: GuestsPageProps) {
                     <strong>{guest.displayName}</strong>
                     <span style={{ color: "var(--color-text-muted, #475569)" }}>{guestContact(guest)}</span>
                     {guest.organizerNote ? <p style={{ margin: 0 }}>Note: {guest.organizerNote}</p> : null}
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <div className="app-button-row">
                       <AppButton onClick={() => startEdit(guest)}>Edit</AppButton>
                       <AppButton
                         variant="danger"
@@ -239,7 +239,7 @@ export default function OrganizerGuestListPage({ params }: GuestsPageProps) {
           <form onSubmit={submitAdd} style={{ display: "grid", gap: 12 }}>
             {addError ? <Alert tone="danger">{addError}</Alert> : null}
             <OrganizerGuestFields values={addForm} onChange={setAddForm} />
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div className="app-button-row">
               <AppButton type="submit" variant="primary" loading={adding}>Add guest</AppButton>
               <AppButton
                 type="button"

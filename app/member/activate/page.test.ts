@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { ActivationCredentialFields, EmailCodeStep } from "./page";
+import { ActivationCredentialFields, EmailCodeStep } from "./pageContent";
 
 // Member activation page: password-first evidence form followed by the
 // same-page email-code step.
@@ -20,7 +20,7 @@ import { ActivationCredentialFields, EmailCodeStep } from "./page";
 //   npx tsx --test app/member/activate/page.test.ts
 
 const SOURCE = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 const CODE_ONLY = SOURCE.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");

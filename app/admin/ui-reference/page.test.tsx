@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { AdminUiReferenceContent } from "@/app/admin/ui-reference/page";
+import { AdminUiReferenceContent } from "@/app/admin/ui-reference/pageContent";
 
 // Admin UI Reference (design workbench, not an operational page). Two
 // layers of proof, matching the established pattern for this repo:
@@ -18,7 +18,7 @@ import { AdminUiReferenceContent } from "@/app/admin/ui-reference/page";
 //      referenced primitive is truly used, not just imported, and that
 //      the page renders without throwing.
 
-const source = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
+const source = readFileSync(fileURLToPath(new URL("./pageContent.tsx", import.meta.url)), "utf8");
 
 test("the route is gated by AdminRouteGuard using an existing permission -- no new permission/authority was introduced", () => {
   assert.match(source, /<AdminRouteGuard requiredPermission="can_view_admin_dashboard">/);
@@ -908,7 +908,7 @@ test("Admin Nearby (app/admin/nearby/page.tsx) has never adopted InlineEdit -- t
   // replaced the hardcoded option list) -- unrelated to InlineEdit, so a
   // stable structural marker is checked here instead of that now-gone text.
   const nearbySource = readFileSync(
-    fileURLToPath(new URL("../nearby/page.tsx", import.meta.url)),
+    fileURLToPath(new URL("../nearby/pageContent.tsx", import.meta.url)),
     "utf8",
   );
   assert.equal(/InlineEdit/.test(nearbySource), false);

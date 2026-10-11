@@ -7,10 +7,10 @@ function source(relativePath: string) {
   return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
 }
 
-const masterMapsSource = source("./master-maps/page.tsx");
+const masterMapsSource = source("./master-maps/pageContent.tsx");
 const newMasterMapSource = source("./master-maps/new/page.tsx");
 const masterMapEditorSource = source("./master-maps/[id]/page.tsx");
-const locationsSource = source("./locations/page.tsx");
+const locationsSource = source("./locations/pageContent.tsx");
 
 test("canonical shell owns map page titles", () => {
   assert.doesNotMatch(masterMapsSource, /<h1[^>]*>Master Maps<\/h1>/);

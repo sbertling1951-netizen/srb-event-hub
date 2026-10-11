@@ -13,7 +13,7 @@ import {
   pickInitialEventId,
   planEventAccessSync,
   resolveAssignedEventsLoadOutcome,
-} from "@/app/admin/admin-users/page";
+} from "@/app/admin/admin-users/pageContent";
 
 // Central UI Standard, Stage 3 -- /admin/admin-users migration (first
 // form-heavy proving ground). No HTTP/Supabase mocking infrastructure
@@ -22,7 +22,7 @@ import {
 // app/admin/vendor-requests/page.test.ts and app/admin/checkin/page.test.ts.
 
 const source = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 
@@ -127,7 +127,7 @@ test("app-permission-grid reduces only the row gap, via CSS gap's row/column sho
   const ruleMatch = css.match(/\.app-permission-grid\s*\{([^}]*)\}/);
   assert.ok(ruleMatch, "expected an .app-permission-grid rule in app/globals.css");
   const rule = ruleMatch![1];
-  assert.match(rule, /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(260px,\s*1fr\)\)/);
+  assert.match(rule, /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(260px,\s*100%\),\s*1fr\)\)/);
   assert.match(rule, /gap:\s*var\(--space-2\)\s*var\(--space-4\)/);
   // The real touch-target floor lives on .app-field-checkable-label
   // (unchanged, elsewhere in globals.css) and is untouched by this rule.
@@ -292,13 +292,13 @@ test("no new RPC/API call was introduced for Event Access -- the same admin_even
   assert.equal(rpcCallCount, 3);
 });
 
-test("action hierarchy: Create/Save is primary, Send Reset Email is secondary, New and Cancel are the unset ghost default -- no status-color-as-action-color", () => {
+test("action hierarchy: Create/Save is primary, Send Reset Email is secondary, New is primary, Edit is secondary, Cancel remains tertiary -- no status-color-as-action-color", () => {
   assert.match(
     source,
     /<AppButton\s*\n\s*variant="primary"\s*\n\s*type="submit" form="admin-user-editor"\s*\n\s*loading=\{saving\}/,
   );
   assert.match(source, /<AppButton\s*\n\s*variant="secondary"\s*\n\s*onClick=\{\(\) => void handleSendPasswordReset\(\)\}\s*\n\s*loading=\{sendingReset\}/);
-  assert.match(source, /<AppButton onClick=\{openNewAdminDialog\} aria-haspopup="dialog">\s*\n\s*New\s*\n\s*<\/AppButton>/);
+  assert.match(source, /<AppButton variant="primary" onClick=\{openNewAdminDialog\} aria-haspopup="dialog">\s*\n\s*New\s*\n\s*<\/AppButton>/);
   assert.match(source, /<AppButton onClick=\{closeAdminDialog\}>Cancel<\/AppButton>/);
   assert.equal(/variant="success"/.test(source), false);
   assert.equal(/variant="warning"/.test(source), false);

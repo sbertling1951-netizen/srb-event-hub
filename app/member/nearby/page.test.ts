@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { EMERGENCY_CATEGORY_CODES, getNearbyCardColor, QUICK_PICK_CODES } from "@/app/member/nearby/page";
+import { EMERGENCY_CATEGORY_CODES, getNearbyCardColor, QUICK_PICK_CODES } from "@/app/member/nearby/pageContent";
 
 // Structural/source assertions for Member Nearby's participation-bound
 // known-Event-ID continuity read, plus (Nearby Category Authority Stage B,
@@ -17,7 +17,7 @@ import { EMERGENCY_CATEGORY_CODES, getNearbyCardColor, QUICK_PICK_CODES } from "
 //   npx tsx --test app/member/nearby/page.test.ts
 
 const SOURCE = readFileSync(
-  fileURLToPath(new URL("./page.tsx", import.meta.url)),
+  fileURLToPath(new URL("./pageContent.tsx", import.meta.url)),
   "utf8",
 );
 

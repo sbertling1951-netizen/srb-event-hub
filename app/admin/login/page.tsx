@@ -190,7 +190,7 @@ export default function AdminLoginPage() {
           aria-label="Other sign-in options"
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(150px, 100%), 1fr))",
             gap: 8,
           }}
         >

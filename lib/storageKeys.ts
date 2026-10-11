@@ -22,6 +22,7 @@ export const STORAGE_KEYS = {
   memberHasArrived: "epicentrax-member-has-arrived",
   userMode: "epicentrax-user-mode",
   userModeChanged: "epicentrax-user-mode-changed",
+  adminTenantContext: "epicentrax-admin-tenant-context",
   adminEventContext: "epicentrax-admin-event-context",
   adminEventChanged: "epicentrax-admin-event-changed",
   adminAccessCache: "epicentrax-admin-access-cache",

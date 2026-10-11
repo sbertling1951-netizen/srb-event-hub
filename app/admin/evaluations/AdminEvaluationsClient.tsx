@@ -70,7 +70,7 @@ export function AdminEvaluationsClient() {
 
   return (
     <div style={{ display: "grid", gap: "var(--space-6)", minWidth: 0 }}>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className="app-button-row">
         <AppButton
           variant={view === "results" ? "primary" : "secondary"}
           onClick={() => setView("results")}
@@ -238,7 +238,7 @@ function ReportDetail({
   const contextLine = presenterContextLine(report.target_context);
   return (
     <PageSection variant="card" title={label}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+      <div className="app-action-cluster">
         {contextLine && (
           <div className="app-subtle-text" style={{ fontSize: 13 }}>
             {contextLine}
@@ -892,7 +892,7 @@ function QuestionEditor({
         />
       )}
       {question && (
-        <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+        <div className="app-action-cluster">
           <AppButton
             variant="secondary"
             disabled={busy || index === 0}

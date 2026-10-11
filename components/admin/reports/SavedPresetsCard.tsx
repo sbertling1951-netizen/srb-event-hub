@@ -34,18 +34,13 @@ export default function SavedPresetsCard(props: Props) {
       ) : (
         <div style={{ display: "grid", gap: "var(--space-3)" }}>
           {presets.map((preset) => (
-            <div
+            <div className="app-action-cluster"
               key={preset.id}
               style={{
                 border: "var(--border-width-default) solid var(--color-border-default)",
                 borderRadius: "var(--radius-medium)",
                 padding: "var(--space-3)",
                 background: "var(--color-bg-panel)",
-                display: "flex",
-                justifyContent: "space-between",
-                gap: "var(--space-3)",
-                flexWrap: "wrap",
-                alignItems: "center",
               }}
             >
               <div>

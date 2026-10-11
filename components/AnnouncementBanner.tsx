@@ -315,7 +315,7 @@ export default function AnnouncementBanner() {
               display: "flex",
               gap: 12,
               alignItems: "center",
-              justifyContent: "space-between",
+              justifyContent: "flex-start",
               flexWrap: "wrap",
             }}
           >

@@ -183,11 +183,11 @@ test("effective Agenda projection uses the latest governed correction candidate 
   const originalCandidate = { title: "original" } as AgendaImportRowResult["candidate"];
   const correctedCandidate = { title: "Corrected" } as AgendaImportRowResult["candidate"];
   const originalIssues = [
-    { code: "missing_agenda_date", message: "old", severity: "error" as const },
+    { code: "missing_agenda_date" as const, message: "old", severity: "error" as const },
   ];
   const correctedIssues = [
     {
-      code: "missing_agenda_start_time",
+      code: "missing_agenda_start_time" as const,
       message: "current",
       severity: "error" as const,
     },

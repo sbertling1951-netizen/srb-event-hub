@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 
+import { TenantFieldHelp } from "@/components/admin/tenant/TenantFieldHelp";
 import { Alert } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import { Field, Input } from "@/components/ui/Field";
@@ -44,7 +45,7 @@ export function TenantLogoField({ tenantId, value, disabled, onChange, onBusyCha
 
   return (
     <div className="app-stack-4">
-      <Field label="Logo URL" help="Paste a direct image URL, or upload a logo below. Blank uses the neutral platform default." disabled={disabled || uploading}>
+      <Field label="Logo URL" labelAction={<TenantFieldHelp field="logo_url" />} help="Paste a direct image URL, or upload a logo below. Blank uses the neutral platform default." disabled={disabled || uploading}>
         {(props) => <Input {...props} type="url" value={value} onChange={(event) => { onChange(event.target.value); setStatus(null); setError(null); }} />}
       </Field>
       {tenantId ? (

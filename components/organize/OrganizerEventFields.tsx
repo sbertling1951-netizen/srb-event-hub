@@ -1,6 +1,7 @@
 "use client";
 
 import { Field, Input, Select } from "@/components/ui/Field";
+import { endAfterStartChange } from "@/lib/eventScheduleHints";
 import type { OrganizerDraft } from "@/lib/organizerDrafts";
 
 /**
@@ -111,7 +112,9 @@ export function OrganizerEventFields({
   values,
   onChange,
   plannedPlaceOptions,
+  followStart = true,
 }: {
+  followStart?: boolean;
   values: OrganizerEventFormValues;
   onChange: (next: OrganizerEventFormValues) => void;
   /** Optional §B.1 pre-fill texts. Strings only -- never a planning record. */
@@ -136,12 +139,12 @@ export function OrganizerEventFields({
       <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
         <Field label={<>Start date <span style={{ fontWeight: 400 }}>(optional)</span></>}>
           {(props) => (
-            <Input {...props} type="date" value={values.startDate} onChange={(event) => update("startDate", event.target.value)} />
+            <Input {...props} type="date" value={values.startDate} onChange={(event) => onChange({ ...values, startDate: event.target.value, endDate: followStart ? endAfterStartChange(values.endDate, event.target.value, values.startDate) : values.endDate })} />
           )}
         </Field>
         <Field label="End date" required>
           {(props) => (
-            <Input {...props} type="date" min={values.startDate || undefined} value={values.endDate} onChange={(event) => update("endDate", event.target.value)} required />
+            <Input {...props} type="date" min={values.startDate || undefined} value={values.endDate} onFocus={() => { if (followStart && !values.endDate && values.startDate) {update("endDate", values.startDate);} }} onChange={(event) => update("endDate", event.target.value)} required />
           )}
         </Field>
         <Field label="Time zone" required>

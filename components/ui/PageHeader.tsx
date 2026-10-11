@@ -16,7 +16,7 @@ type PageHeaderProps = {
 
 /**
  * Standard page/section title row: heading, optional description, optional
- * right-side actions (buttons, status pills, etc.).
+ * adjacent actions (buttons, status pills, etc.).
  *
  * Always renders a single root `<div>`, so the DOM shape is predictable
  * regardless of which optional props are supplied -- there is no
@@ -24,9 +24,8 @@ type PageHeaderProps = {
  *
  * When `actions` is passed at all (even as `null`, e.g. a
  * conditionally-rendered badge), the heading/description are grouped in
- * their own inner `<div>` and laid out against the actions using
- * `.app-row-between-wrap` (the same shared class already used for this
- * pattern elsewhere), so the row layout stays stable regardless of whether
+ * their own inner `<div>` and kept beside the actions using
+ * `.app-page-header` (wrapping and stacking at narrow widths), so the row layout stays stable regardless of whether
  * the action content is currently present. When `actions` is omitted, the
  * heading/description render directly inside the root `<div>` with no
  * layout class, matching plain heading+paragraph markup.
@@ -68,12 +67,12 @@ export function PageHeader({
 
   if (actions !== undefined) {
     return (
-      <div className="app-row-between-wrap">
-        <div>
+      <div className="app-page-header">
+        <div className="app-page-header-copy">
           {heading}
           {descriptionEl}
         </div>
-        {actions}
+        <div className="app-page-header-actions">{actions}</div>
       </div>
     );
   }

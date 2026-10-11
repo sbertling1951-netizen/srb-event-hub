@@ -1,6 +1,7 @@
 "use client";
 
 import { Field, Input, Textarea } from "@/components/ui/Field";
+import { eventScheduleCaution } from "@/lib/eventScheduleHints";
 import type { ChecklistItemInput } from "@/lib/organizerChecklist";
 
 /**
@@ -21,7 +22,11 @@ import type { ChecklistItemInput } from "@/lib/organizerChecklist";
 export function OrganizerChecklistFields({
   values,
   onChange,
+  eventStartDate,
+  eventEndDate,
 }: {
+  eventStartDate?: string | null;
+  eventEndDate?: string | null;
   values: ChecklistItemInput;
   onChange: (next: ChecklistItemInput) => void;
 }) {
@@ -42,13 +47,14 @@ export function OrganizerChecklistFields({
       </Field>
       <Field
         label={<>Target date <span style={{ fontWeight: 400 }}>(optional)</span></>}
-        help="Just for your own reference. EpicentraX does not remind you or track this date."
+        help={eventScheduleCaution(values.targetDate, eventStartDate, eventEndDate) || "Just for your own reference. EpicentraX does not remind you or track this date."}
       >
         {(props) => (
           <Input
             {...props}
             type="date"
             value={values.targetDate}
+            onFocus={() => { if (!values.targetDate && eventStartDate) {update("targetDate", eventStartDate);} }}
             onChange={(event) => update("targetDate", event.target.value)}
           />
         )}

@@ -1,6 +1,7 @@
 "use client";
 
 import { Field, Input, Textarea } from "@/components/ui/Field";
+import { eventScheduleCaution } from "@/lib/eventScheduleHints";
 import type { OrganizerAgendaItem, OrganizerAgendaItemInput } from "@/lib/organizerAgenda";
 
 import { OrganizerTimeField } from "./OrganizerTimeField";
@@ -42,7 +43,13 @@ export function organizerAgendaItemValues(item: OrganizerAgendaItem): OrganizerA
 export function OrganizerAgendaItemFields({
   values,
   onChange,
+  eventStartDate,
+  eventEndDate,
+  seedEmptyFields = true,
 }: {
+  seedEmptyFields?: boolean;
+  eventStartDate?: string | null;
+  eventEndDate?: string | null;
   values: OrganizerAgendaItemInput;
   onChange: (next: OrganizerAgendaItemInput) => void;
 }) {
@@ -95,12 +102,15 @@ export function OrganizerAgendaItemFields({
         </Field>
       </div>
       <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
-        <Field label={<>Date <span style={{ fontWeight: 400 }}>(optional)</span></>}>
+        <Field label={<>Date <span style={{ fontWeight: 400 }}>(optional)</span></>} help={eventScheduleCaution(values.agendaDate, eventStartDate, eventEndDate)}>
           {(props) => (
             <Input
               {...props}
               type="date"
               value={values.agendaDate}
+              onFocus={() => {
+                if (seedEmptyFields && !values.agendaDate && eventStartDate) {update("agendaDate", eventStartDate);}
+              }}
               onChange={(event) => update("agendaDate", event.target.value)}
             />
           )}
@@ -121,6 +131,9 @@ export function OrganizerAgendaItemFields({
             <OrganizerTimeField
               {...props}
               value={values.endTime}
+              onFocus={() => {
+                if (seedEmptyFields && !values.endTime && values.startTime) {update("endTime", values.startTime);}
+              }}
               onChange={(next) => update("endTime", next)}
               ariaLabel="End time (24-hour HH:MM)"
             />

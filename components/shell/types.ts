@@ -123,6 +123,7 @@ export type ShellConfig = {
   activeHref?: string | null;
   accountActions?: ShellAccountAction[];
   statusContent?: ReactNode;
+  contextContent?: ReactNode;
   backTarget?: ShellBackTarget | null;
   homeAction?: ShellHomeAction | null;
   contentMode?: ShellContentMode;

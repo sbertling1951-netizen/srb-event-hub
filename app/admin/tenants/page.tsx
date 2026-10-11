@@ -4,7 +4,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { TenantBrandingPreview } from "@/components/admin/tenant/TenantBrandingPreview";
+import { TenantFieldHelp } from "@/components/admin/tenant/TenantFieldHelp";
 import { TenantLogoField } from "@/components/admin/tenant/TenantLogoField";
+import { TenantTypeField } from "@/components/admin/tenant/TenantTypeField";
 import AdminRouteGuard from "@/components/auth/AdminRouteGuard";
 import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter";
 import { Alert } from "@/components/ui/Alert";
@@ -245,7 +247,7 @@ function TenantBrandingFields({
   return (
     <div className="tenant-branding-fields">
       <div className="app-form-grid-2">
-        <Field label="Organization name" required disabled={disabled}>
+        <Field label="Organization name" labelAction={<TenantFieldHelp field="organization_name" />} required disabled={disabled}>
           {(props) => (
             <Input
               {...props}
@@ -254,7 +256,7 @@ function TenantBrandingFields({
             />
           )}
         </Field>
-        <Field label="Display name" required disabled={disabled}>
+        <Field label="Display name" labelAction={<TenantFieldHelp field="display_name" />} required disabled={disabled}>
           {(props) => (
             <Input
               {...props}
@@ -263,7 +265,7 @@ function TenantBrandingFields({
             />
           )}
         </Field>
-        <Field label="App title" required disabled={disabled}>
+        <Field label="App title" labelAction={<TenantFieldHelp field="app_title" />} required disabled={disabled}>
           {(props) => (
             <Input
               {...props}
@@ -272,7 +274,7 @@ function TenantBrandingFields({
             />
           )}
         </Field>
-        <Field label="App tagline" disabled={disabled}>
+        <Field label="App tagline" labelAction={<TenantFieldHelp field="app_tagline" />} disabled={disabled}>
           {(props) => (
             <Input
               {...props}
@@ -290,7 +292,7 @@ function TenantBrandingFields({
           onChange={(logo_url) => onChange({ logo_url })}
         />
         <Field
-          label="Favicon URL"
+          label="Favicon URL" labelAction={<TenantFieldHelp field="favicon_url" />}
           help="Stored branding metadata. It is not yet applied to the browser tab icon."
           disabled={disabled}
         >
@@ -315,6 +317,7 @@ function TenantBrandingFields({
               <Field
                 key={key}
                 label={label}
+                labelAction={<TenantFieldHelp field={key} />}
                 error={colorErrors[key]}
                 disabled={disabled}
               >
@@ -361,12 +364,14 @@ function TenantBrandingFields({
 function TenantOperationalFields({
   form,
   tenantTypes,
+  onTypeCreated,
   disabled,
   compact,
   onChange,
 }: {
   form: TenantMetadataForm;
   tenantTypes: TenantTypeRow[];
+  onTypeCreated: (row: TenantTypeRow) => void;
   disabled?: boolean;
   /**
    * Add Tenant dialog: two equal desktop columns where the Post-Event field
@@ -381,24 +386,10 @@ function TenantOperationalFields({
     <div
       className={compact ? "tenant-operational-row-compact" : "app-form-grid-2"}
     >
-      <Field label="Tenant type" disabled={disabled}>
-        {(props) => (
-          <Select
-            {...props}
-            value={form.tenant_type_id}
-            onChange={(event) => onChange({ tenant_type_id: event.target.value })}
-          >
-            <option value="">No Tenant type</option>
-            {tenantTypes.map((type) => (
-              <option key={type.id} value={type.id}>
-                {type.label} ({type.code})
-              </option>
-            ))}
-          </Select>
-        )}
-      </Field>
+      <TenantTypeField value={form.tenant_type_id} options={tenantTypes} disabled={disabled}
+        onChange={(tenant_type_id) => onChange({ tenant_type_id })} onCreated={onTypeCreated} />
       <Field
-        label="Post-Event edit window (days)"
+        label="Post-Event edit window (days)" labelAction={<TenantFieldHelp field="post_event_edit_window_days" />}
         help="Blank = 60 days, or enter 0–59."
         disabled={disabled}
         className={compact ? "tenant-operational-window-field" : undefined}
@@ -428,12 +419,14 @@ function TenantOperationalFields({
 function TenantMetadataFields({
   form,
   tenantTypes,
+  onTypeCreated,
   disabled,
   colorErrors,
   onChange,
 }: {
   form: TenantMetadataForm;
   tenantTypes: TenantTypeRow[];
+  onTypeCreated: (row: TenantTypeRow) => void;
   disabled?: boolean;
   colorErrors: Partial<Record<BrandingColorKey, string>>;
   onChange: (patch: Partial<TenantMetadataForm>) => void;
@@ -449,6 +442,7 @@ function TenantMetadataFields({
       <TenantOperationalFields
         form={form}
         tenantTypes={tenantTypes}
+        onTypeCreated={onTypeCreated}
         disabled={disabled}
         compact
         onChange={onChange}
@@ -477,6 +471,8 @@ function TenantAdministrationWorkspace() {
   const [metadataReason, setMetadataReason] = useState("");
   const [createForm, setCreateForm] = useState<CreateTenantInput>(EMPTY_CREATE_FORM);
   const [createOpen, setCreateOpen] = useState(false);
+  const createErrorRef = useRef<HTMLDivElement>(null);
+  const [createErrorAttempt, setCreateErrorAttempt] = useState(0);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [statusReason, setStatusReason] = useState("");
   const [selectedPersonId, setSelectedPersonId] = useState("");
@@ -491,6 +487,12 @@ function TenantAdministrationWorkspace() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!createOpen || !createErrorAttempt || !error) {return;}
+    createErrorRef.current?.focus({ preventScroll: true });
+    createErrorRef.current?.scrollIntoView({ block: "nearest" });
+  }, [createOpen, createErrorAttempt, error]);
 
   const metadataDirty = useMemo(
     () =>
@@ -587,6 +589,10 @@ function TenantAdministrationWorkspace() {
     const rows = await listTenantsForAdministration();
     setTenants(rows);
     return rows;
+  }
+
+  function addTenantTypeOption(row: TenantTypeRow) {
+    setTenantTypes((current) => [...current.filter((type) => type.id !== row.id), row].sort((a, b) => a.label.localeCompare(b.label)));
   }
 
   async function loadTenantWorkspace(tenantId: string) {
@@ -755,16 +761,23 @@ function TenantAdministrationWorkspace() {
     }
   }
 
+  function reportCreateError(message: string) {
+    setError(message);
+    setCreateErrorAttempt((attempt) => attempt + 1);
+  }
+
   async function createTenant(event: React.FormEvent) {
     event.preventDefault();
     setStatus(null);
     const validationError = validateMetadata(createForm);
     if (validationError) {
-      setError(validationError);
+      reportCreateError(validationError);
       return;
     }
     if (!createForm.organization_code.trim() || !createForm.slug.trim()) {
-      setError("Organization code and slug are required.");
+      reportCreateError(!createForm.organization_code.trim()
+        ? "Enter an organization code."
+        : "Enter a slug using lowercase letters, numbers, and hyphens.");
       return;
     }
     setBusy(true);
@@ -778,7 +791,7 @@ function TenantAdministrationWorkspace() {
       await loadTenantWorkspace(created.id);
       setStatus("Tenant created Inactive. No Events, hostname mappings, or Tenant Admins were created.");
     } catch (createError) {
-      setError(describeError(createError));
+      reportCreateError(describeError(createError));
     } finally {
       setBusy(false);
     }
@@ -963,9 +976,13 @@ function TenantAdministrationWorkspace() {
           className="tenant-create-form"
           onSubmit={createTenant}
         >
-          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {error ? (
+            <div ref={createErrorRef} tabIndex={-1}>
+              <Alert tone="danger">{error}</Alert>
+            </div>
+          ) : null}
           <div className="app-form-grid-2">
-            <Field label="Organization code" required>
+            <Field label="Organization code" labelAction={<TenantFieldHelp field="organization_code" />} required>
               {(props) => (
                 <Input
                   {...props}
@@ -979,7 +996,7 @@ function TenantAdministrationWorkspace() {
                 />
               )}
             </Field>
-            <Field label="Slug" required help="Lowercase letters, numbers, and hyphens only.">
+            <Field label="Slug" labelAction={<TenantFieldHelp field="slug" />} required help="Lowercase letters, numbers, and hyphens only.">
               {(props) => (
                 <Input
                   {...props}
@@ -994,10 +1011,11 @@ function TenantAdministrationWorkspace() {
           <TenantMetadataFields
             form={createForm}
             tenantTypes={tenantTypes}
+                      onTypeCreated={addTenantTypeOption}
             colorErrors={createColorErrors}
             onChange={(patch) => setCreateForm((current) => ({ ...current, ...patch }))}
           />
-          <Field label="Reason" help="Optional administrative context for the audit history.">
+          <Field label="Reason" labelAction={<TenantFieldHelp field="reason" />} help="Optional administrative context for the audit history.">
             {(props) => (
               <Textarea
                 {...props}
@@ -1038,7 +1056,7 @@ function TenantAdministrationWorkspace() {
       >
         <form id="tenant-status-form" onSubmit={confirmTenantStatus}>
           {error ? <Alert tone="danger">{error}</Alert> : null}
-          <Field label="Reason" help="Optional administrative context for the audit history.">
+          <Field label="Reason" labelAction={<TenantFieldHelp field="reason" />} help="Optional administrative context for the audit history.">
             {(props) => (
               <Textarea
                 {...props}
@@ -1080,37 +1098,38 @@ function TenantAdministrationWorkspace() {
           ) : (
             <ResponsiveList aria-label="Tenants">
               {tenants.map((tenant) => (
-                <li
-                  key={tenant.id}
-                  className={`responsive-list-item${selectedTenantId === tenant.id ? " responsive-list-item-selected" : ""}`}
-                >
-                  <div className="responsive-list-item-header">
-                    <div>
-                      <div className="responsive-list-item-title">{tenant.display_name}</div>
-                      <div className="app-subtle-text">{tenant.organization_name}</div>
-                    </div>
-                    <StatusBadge tone={tenant.is_active ? "success" : "warning"}>
-                      {tenant.is_active ? "Active" : "Inactive"}
-                    </StatusBadge>
-                  </div>
-                  <div className="responsive-list-item-meta">
-                    <span>Code: {tenant.organization_code}</span>
-                    <span>Slug: {tenant.slug}</span>
-                    <span>Type: {tenant.tenant_type_label || "Not set"}</span>
-                  </div>
-                  <div className="responsive-list-item-meta">
-                    <span>{tenant.owned_event_count} Events</span>
-                    <span>{tenant.active_tenant_admin_count} active Tenant Admins</span>
-                    <span>{tenant.hostname_mapping_count} hostnames</span>
-                  </div>
-                  <RowActions>
-                    <AppButton
-                      variant={selectedTenantId === tenant.id ? "secondary" : "default"}
-                      onClick={() => requestSelectTenant(tenant.id)}
-                    >
-                      {selectedTenantId === tenant.id ? "Selected" : "Open Tenant"}
-                    </AppButton>
-                  </RowActions>
+                <li key={tenant.id}>
+                  <button
+                    type="button"
+                    className={`responsive-list-item tenant-selection-card-button${selectedTenantId === tenant.id ? " responsive-list-item-selected" : ""}`}
+                    aria-label={`Inspect settings for ${tenant.display_name}`}
+                    aria-pressed={selectedTenantId === tenant.id}
+                    disabled={busy}
+                    onClick={() => requestSelectTenant(tenant.id)}
+                  >
+                    <span className="responsive-list-item-header">
+                      <span>
+                        <span className="responsive-list-item-title">{tenant.display_name}</span>
+                        <span className="app-subtle-text">{tenant.organization_name}</span>
+                      </span>
+                      <StatusBadge tone={tenant.is_active ? "success" : "warning"}>
+                        {tenant.is_active ? "Active" : "Inactive"}
+                      </StatusBadge>
+                    </span>
+                    <span className="responsive-list-item-meta">
+                      <span>Code: {tenant.organization_code}</span>
+                      <span>Slug: {tenant.slug}</span>
+                      <span>Type: {tenant.tenant_type_label || "Not set"}</span>
+                    </span>
+                    <span className="responsive-list-item-meta">
+                      <span>{tenant.owned_event_count} Events</span>
+                      <span>{tenant.active_tenant_admin_count} active Tenant Admins</span>
+                      <span>{tenant.hostname_mapping_count} hostnames</span>
+                    </span>
+                    <span className="app-subtle-text">
+                      {selectedTenantId === tenant.id ? "Selected" : "Select to inspect settings"}
+                    </span>
+                  </button>
                 </li>
               ))}
             </ResponsiveList>
@@ -1196,12 +1215,13 @@ function TenantAdministrationWorkspace() {
                     <TenantOperationalFields
                       form={metadataForm}
                       tenantTypes={tenantTypes}
+                      onTypeCreated={addTenantTypeOption}
                       disabled={busy}
                       onChange={(patch) =>
                         setMetadataForm((current) => ({ ...current, ...patch }))
                       }
                     />
-                    <Field label="Change reason" help="Optional context retained with the audit record.">
+                    <Field label="Change reason" labelAction={<TenantFieldHelp field="reason" />} help="Optional context retained with the audit record.">
                       {(props) => (
                         <Textarea
                           {...props}
@@ -1391,7 +1411,7 @@ function TenantAdministrationWorkspace() {
                       onChange={(event) => setHostnameStartsActive(event.target.checked)}
                     />
                   </div>
-                  <Field label="Reason" help="Optional context for the hostname audit record.">
+                  <Field label="Reason" labelAction={<TenantFieldHelp field="reason" />} help="Optional context for the hostname audit record.">
                     {(props) => (
                       <Input
                         {...props}
@@ -1537,7 +1557,7 @@ export default function TenantAdministrationPage() {
     <AdminRouteGuard requiredPlatformAuthority>
       <AdminShellAdapter
         pageTitle="Tenant Administration"
-        pageSubtitle="Govern Tenant lifecycle, metadata, access, and retained evidence"
+        pageSubtitle="Platform administration: inspect tenant settings and retained evidence. Use Working tenant above to switch operational workspaces."
         backTarget={{ href: "/admin/admin", label: "Admin" }}
       >
         <TenantAdministrationWorkspace />

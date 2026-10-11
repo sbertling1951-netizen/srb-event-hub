@@ -591,6 +591,7 @@ const FOCUS_RING_SURFACES: ReadonlyArray<readonly [string, string]> = [
 
 /** Every rule that paints the shared ring, by COMPLETE selector list. */
 const FOCUS_RING_CONSUMERS: readonly string[] = [
+  ".tenant-selection-card-button:focus-visible",
   ".app-button:focus-visible, button.app-button:focus-visible, a.app-button:focus-visible",
   ".app-control:focus-visible, .app-card-section input:focus-visible, .app-card-section select:focus-visible, .app-card-section textarea:focus-visible, .app-card-section-muted input:focus-visible, .app-card-section-muted select:focus-visible, .app-card-section-muted textarea:focus-visible, .table-toolbar-row input:focus-visible, .table-toolbar-row select:focus-visible",
   ".app-inline-edit-trigger:focus-visible",

@@ -7,8 +7,10 @@ import { AdminShellAdapter } from "@/components/shell/adapters/AdminShellAdapter
 import { Alert, type AlertTone } from "@/components/ui/Alert";
 import { AppButton } from "@/components/ui/AppButton";
 import { Field, Input } from "@/components/ui/Field";
+import { FormActions } from "@/components/ui/FormActions";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { PageSection } from "@/components/ui/PageSection";
+import { defaultAdminRolePermissions } from "@/lib/adminPermissionDefaults";
 import { bumpAdminPermissionsVersion } from "@/lib/getCurrentAdminAccess";
 import { supabase } from "@/lib/supabase";
 
@@ -117,6 +119,7 @@ export default function PermissionsPage() {
 
 function PermissionsInner() {
   const [rows, setRows] = useState<PermissionRow[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [undoing, setUndoing] = useState(false);
   const [presets, setPresets] = useState<Record<string, any>>({});
@@ -138,9 +141,12 @@ function PermissionsInner() {
       .select("*");
 
     if (error) {
-      console.error("Load error:", error);
+      setLoadError("Could not load saved permission overrides. Reload before making changes.");
+      setLoading(false);
+      return;
     }
 
+    setLoadError(null);
     setRows((data || []) as PermissionRow[]);
     setLoading(false);
   }
@@ -157,10 +163,8 @@ function PermissionsInner() {
   }
 
   function isEnabled(group: string, key: string) {
-    return rows.some(
-      (r) =>
-        r.privilege_group === group && r.permission_key === key && r.is_enabled,
-    );
+    const override = rows.find((row) => row.privilege_group === group && row.permission_key === key);
+    return override ? override.is_enabled : defaultAdminRolePermissions(group).includes(key);
   }
 
   function getEnabledPermissionsForGroup(group: string) {
@@ -361,18 +365,15 @@ function PermissionsInner() {
     await load();
   }
 
+  if (loadError) {return <Alert tone="danger">{loadError}</Alert>;}
+
   if (loading) {
     return <LoadingState message="Loading permissions..." />;
   }
 
   return (
     <div style={{ padding: 20 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
+      <div className="app-action-cluster"
       >
         <AppButton
           variant="secondary"
@@ -399,6 +400,7 @@ function PermissionsInner() {
             />
           )}
         </Field>
+        <FormActions>
         <AppButton
           variant="primary"
           onClick={() => {
@@ -419,6 +421,7 @@ function PermissionsInner() {
             Load {name}
           </AppButton>
         ))}
+        </FormActions>
       </div>
       <div className="app-subtle-text" style={{ fontSize: 13, marginBottom: 16 }}>
         Changes apply immediately. Some permissions auto-enable required
@@ -481,13 +484,8 @@ function PermissionsInner() {
                   transition: "background 0.2s ease",
                 }}
               >
-                <div
+                <div className="app-action-cluster"
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    flexWrap: "wrap",
-                    gap: 8,
                     marginBottom: 8,
                   }}
                 >
@@ -509,7 +507,6 @@ function PermissionsInner() {
                   <AppButton
                     variant="secondary"
                     onClick={toggleSection}
-                    style={{ marginLeft: "auto" }}
                   >
                     {allEnabled
                       ? "Disable All"
@@ -522,7 +519,7 @@ function PermissionsInner() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
                     gap: 10,
                   }}
                 >

@@ -371,7 +371,7 @@ export default function OrganizePage() {
                 You already have one unfinished event, <strong>{blockingEvent.eventName}</strong> (
                 {formatBlockingSchedule(blockingEvent)}).
               </p>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div className="app-button-row">
                 <Link href={`/organize/${encodeURIComponent(blockingEvent.eventId)}`}>
                   <AppButton variant="primary">Continue current event</AppButton>
                 </Link>
@@ -385,7 +385,7 @@ export default function OrganizePage() {
               </p>
               <OrganizerEventFields values={replaceForm} onChange={setReplaceForm} />
               {replaceError ? <Alert tone="danger">{replaceError}</Alert> : null}
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div className="app-button-row">
                 <AppButton type="submit" variant="primary" disabled={secureReplaceRequestUnavailable}>
                   Continue
                 </AppButton>
@@ -403,7 +403,7 @@ export default function OrganizePage() {
                 resumed.
               </p>
               {replaceError ? <p style={{ color: "#991b1b", fontWeight: 600 }}>{replaceError}</p> : null}
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div className="app-button-row">
                 <AppButton
                   variant="danger"
                   loading={replacing}
